@@ -81,7 +81,7 @@ internal class HttpDeepSeekTransport(
     }
 }
 
-class DeepSeekTranslationClient(
+internal class DeepSeekTranslationClient(
     private val transport: DeepSeekTransport = HttpDeepSeekTransport(),
 ) {
     fun translate(
@@ -160,9 +160,10 @@ class DeepSeekTranslationClient(
             val item = translationsArray.getJSONObject(index)
             val id = item.optString("id").trim()
             val text = item.optString("text").trim()
-            if (id !in requiredIds || text.isEmpty() || translated.put(id, text) != null) {
+            if (id !in requiredIds || text.isEmpty() || id in translated) {
                 return DeepSeekTranslationResult.Failed("DeepSeek 返回的歌词行无法安全对齐")
             }
+            translated[id] = text
         }
         if (translated.keys != requiredIds) {
             return DeepSeekTranslationResult.Failed("DeepSeek 返回的翻译行不完整")
