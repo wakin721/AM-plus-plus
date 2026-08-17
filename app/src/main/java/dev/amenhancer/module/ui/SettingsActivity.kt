@@ -1130,6 +1130,16 @@ class SettingsActivity : Activity() {
                 LinearLayout.LayoutParams(0, dp(44), 1f),
             )
         })
+        form.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, 0)
+            addView(
+                fontActionButton("DeepSeek AI 翻译", true) {
+                    showDeepSeekTranslationDialog(ttml)
+                },
+                LinearLayout.LayoutParams(0, dp(44), 1f),
+            )
+        })
         form.addView(ttml, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
