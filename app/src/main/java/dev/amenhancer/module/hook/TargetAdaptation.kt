@@ -33,6 +33,9 @@ internal data class TargetAdaptation(
     val libraryRefresh: LibraryRefreshTarget = LibraryRefreshTarget {
         TargetCapabilityInstall.Degraded("Library refresh target was not configured")
     },
+    val usbBitPerfect: UsbBitPerfectTarget = UsbBitPerfectTarget {
+        TargetCapabilityInstall.Degraded("USB Bit-Perfect target was not configured")
+    },
 ) {
     companion object {
         fun appleMusic(
@@ -52,9 +55,6 @@ internal data class TargetAdaptation(
                 .takeIf { it }
                 ?.let { AppleMusicCatalogEntityLookup(resolver, classLoader) }
             val missCoordinator = AtomicReference<CatalogMissBackfillCoordinator?>()
-            // The title feature and manual catalog refresh must observe one
-            // cache, but its preference scan is deferred until the first title
-            // lookup or an explicit refresh (never Application.onCreate).
             val titleCacheProvider = settings.titleCorrectionEnabled
                 .takeIf { it }
                 ?.let {
@@ -108,10 +108,12 @@ internal data class TargetAdaptation(
                     titleCacheProvider = titleCacheProvider,
                     catalogLookup = catalogLookup,
                 ),
+                usbBitPerfect = AppleMusicUsbBitPerfectTarget(application),
             )
         }
     }
 }
+
 internal fun interface DualPaneTarget {
     fun install(): TargetCapabilityInstall
 }
