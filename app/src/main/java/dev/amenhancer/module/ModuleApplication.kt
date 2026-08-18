@@ -1,6 +1,7 @@
 package dev.amenhancer.module
 
 import android.app.Application
+import dev.amenhancer.module.ui.UsbBitPerfectSettingsInjector
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.util.concurrent.CopyOnWriteArraySet
@@ -9,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference
 class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
     override fun onCreate() {
         super.onCreate()
+        UsbBitPerfectSettingsInjector.register(this)
         XposedServiceHelper.registerListener(this)
     }
 
