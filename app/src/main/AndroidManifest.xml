@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_CURRENT_SONG_ID" />
     <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_LIBRARY_REFRESH" />
+    <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_USB_BIT_PERFECT_STATUS" />
 
     <permission
         android:name="dev.amenhancer.module.permission.REQUEST_CURRENT_SONG_ID"
@@ -11,6 +12,10 @@
 
     <permission
         android:name="dev.amenhancer.module.permission.REQUEST_LIBRARY_REFRESH"
+        android:protectionLevel="signature" />
+
+    <permission
+        android:name="dev.amenhancer.module.permission.REQUEST_USB_BIT_PERFECT_STATUS"
         android:protectionLevel="signature" />
 
     <application
