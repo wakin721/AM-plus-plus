@@ -26,6 +26,7 @@ internal object ModuleSettingsSchema {
                 ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX,
                 ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
             ) ?: 0,
+        usbBitPerfectEnabled = values.boolean(KEY_USB_BIT_PERFECT, default = false),
         titleCorrectionEnabled = values.boolean(
             KEY_TITLE_CORRECTION_ENABLED,
             default = false,
@@ -67,6 +68,7 @@ internal object ModuleSettingsSchema {
                 ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX,
                 ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
             ),
+            KEY_USB_BIT_PERFECT to settings.usbBitPerfectEnabled,
             KEY_TITLE_CORRECTION_ENABLED to settings.titleCorrectionEnabled,
             KEY_TITLE_CORRECTION_TARGET_LANGUAGE to CatalogLanguagePolicy.normalize(
                 settings.titleCorrectionTargetLanguage,
@@ -91,11 +93,6 @@ internal object ModuleSettingsSchema {
     fun encodeCustomLyricsManifest(manifest: CustomLyricsManifest): Map<String, Any> =
         linkedMapOf(KEY_CUSTOM_LYRICS_MANIFEST to CustomLyricsManifestCodec.encode(manifest))
 
-    /**
-     * Pointer keys point at the remote index file. They are index state, not
-     * settings: never emitted by [encode] or [encodeOrdinarySettings], so an
-     * ordinary settings write can never overwrite a published index pointer.
-     */
     fun encodeIndexPointer(pointer: CustomLyricsIndexPointer): Map<String, Any> =
         linkedMapOf(
             KEY_CUSTOM_LYRICS_INDEX_FILE_ID to pointer.fileId,
@@ -104,16 +101,13 @@ internal object ModuleSettingsSchema {
             KEY_CUSTOM_LYRICS_INDEX_SIZE_BYTES to pointer.sizeBytes,
         )
 
-    /** Fails closed: a pointer must be complete, well-formed, and published at least once. */
     fun decodeIndexPointer(values: Map<String, *>): CustomLyricsIndexPointer? {
         val fileId = values.string(KEY_CUSTOM_LYRICS_INDEX_FILE_ID)
         val generation = values.long(KEY_CUSTOM_LYRICS_INDEX_GENERATION)
         val sha256 = values.string(KEY_CUSTOM_LYRICS_INDEX_SHA256)
         val sizeBytes = values.long(KEY_CUSTOM_LYRICS_INDEX_SIZE_BYTES)
         if (generation == null || generation < 1L) return null
-        if (sizeBytes == null || sizeBytes !in 1L..CustomLyricsManifestPolicy.MAX_INDEX_BYTES.toLong()) {
-            return null
-        }
+        if (sizeBytes == null || sizeBytes !in 1L..CustomLyricsManifestPolicy.MAX_INDEX_BYTES.toLong()) return null
         if (!CustomLyricsManifestPolicy.isValidFileId(fileId)) return null
         if (!CustomLyricsManifestPolicy.isValidSha256(sha256)) return null
         return CustomLyricsIndexPointer(
@@ -124,15 +118,12 @@ internal object ModuleSettingsSchema {
         )
     }
 
-    fun hasIndexPointerValues(values: Map<String, *>): Boolean =
-        indexPointerKeys.any(values::containsKey)
+    fun hasIndexPointerValues(values: Map<String, *>): Boolean = indexPointerKeys.any(values::containsKey)
 
-    /** Legacy v1 preference-string manifest, kept for pre-migration reads. */
     fun decodeLegacyCustomLyricsManifest(values: Map<String, *>): CustomLyricsManifest =
         CustomLyricsManifestCodec.decode(values.string(KEY_CUSTOM_LYRICS_MANIFEST))
 
-    fun legacyCustomLyricsManifestRaw(values: Map<String, *>): String =
-        values.string(KEY_CUSTOM_LYRICS_MANIFEST)
+    fun legacyCustomLyricsManifestRaw(values: Map<String, *>): String = values.string(KEY_CUSTOM_LYRICS_MANIFEST)
 
     private fun Map<String, *>.fontManifest(): LyricsFontManifest {
         val raw = LyricsFontManifest(
@@ -160,18 +151,13 @@ internal object ModuleSettingsSchema {
         storedValues: Map<String, *>,
         legacyValues: Map<String, *>,
     ): Map<String, Any>? {
-        // Deliberately no AMTool key migration here: AMTool 1.2's
-        // modify_locale / modify_locale_target_tag live in the private
-        // "module_settings" file of the separate com.mukapp.applemusictool
-        // app and are unreadable from AM++ (see AMTOOL_MODIFY_LOCALE_KEY).
         val storedVersion = storedValues.number(KEY_SCHEMA_VERSION)
         if (storedVersion != null && storedVersion >= ModuleConstants.CONFIG_SCHEMA_VERSION) return null
         val source = if (storedValues.hasSettingValue()) storedValues else legacyValues
         return encode(decode(source))
     }
 
-    private fun Map<String, *>.boolean(key: String, default: Boolean): Boolean =
-        this[key] as? Boolean ?: default
+    private fun Map<String, *>.boolean(key: String, default: Boolean): Boolean = this[key] as? Boolean ?: default
 
     private fun Map<String, *>.number(key: String): Int? = (this[key] as? Number)?.toInt()
 
@@ -184,6 +170,7 @@ internal object ModuleSettingsSchema {
         KEY_FUTURE_BLUR,
         KEY_NAVIGATION_COMPENSATION,
         KEY_LYRIC_BLUR_RADIUS_OFFSET,
+        KEY_USB_BIT_PERFECT,
         KEY_TITLE_CORRECTION_ENABLED,
         KEY_TITLE_CORRECTION_TARGET_LANGUAGE,
         KEY_CUSTOM_LYRICS_ENABLED,
@@ -204,12 +191,12 @@ internal object ModuleSettingsSchema {
     )
 
     private const val KEY_DUAL_PANE = "dual_pane_enabled"
-    private const val KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET =
-        "disable_editorial_video_on_tablet"
+    private const val KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET = "disable_editorial_video_on_tablet"
     private const val KEY_PHONE_LIQUID_GLASS = "phone_liquid_glass_enabled"
     private const val KEY_FUTURE_BLUR = "future_blur_enabled"
     private const val KEY_NAVIGATION_COMPENSATION = "navigation_compensation_enabled"
     private const val KEY_LYRIC_BLUR_RADIUS_OFFSET = "lyric_blur_radius_offset_px"
+    private const val KEY_USB_BIT_PERFECT = "usb_bit_perfect_enabled"
     private const val KEY_TITLE_CORRECTION_ENABLED = "title_correction_enabled"
     private const val KEY_TITLE_CORRECTION_TARGET_LANGUAGE = "title_correction_target_language"
     private const val KEY_CUSTOM_LYRICS_ENABLED = "custom_lyrics_enabled"
@@ -226,20 +213,6 @@ internal object ModuleSettingsSchema {
     private const val KEY_CUSTOM_LYRICS_INDEX_SIZE_BYTES = "custom_lyrics_index_size_bytes"
     private const val KEY_SCHEMA_VERSION = "schema_version"
 
-    /**
-     * AMTool 1.2's own config keys, verified from AMTool_1.2.apk: the
-     * `com.mukapp.applemusictool` module stores exactly `modify_locale` and
-     * `modify_locale_target_tag` in ITS private `module_settings`
-     * SharedPreferences and never writes them into the host's preferences.
-     *
-     * These constants are documentation only.  Android app-data isolation
-     * means neither the AM++ settings process nor the Apple Music hook
-     * process can open another package's private storage, so a real read
-     * migration is not implementable: [decode] ignores the keys, [encode]
-     * never emits them, and they must NOT be added to [settingKeys] — doing
-     * so would make an AMTool-owned key look like a migrated AM++ setting.
-     * A user moving from AMTool to AM++ re-enters the target language once.
-     */
     internal const val AMTOOL_MODIFY_LOCALE_KEY = "modify_locale"
     internal const val AMTOOL_MODIFY_LOCALE_TARGET_TAG_KEY = "modify_locale_target_tag"
 }
