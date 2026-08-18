@@ -41,9 +41,9 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
     }
 
     private fun injectIfNeeded(activity: SettingsActivity) {
+        if (!activity.window.decorView.containsText("AM++")) return
         val content = activity.window.decorView.findDescendant<ScrollView>()
             ?.getChildAt(0) as? LinearLayout ?: return
-        if (!content.containsText("AM++")) return
         if (content.findViewWithTag<View>(CARD_TAG) != null) return
 
         val density = activity.resources.displayMetrics.density
