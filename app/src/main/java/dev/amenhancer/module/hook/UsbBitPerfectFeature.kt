@@ -1,6 +1,7 @@
 package dev.amenhancer.module.hook
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -47,27 +48,33 @@ internal class AppleMusicUsbBitPerfectTarget(
 internal object UsbBitPerfectController {
     fun tryApply(context: Context, track: AudioTrack) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        val attributes = track.audioAttributes
+        if (attributes.usage != AudioAttributes.USAGE_MEDIA) return
         val manager = context.getSystemService(AudioManager::class.java) ?: return
         val routed = runCatching { track.routedDevice }.getOrNull() ?: return
-        if (!routed.isUsbAudioOutput()) {
-            clearPreference(manager, track.audioAttributes)
-            return
-        }
+        if (!routed.isUsbAudioOutput()) return
+
         val trackFormat = track.format
-        val selected = manager.getSupportedMixerAttributes(routed)
+        val selected = runCatching { manager.getSupportedMixerAttributes(routed) }
+            .getOrDefault(emptyList())
             .asSequence()
             .filter { it.mixerBehavior == AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT }
             .firstOrNull { candidate -> candidate.format.matchesExactly(trackFormat) }
+
         if (selected == null) {
-            clearPreference(manager, track.audioAttributes)
+            runCatching { manager.clearPreferredMixerAttributes(attributes, routed) }
             ModernXposedRuntime.log(
                 "usb_bit_perfect: no exact mixer format for ${trackFormat.describe()} on ${routed.productName}",
             )
             return
         }
+
         val applied = runCatching {
-            manager.setPreferredMixerAttributes(track.audioAttributes, routed, selected)
-        }.getOrDefault(false)
+            manager.setPreferredMixerAttributes(attributes, routed, selected)
+        }.getOrElse { error ->
+            ModernXposedRuntime.log("usb_bit_perfect: mixer request failed", error)
+            false
+        }
         ModernXposedRuntime.log(
             if (applied) {
                 "usb_bit_perfect: active ${selected.format.describe()} on ${routed.productName}"
@@ -77,14 +84,11 @@ internal object UsbBitPerfectController {
         )
     }
 
-    private fun clearPreference(manager: AudioManager, attributes: android.media.AudioAttributes) {
-        runCatching { manager.clearPreferredMixerAttributes(attributes) }
-    }
-
     internal fun AudioFormat.matchesExactly(other: AudioFormat): Boolean =
         sampleRate == other.sampleRate &&
             encoding == other.encoding &&
-            channelCount == other.channelCount
+            channelMask == other.channelMask &&
+            channelIndexMask == other.channelIndexMask
 
     internal fun AudioDeviceInfo.isUsbAudioOutput(): Boolean = isSink && when (type) {
         AudioDeviceInfo.TYPE_USB_DEVICE,
