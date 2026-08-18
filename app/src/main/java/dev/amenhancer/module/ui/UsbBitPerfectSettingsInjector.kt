@@ -42,7 +42,7 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
 
     private fun injectIfNeeded(activity: SettingsActivity) {
         if (!activity.window.decorView.containsText("AM++")) return
-        val content = activity.window.decorView.findDescendant<ScrollView>()
+        val content = activity.window.decorView.findDescendantScrollView()
             ?.getChildAt(0) as? LinearLayout ?: return
         if (content.findViewWithTag<View>(CARD_TAG) != null) return
 
@@ -114,11 +114,12 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
         })
     }
 
-    private inline fun <reified T : View> View.findDescendant(): T? {
-        if (this is T) return this
+    private fun View.findDescendantScrollView(): ScrollView? {
+        if (this is ScrollView) return this
         val group = this as? ViewGroup ?: return null
         for (index in 0 until group.childCount) {
-            group.getChildAt(index).findDescendant<T>()?.let { return it }
+            val found = group.getChildAt(index).findDescendantScrollView()
+            if (found != null) return found
         }
         return null
     }
