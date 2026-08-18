@@ -190,9 +190,6 @@ internal fun targetBuild(context: Context): TargetBuild = runCatching {
 }.getOrDefault(TargetBuild.UNKNOWN)
 
 private fun productionFeatureInstallationModule(): FeatureInstallationModule {
-    // The same session is used by resource callbacks registered before
-    // Application.onCreate and by lifecycle hooks installed afterwards.
-    // It owns the one lazy remote-file open and Typeface build.
     val lyricsTypefaceSession = LyricsTypefaceSession()
     return FeatureInstallationModule(
         plans = listOf(
@@ -218,6 +215,7 @@ private fun productionFeatureInstallationModule(): FeatureInstallationModule {
             FeatureInstallationPlan(feature = TitleCorrectionFeature()),
             FeatureInstallationPlan(feature = CatalogLanguageFeature()),
             FeatureInstallationPlan(feature = CustomLyricsFeature()),
+            FeatureInstallationPlan(feature = UsbBitPerfectFeature()),
         ),
         installLayoutInflationHooks = LayoutInflationRegistry::install,
         registerApplicationCreated = { config, targetClassLoader, onCreated ->
