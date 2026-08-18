@@ -11,11 +11,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Guards ConfigStore.saveSettings' write contract: an ordinary runtime write
- * must never carry a remote-file manifest key, so a stale ModuleSettings
- * cannot overwrite a manifest committed by a file transaction afterwards.
- */
 class OrdinarySettingsWritePolicyTest {
     private val committedManifest = LyricsFontManifest(
         enabled = true,
@@ -25,7 +20,6 @@ class OrdinarySettingsWritePolicyTest {
         sha256 = "0cba697d61a21fb62408b2411aa2152d1bc24cc2414d2bd162f70e04d20c5e53",
     )
 
-    /** Captured before the import: it still holds the disabled default manifest. */
     private val staleSettings = ModuleSettings(
         dualPaneEnabled = false,
         futureBlurEnabled = false,
@@ -71,14 +65,9 @@ class OrdinarySettingsWritePolicyTest {
             putAll(ModuleSettingsSchema.encodeFontManifest(committedManifest))
             putAll(ModuleSettingsSchema.encodeCustomLyricsManifest(customLyricsManifest))
         }
-
         val ordinaryWrite = ModuleSettingsSchema.encodeOrdinarySettings(staleSettings)
         val merged = currentPreferences + ordinaryWrite
-
-        assertFalse(
-            "ordinary write must not touch any font manifest key",
-            ordinaryWrite.keys.any(fontKeys::contains),
-        )
+        assertFalse("ordinary write must not touch any font manifest key", ordinaryWrite.keys.any(fontKeys::contains))
         val decoded = ModuleSettingsSchema.decode(merged)
         assertEquals(committedManifest, decoded.fontManifest)
         assertEquals(false, decoded.dualPaneEnabled)
@@ -95,10 +84,10 @@ class OrdinarySettingsWritePolicyTest {
                 phoneLiquidGlassEnabled = true,
                 futureBlurEnabled = false,
                 lyricBlurRadiusOffsetPx = 6,
+                usbBitPerfectEnabled = true,
                 fontManifest = committedManifest,
             ),
         )
-
         assertEquals(
             mapOf(
                 "dual_pane_enabled" to false,
@@ -107,6 +96,7 @@ class OrdinarySettingsWritePolicyTest {
                 "future_blur_enabled" to false,
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 6,
+                "usb_bit_perfect_enabled" to true,
                 "title_correction_enabled" to false,
                 "title_correction_target_language" to "tr-TR",
                 "custom_lyrics_enabled" to false,
@@ -120,16 +110,10 @@ class OrdinarySettingsWritePolicyTest {
 
     @Test
     fun `full schema encode keeps writing the font manifest for migration and upgrade`() {
-        val encoded = ModuleSettingsSchema.encode(
-            ModuleSettings(fontManifest = committedManifest),
-        )
-
+        val encoded = ModuleSettingsSchema.encode(ModuleSettings(fontManifest = committedManifest))
         fontKeys.forEach { key -> assertTrue("full encode must keep $key", encoded.containsKey(key)) }
         assertEquals(committedManifest, ModuleSettingsSchema.decode(encoded).fontManifest)
-        assertEquals(
-            CustomLyricsManifest.empty(),
-            ModuleSettingsSchema.decode(encoded).customLyricsManifest,
-        )
+        assertEquals(CustomLyricsManifest.empty(), ModuleSettingsSchema.decode(encoded).customLyricsManifest)
     }
 
     @Test
@@ -138,24 +122,16 @@ class OrdinarySettingsWritePolicyTest {
             putAll(ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings()))
             putAll(ModuleSettingsSchema.encodeIndexPointer(indexPointer))
         }
-
         val ordinaryWrite = ModuleSettingsSchema.encodeOrdinarySettings(staleSettings)
         val merged = currentPreferences + ordinaryWrite
-
-        assertFalse(
-            "ordinary write must not touch any index pointer key",
-            ordinaryWrite.keys.any(pointerKeys::contains),
-        )
+        assertFalse("ordinary write must not touch any index pointer key", ordinaryWrite.keys.any(pointerKeys::contains))
         assertFalse("ordinary write must not carry the legacy manifest key", ordinaryWrite.containsKey("custom_lyrics_manifest"))
         assertEquals(indexPointer, ModuleSettingsSchema.decodeIndexPointer(merged))
     }
 
     @Test
     fun `full schema encode never emits the index pointer keys`() {
-        val encoded = ModuleSettingsSchema.encode(
-            ModuleSettings(customLyricsManifest = customLyricsManifest),
-        )
-
+        val encoded = ModuleSettingsSchema.encode(ModuleSettings(customLyricsManifest = customLyricsManifest))
         assertFalse(encoded.keys.any(pointerKeys::contains))
         assertTrue(encoded.containsKey("custom_lyrics_manifest"))
     }
