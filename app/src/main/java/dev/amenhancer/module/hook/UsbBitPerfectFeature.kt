@@ -95,14 +95,14 @@ internal object UsbBitPerfectController {
     ): AudioDeviceInfo? {
         if (afterStart) {
             runCatching { track.routedDevice }.getOrNull()
-                ?.takeIf(AudioDeviceInfo::isUsbAudioOutput)
+                ?.takeIf { it.isUsbAudioOutput() }
                 ?.let { return it }
         }
         runCatching { track.preferredDevice }.getOrNull()
-            ?.takeIf(AudioDeviceInfo::isUsbAudioOutput)
+            ?.takeIf { it.isUsbAudioOutput() }
             ?.let { return it }
         val usbOutputs = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .filter(AudioDeviceInfo::isUsbAudioOutput)
+            .filter { it.isUsbAudioOutput() }
         return usbOutputs.singleOrNull()
     }
 
