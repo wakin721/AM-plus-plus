@@ -4,7 +4,7 @@ object ModuleConstants {
     const val MODULE_PACKAGE = "dev.amenhancer.module"
     const val TARGET_PACKAGE = "com.apple.android.music"
     const val REMOTE_PREFERENCES_GROUP = "settings"
-    const val CONFIG_SCHEMA_VERSION = 9
+    const val CONFIG_SCHEMA_VERSION = 10
 
     const val FEATURE_DUAL_PANE = "dual_pane"
     const val FEATURE_EDITORIAL_VIDEO = "editorial_video"
@@ -16,4 +16,5 @@ object ModuleConstants {
     const val FEATURE_TITLE_CORRECTION = "title_correction"
     const val FEATURE_CATALOG_LANGUAGE = "catalog_language"
     const val FEATURE_LIBRARY_REFRESH = "library_refresh"
+    const val FEATURE_USB_BIT_PERFECT = "usb_bit_perfect"
 }
