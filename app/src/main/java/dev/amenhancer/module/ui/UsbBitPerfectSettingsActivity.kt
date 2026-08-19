@@ -25,6 +25,7 @@ import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import dev.amenhancer.module.XposedServiceSnapshot
 import dev.amenhancer.module.config.ConfigStore
+import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 
 /** Dedicated USB output settings and live audio-path diagnostics page. */
 class UsbBitPerfectSettingsActivity : Activity() {
@@ -32,6 +33,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
     private lateinit var requester: UsbBitPerfectStatusRequester
     private lateinit var palette: Palette
     private lateinit var toggle: Switch
+    private lateinit var directToggle: Switch
     private lateinit var exclusiveToggle: Switch
     private lateinit var statusTitle: TextView
     private lateinit var statusMessage: TextView
@@ -49,6 +51,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
         store = ConfigStore(this)
         requester = UsbBitPerfectStatusRequester(this)
         palette = Palette.resolve(this)
+        syncUsbAttachHandling()
         configureSystemBars()
         setContentView(buildScreen().also(::applySystemBarInsets))
         updateToggles(ModuleApplication.serviceSnapshot)
@@ -133,7 +136,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
             addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
-                    text = "启用 USB Bit-Perfect"
+                    text = "启用 USB 音频增强"
                     textSize = 17f
                     setTextColor(palette.onSurface)
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -147,19 +150,17 @@ class UsbBitPerfectSettingsActivity : Activity() {
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             toggle = Switch(this@UsbBitPerfectSettingsActivity).apply {
                 showText = false
-                contentDescription = "启用 USB Bit-Perfect"
+                contentDescription = "启用 USB 音频增强"
                 setOnCheckedChangeListener { _, enabled ->
                     if (suppressToggleCallback) return@setOnCheckedChangeListener
                     store.saveSettings(store.settings().copy(usbBitPerfectEnabled = enabled))
-                    if (::exclusiveToggle.isInitialized) {
-                        exclusiveToggle.isEnabled = enabled && ModuleApplication.serviceSnapshot.isRemoteAvailable
-                        exclusiveToggle.alpha = if (exclusiveToggle.isEnabled) 1f else 0.58f
-                    }
+                    syncUsbAttachHandling()
+                    updateChildToggleEnabledState()
                     statusTitle.text = "等待重启 Apple Music"
                     statusMessage.text = if (enabled) {
-                        "USB 输出功能将在 Apple Music 下次启动时安装；开始播放后刷新即可核验链路。"
+                        "USB 输出 Hook 将在 Apple Music 下次启动时安装；开始播放后刷新即可核验链路。"
                     } else {
-                        "关闭将在 Apple Music 下次启动后完全生效。"
+                        "关闭将在 Apple Music 下次启动后完全生效；USB attach 处理同时关闭。"
                     }
                     mixerValue.text = "等待 Apple Music 重启"
                 }
@@ -173,18 +174,68 @@ class UsbBitPerfectSettingsActivity : Activity() {
         addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(108)
+            minimumHeight = dp(124)
             setPadding(dp(16), dp(14), dp(10), dp(14))
             addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
-                    text = "实验性 AAudio 独占输出"
+                    text = "实验性 USB 直通独占"
                     textSize = 17f
                     setTextColor(palette.onSurface)
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
-                    text = "尝试接管 Java AudioTrack.write PCM 并请求 EXCLUSIVE；任何环节失败都会恢复原输出"
+                    text = "Android USB Host 授权 → claim AudioStreaming interface → native usbfs isochronous；第一版暂不支持异步 feedback DAC"
+                    textSize = 13.5f
+                    setTextColor(palette.onSurfaceVariant)
+                    setPadding(0, dp(4), dp(8), 0)
+                })
+                addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                    text = "开启会立即请求当前 DAC 的系统 USB 权限；重新插入 DAC 时也可出现系统原生 USB 打开/授权界面。"
+                    textSize = 12.5f
+                    setTextColor(palette.onSurfaceVariant)
+                    setPadding(0, dp(5), dp(8), 0)
+                })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            directToggle = Switch(this@UsbBitPerfectSettingsActivity).apply {
+                showText = false
+                contentDescription = "实验性 USB 直通独占"
+                setOnCheckedChangeListener { _, enabled ->
+                    if (suppressToggleCallback) return@setOnCheckedChangeListener
+                    store.saveSettings(store.settings().copy(usbDirectUacEnabled = enabled))
+                    syncUsbAttachHandling()
+                    statusTitle.text = "等待重启 Apple Music"
+                    statusMessage.text = if (enabled) {
+                        UsbDirectPermissionActivity.requestCurrentDevice(this@UsbBitPerfectSettingsActivity)
+                        "已启用 USB Host 授权入口。授权 DAC 后重启 Apple Music；USB Direct 会优先于 AAudio 尝试。"
+                    } else {
+                        "已关闭 USB Direct attach 处理；重启 Apple Music 后回到 AAudio/Bit-Perfect 路径。"
+                    }
+                }
+            }
+            addView(directToggle, LinearLayout.LayoutParams(dp(64), dp(48)))
+            setOnClickListener {
+                if (directToggle.isEnabled) directToggle.isChecked = !directToggle.isChecked
+            }
+        })
+
+        addView(divider())
+
+        addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(108)
+            setPadding(dp(16), dp(14), dp(10), dp(14))
+            addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                    text = "实验性 AAudio 独占回退"
+                    textSize = 17f
+                    setTextColor(palette.onSurface)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                })
+                addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                    text = "USB Direct 未建立时，尝试接管 Java AudioTrack.write PCM 并请求 AAudio EXCLUSIVE"
                     textSize = 13.5f
                     setTextColor(palette.onSurfaceVariant)
                     setPadding(0, dp(4), dp(8), 0)
@@ -192,15 +243,15 @@ class UsbBitPerfectSettingsActivity : Activity() {
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             exclusiveToggle = Switch(this@UsbBitPerfectSettingsActivity).apply {
                 showText = false
-                contentDescription = "实验性 AAudio 独占输出"
+                contentDescription = "实验性 AAudio 独占回退"
                 setOnCheckedChangeListener { _, enabled ->
                     if (suppressToggleCallback) return@setOnCheckedChangeListener
                     store.saveSettings(store.settings().copy(usbExclusiveAaudioEnabled = enabled))
                     statusTitle.text = "等待重启 Apple Music"
                     statusMessage.text = if (enabled) {
-                        "重启 Apple Music 后，AM++ 会先确认可接管 PCM 写入，再尝试 AAudio EXCLUSIVE。"
+                        "重启 Apple Music 后，USB Direct 失败时才会尝试 AAudio EXCLUSIVE。"
                     } else {
-                        "重启 Apple Music 后将只使用 Bit-Perfect/系统输出路径。"
+                        "重启 Apple Music 后，USB Direct 失败将直接回退 Bit-Perfect/系统输出。"
                     }
                 }
             }
@@ -225,7 +276,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         })
         addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
-            text = "独占模式尝试接管 AudioTrack.write 的解码后 PCM；这里只显示解码后数据，不代表原始 ALAC 元数据。"
+            text = "优先 USB Direct UAC；失败后才回退 AAudio/Android mixer。链路从 Apple Music 解码后的 AudioTrack PCM 开始，不代表原始 ALAC 元数据。"
             textSize = 13f
             setTextColor(palette.onSurfaceVariant)
             setPadding(0, dp(4), 0, dp(12))
@@ -245,7 +296,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
         addView(apple.root)
         addView(pathArrow())
 
-        val mixer = pathNode("Android 输出路径", "等待实时状态")
+        val mixer = pathNode("输出引擎", "等待实时状态")
         mixerValue = mixer.value
         addView(mixer.root)
         addView(pathArrow())
@@ -255,7 +306,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
         addView(usb.root)
 
         statusMessage = TextView(this@UsbBitPerfectSettingsActivity).apply {
-            text = "正在向 Apple Music 进程读取实时 AudioTrack / AAudio / USB 状态"
+            text = "正在向 Apple Music 进程读取实时 AudioTrack / USB Direct / AAudio 状态"
             textSize = 13.5f
             setTextColor(palette.onSurfaceVariant)
             setPadding(0, dp(14), 0, 0)
@@ -310,16 +361,34 @@ class UsbBitPerfectSettingsActivity : Activity() {
     }
 
     private fun updateToggles(snapshot: XposedServiceSnapshot) {
-        if (!::toggle.isInitialized || !::exclusiveToggle.isInitialized) return
+        if (!::toggle.isInitialized || !::directToggle.isInitialized || !::exclusiveToggle.isInitialized) return
         val settings = store.settings()
         suppressToggleCallback = true
         toggle.isChecked = settings.usbBitPerfectEnabled
         toggle.isEnabled = snapshot.isRemoteAvailable
         toggle.alpha = if (toggle.isEnabled) 1f else 0.58f
+        directToggle.isChecked = settings.usbDirectUacEnabled
         exclusiveToggle.isChecked = settings.usbExclusiveAaudioEnabled
-        exclusiveToggle.isEnabled = snapshot.isRemoteAvailable && settings.usbBitPerfectEnabled
-        exclusiveToggle.alpha = if (exclusiveToggle.isEnabled) 1f else 0.58f
         suppressToggleCallback = false
+        updateChildToggleEnabledState()
+        syncUsbAttachHandling()
+    }
+
+    private fun updateChildToggleEnabledState() {
+        if (!::directToggle.isInitialized || !::exclusiveToggle.isInitialized) return
+        val parentEnabled = store.settings().usbBitPerfectEnabled && ModuleApplication.serviceSnapshot.isRemoteAvailable
+        directToggle.isEnabled = parentEnabled
+        directToggle.alpha = if (parentEnabled) 1f else 0.58f
+        exclusiveToggle.isEnabled = parentEnabled
+        exclusiveToggle.alpha = if (parentEnabled) 1f else 0.58f
+    }
+
+    private fun syncUsbAttachHandling() {
+        val settings = store.settings()
+        UsbDirectPermissionActivity.setAttachHandlingEnabled(
+            this,
+            settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled,
+        )
     }
 
     private fun refreshStatus() {
@@ -335,7 +404,7 @@ class UsbBitPerfectSettingsActivity : Activity() {
             return
         }
         statusTitle.text = "正在检查…"
-        statusMessage.text = "正在向 Apple Music 进程读取实时 AudioTrack / AAudio / USB 状态"
+        statusMessage.text = "正在向 Apple Music 进程读取实时 AudioTrack / USB Direct / AAudio 状态"
         requester.request { status ->
             if (isFinishing || isDestroyed) return@request
             renderStatus(status, enabled)
@@ -357,6 +426,13 @@ class UsbBitPerfectSettingsActivity : Activity() {
         }
 
         val stateTitle = when (status.state) {
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_ARMED -> "USB 直通待命"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_PERMISSION_REQUIRED -> "需要 USB 授权"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_ACQUIRING -> "正在取得 USB 独占"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED -> "USB 直通已建立"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE -> "USB 直通独占已激活"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK -> "USB 直通失败，已回退"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_UNSUPPORTED_DEVICE -> "当前 DAC 暂不支持直通"
             UsbBitPerfectStatusProtocol.STATE_ACTIVE -> "Bit-Perfect 已激活"
             UsbBitPerfectStatusProtocol.STATE_CONFIGURED -> "已配置，等待路由"
             UsbBitPerfectStatusProtocol.STATE_WAITING_PLAYBACK -> "等待播放"
@@ -366,17 +442,18 @@ class UsbBitPerfectSettingsActivity : Activity() {
             UsbBitPerfectStatusProtocol.STATE_FORMAT_UNSUPPORTED -> "格式不匹配"
             UsbBitPerfectStatusProtocol.STATE_REQUEST_FAILED -> "请求失败"
             UsbBitPerfectStatusProtocol.STATE_UNSUPPORTED_ANDROID -> "系统不支持"
-            UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ARMED -> "独占模式待命"
+            UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ARMED -> "AAudio 独占待命"
             UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_READY -> "已检测可接管 PCM"
             UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_CONFIGURED -> "AAudio 独占流已建立"
             UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE -> "AAudio 独占已激活"
-            UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_FALLBACK -> "独占失败，已回退"
+            UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_FALLBACK -> "AAudio 独占失败，已回退"
             UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_UNSUPPORTED_PATH -> "无法安全接管"
             else -> "未激活"
         }
         statusTitle.text = if (!enabled && (
                 status.state == UsbBitPerfectStatusProtocol.STATE_ACTIVE ||
-                    status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE
+                    status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE ||
+                    status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE
             )
         ) {
             "仍在运行（需重启）"
@@ -391,6 +468,8 @@ class UsbBitPerfectSettingsActivity : Activity() {
         ) ?: when (status.state) {
             UsbBitPerfectStatusProtocol.STATE_WAITING_PLAYBACK,
             UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ARMED,
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_ARMED,
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_PERMISSION_REQUIRED,
             -> "等待媒体 AudioTrack"
             else -> "未报告 AudioTrack 格式"
         }
@@ -401,6 +480,20 @@ class UsbBitPerfectSettingsActivity : Activity() {
             status.mixerChannels,
         )
         mixerValue.text = when {
+            mixerFormat != null && status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE ->
+                "$mixerFormat · USB DIRECT · usbfs ISO PCM"
+            mixerFormat != null && status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED ->
+                "$mixerFormat · USB DIRECT · interface 已 claim"
+            status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_ACQUIRING ->
+                "USB Host → claim interface → 配置 UAC"
+            status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_PERMISSION_REQUIRED ->
+                "USB Host 权限未授权 · 请在 AM++ 重新请求"
+            status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_UNSUPPORTED_DEVICE ->
+                "USB Direct 不支持当前 UAC endpoint/feedback 条件"
+            status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK ->
+                "USB Direct 未建立 · 正在/可回退 AAudio"
+            status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_ARMED ->
+                "USB DIRECT · 等待 Java PCM"
             mixerFormat != null && status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE ->
                 "$mixerFormat · AAUDIO EXCLUSIVE · PCM 已接管"
             mixerFormat != null && status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_CONFIGURED ->
@@ -428,6 +521,8 @@ class UsbBitPerfectSettingsActivity : Activity() {
         }
 
         usbValue.text = status.deviceName ?: when (status.state) {
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_PERMISSION_REQUIRED -> "等待系统 USB Host 授权"
+            UsbBitPerfectStatusProtocol.STATE_DIRECT_ACQUIRING -> "正在打开已授权 USB DAC"
             UsbBitPerfectStatusProtocol.STATE_NO_USB_DEVICE -> "未检测到 USB 音频输出"
             UsbBitPerfectStatusProtocol.STATE_WAITING_ROUTE -> "等待系统确定 USB 路由"
             else -> "未报告 USB 设备名称"
@@ -436,7 +531,8 @@ class UsbBitPerfectSettingsActivity : Activity() {
         val details = mutableListOf<String>()
         if (!enabled && (
                 status.state == UsbBitPerfectStatusProtocol.STATE_ACTIVE ||
-                    status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE
+                    status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE ||
+                    status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE
             )
         ) {
             details += "当前 Apple Music 进程仍在使用已安装的 USB 输出 Hook；重启后将按关闭设置生效。"
