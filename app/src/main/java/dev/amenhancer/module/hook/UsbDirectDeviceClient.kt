@@ -12,7 +12,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
-import dev.amenhancer.module.ModuleConstants
+import dev.amenhancer.module.BuildConfig
 import dev.amenhancer.module.UsbDirectIpc
 
 /** Cross-process client for the permission-owning AM++ USB broker service. */
@@ -114,7 +114,7 @@ internal object UsbDirectDeviceClient {
             val bound = runCatching {
                 application.bindService(
                     Intent().setComponent(
-                        ComponentName(ModuleConstants.MODULE_PACKAGE, UsbDirectIpc.SERVICE_CLASS),
+                        ComponentName(BuildConfig.APPLICATION_ID, UsbDirectIpc.SERVICE_CLASS),
                     ),
                     connection,
                     Context.BIND_AUTO_CREATE,
@@ -122,7 +122,9 @@ internal object UsbDirectDeviceClient {
             }.getOrDefault(false)
             if (!bound) {
                 serviceConnection = null
-                failPendingLocked("Unable to bind AM++ USB Direct broker")
+                failPendingLocked(
+                    "Unable to bind AM++ USB Direct broker (${BuildConfig.APPLICATION_ID})",
+                )
             }
             return bound
         }
