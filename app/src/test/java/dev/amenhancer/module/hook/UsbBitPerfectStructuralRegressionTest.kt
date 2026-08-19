@@ -45,8 +45,12 @@ class UsbBitPerfectStructuralRegressionTest {
             "app/src/main/java/dev/amenhancer/module/config/ModuleSettingsSchema.kt",
         )
 
-        assertTrue(feature.contains("context.config.settings().usbBitPerfectEnabled"))
+        assertTrue(feature.contains("val settings = context.config.settings()"))
+        assertTrue(feature.contains("if (!settings.usbBitPerfectEnabled)"))
+        assertTrue(feature.contains("UsbExclusiveAaudioController.configure(settings.usbExclusiveAaudioEnabled)"))
         assertTrue(model.contains("val usbBitPerfectEnabled: Boolean = false"))
+        assertTrue(model.contains("val usbExclusiveAaudioEnabled: Boolean = false"))
         assertTrue(schema.contains("usb_bit_perfect_enabled"))
+        assertTrue(schema.contains("usb_exclusive_aaudio_enabled"))
     }
 }
