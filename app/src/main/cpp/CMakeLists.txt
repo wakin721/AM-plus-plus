@@ -5,6 +5,7 @@ add_library(
     ampp_audio
     SHARED
     UsbExclusiveAaudio.cpp
+    UsbDirectUac.cpp
 )
 
 target_compile_features(ampp_audio PRIVATE cxx_std_17)
