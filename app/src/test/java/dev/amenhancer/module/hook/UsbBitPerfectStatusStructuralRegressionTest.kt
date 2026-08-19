@@ -53,16 +53,23 @@ class UsbBitPerfectStatusStructuralRegressionTest {
     @Test
     fun `settings distinguishes enabled configuration from live activation`() {
         val ui = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsInjector.kt",
+            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
         )
 
-        assertTrue(ui.contains("text = \"运行状态\""))
+        val togglePosition = ui.indexOf("addView(toggleCard())")
+        val pathPosition = ui.indexOf("addView(audioPathCard())")
+        assertTrue(togglePosition >= 0)
+        assertTrue(pathPosition > togglePosition)
+        assertTrue(ui.contains("text = \"启用 USB Bit-Perfect\""))
+        assertTrue(ui.contains("text = \"音频链路\""))
+        assertTrue(ui.contains("pathNode(\"Apple Music AudioTrack\""))
+        assertTrue(ui.contains("pathNode(\"Android Mixer\""))
+        assertTrue(ui.contains("pathNode(\"USB DAC\""))
         assertTrue(ui.contains("text = \"刷新状态\""))
         assertTrue(ui.contains("STATE_ACTIVE -> \"已激活\""))
         assertTrue(ui.contains("STATE_FORMAT_UNSUPPORTED -> \"格式不匹配\""))
         assertTrue(ui.contains("STATE_REQUEST_FAILED -> \"请求失败\""))
-        assertTrue(ui.contains("USB Mixer："))
-        assertTrue(ui.contains("Apple Music："))
+        assertTrue(ui.contains("BIT_PERFECT 已核验"))
         assertTrue(ui.contains("等待重启 Apple Music"))
     }
 }
