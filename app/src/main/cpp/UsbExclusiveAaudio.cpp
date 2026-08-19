@@ -145,8 +145,6 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
     AAudioStreamBuilder_setSampleRate(builder, sampleRate);
     AAudioStreamBuilder_setChannelCount(builder, channels);
     AAudioStreamBuilder_setFormat(builder, requestedFormat);
-    AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_MEDIA);
-    AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC);
 
     AAudioStream* stream = nullptr;
     result = AAudioStreamBuilder_openStream(builder, &stream);
