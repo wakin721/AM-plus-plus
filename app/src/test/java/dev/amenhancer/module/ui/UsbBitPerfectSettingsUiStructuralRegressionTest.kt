@@ -31,7 +31,7 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
     }
 
     @Test
-    fun `detail page places the switch above the live audio path`() {
+    fun `detail page places output switches above the live audio path`() {
         val activity = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
         )
@@ -42,12 +42,14 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
         assertTrue(togglePosition >= 0)
         assertTrue(pathPosition > togglePosition)
         assertTrue(activity.contains("text = \"启用 USB Bit-Perfect\""))
+        assertTrue(activity.contains("text = \"实验性 AAudio 独占输出\""))
+        assertTrue(activity.contains("usbExclusiveAaudioEnabled = enabled"))
         assertTrue(activity.contains("text = \"音频链路\""))
         assertTrue(activity.contains("pathNode(\"Apple Music AudioTrack\""))
-        assertTrue(activity.contains("pathNode(\"Android Mixer\""))
+        assertTrue(activity.contains("pathNode(\"Android 输出路径\""))
         assertTrue(activity.contains("pathNode(\"USB DAC\""))
         assertTrue(activity.contains("UsbBitPerfectStatusRequester(this)"))
-        assertTrue(activity.contains("从 Apple Music 解码后的 AudioTrack 开始显示"))
+        assertTrue(activity.contains("独占模式尝试接管 AudioTrack.write"))
         assertTrue(manifest.contains(".ui.UsbBitPerfectSettingsActivity"))
         assertTrue(manifest.contains("android:exported=\"false\""))
     }

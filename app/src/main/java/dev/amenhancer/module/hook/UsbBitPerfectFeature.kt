@@ -25,9 +25,12 @@ internal class UsbBitPerfectFeature : FeatureHook {
     override val key: String = ModuleConstants.FEATURE_USB_BIT_PERFECT
 
     override fun install(context: HookContext): FeatureInstallResult {
-        if (!context.config.settings().usbBitPerfectEnabled) {
+        val settings = context.config.settings()
+        if (!settings.usbBitPerfectEnabled) {
+            UsbExclusiveAaudioController.configure(false)
             return FeatureInstallResult.disabled()
         }
+        UsbExclusiveAaudioController.configure(settings.usbExclusiveAaudioEnabled)
         return context.target.usbBitPerfect.install().toFeatureInstallResult()
     }
 }
@@ -48,21 +51,71 @@ internal class AppleMusicUsbBitPerfectTarget(
                 "USB Bit-Perfect status request receiver could not be registered",
             )
         }
+
         val play = AudioTrack::class.java.getDeclaredMethod("play")
         ModernXposedRuntime.hookMethod(play, object : ModernMethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 val track = param.thisObject as? AudioTrack ?: return
+                if (UsbExclusiveAaudioController.beforePlay(application, track)) {
+                    param.result = null
+                    return
+                }
                 UsbBitPerfectController.tryApply(application, track, afterStart = false)
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
                 if (param.throwable != null) return
                 val track = param.thisObject as? AudioTrack ?: return
+                if (UsbExclusiveAaudioController.isActive(track)) return
                 UsbBitPerfectController.tryApply(application, track, afterStart = true)
             }
         })
+
+        ModernXposedRuntime.hookAllMethods(
+            AudioTrack::class.java,
+            "write",
+            object : ModernMethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val track = param.thisObject as? AudioTrack ?: return
+                    UsbExclusiveAaudioController.interceptWrite(track, param.args)?.let { written ->
+                        param.result = written
+                    }
+                }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    if (param.throwable != null) return
+                    val track = param.thisObject as? AudioTrack ?: return
+                    if (UsbExclusiveAaudioController.isActive(track)) return
+                    UsbExclusiveAaudioController.afterOriginalWrite(
+                        application,
+                        track,
+                        param.args,
+                        param.result,
+                    )
+                }
+            },
+        )
+
+        listOf("pause", "stop", "flush", "release").forEach { operation ->
+            ModernXposedRuntime.hookAllMethods(
+                AudioTrack::class.java,
+                operation,
+                object : ModernMethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val track = param.thisObject as? AudioTrack ?: return
+                        UsbExclusiveAaudioController.onTransportControl(track, operation)
+                    }
+                },
+            )
+        }
+
         return TargetCapabilityInstall.Active(
-            "Installed Android 14+ USB Bit-Perfect mixer preference hook on AudioTrack.play",
+            buildString {
+                append("Installed Android 14+ USB Bit-Perfect mixer preference hook on AudioTrack.play")
+                if (UsbExclusiveAaudioController.isEnabled()) {
+                    append(" plus experimental AAudio EXCLUSIVE AudioTrack.write takeover")
+                }
+            },
         )
     }
 }
@@ -176,6 +229,7 @@ internal object UsbBitPerfectController {
     }
 
     fun currentStatus(context: Context): UsbBitPerfectStatusDetails {
+        UsbExclusiveAaudioController.currentStatus(context)?.let { return it }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             return UsbBitPerfectStatusDetails(
                 state = UsbBitPerfectStatusProtocol.STATE_UNSUPPORTED_ANDROID,

@@ -1,0 +1,342 @@
+#include <aaudio/AAudio.h>
+#include <jni.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <mutex>
+#include <sstream>
+#include <string>
+
+namespace {
+
+constexpr int kFormatI16 = 1;
+constexpr int kFormatFloat = 2;
+constexpr int kFormatI24 = 3;
+constexpr int kFormatI32 = 4;
+constexpr int64_t kBlockingWriteTimeoutNanos = 100'000'000LL;
+
+thread_local std::string gLastError;
+
+struct Session {
+    AAudioStream* stream = nullptr;
+    int32_t channels = 0;
+    int32_t bytesPerSample = 0;
+    std::mutex mutex;
+};
+
+void setError(const std::string& message) {
+    gLastError = message;
+}
+
+void setAaudioError(const char* operation, aaudio_result_t result) {
+    std::ostringstream message;
+    message << operation << ": " << AAudio_convertResultToText(result) << " (" << result << ")";
+    setError(message.str());
+}
+
+aaudio_format_t formatForCode(int formatCode) {
+    switch (formatCode) {
+        case kFormatI16:
+            return AAUDIO_FORMAT_PCM_I16;
+        case kFormatFloat:
+            return AAUDIO_FORMAT_PCM_FLOAT;
+        case kFormatI24:
+            return AAUDIO_FORMAT_PCM_I24_PACKED;
+        case kFormatI32:
+            return AAUDIO_FORMAT_PCM_I32;
+        default:
+            return AAUDIO_FORMAT_INVALID;
+    }
+}
+
+int32_t bytesPerSampleForCode(int formatCode) {
+    switch (formatCode) {
+        case kFormatI16:
+            return 2;
+        case kFormatFloat:
+            return 4;
+        case kFormatI24:
+            return 3;
+        case kFormatI32:
+            return 4;
+        default:
+            return 0;
+    }
+}
+
+void closeStream(AAudioStream* stream) {
+    if (stream == nullptr) return;
+    AAudioStream_requestStop(stream);
+    AAudioStream_close(stream);
+}
+
+int32_t writeFrames(Session* session, const uint8_t* data, int32_t frameCount, bool blocking) {
+    if (session == nullptr || session->stream == nullptr || data == nullptr || frameCount < 0) {
+        setError("invalid AAudio write arguments");
+        return -1;
+    }
+    if (frameCount == 0) return 0;
+
+    const int32_t bytesPerFrame = session->bytesPerSample * session->channels;
+    if (bytesPerFrame <= 0) {
+        setError("invalid AAudio frame size");
+        return -1;
+    }
+
+    std::lock_guard<std::mutex> guard(session->mutex);
+    int32_t total = 0;
+    while (total < frameCount) {
+        const int32_t remaining = frameCount - total;
+        const int64_t timeout = blocking ? kBlockingWriteTimeoutNanos : 0;
+        const auto result = AAudioStream_write(
+            session->stream,
+            data + static_cast<int64_t>(total) * bytesPerFrame,
+            remaining,
+            timeout
+        );
+        if (result < 0) {
+            setAaudioError("AAudioStream_write", result);
+            return result;
+        }
+        if (result == 0) break;
+        total += result;
+        if (!blocking) break;
+    }
+    return total;
+}
+
+Session* fromHandle(jlong handle) {
+    return reinterpret_cast<Session*>(static_cast<intptr_t>(handle));
+}
+
+}  // namespace
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
+    JNIEnv*,
+    jclass,
+    jint deviceId,
+    jint sampleRate,
+    jint formatCode,
+    jint channels
+) {
+    gLastError.clear();
+    const auto requestedFormat = formatForCode(formatCode);
+    const int32_t bytesPerSample = bytesPerSampleForCode(formatCode);
+    if (requestedFormat == AAUDIO_FORMAT_INVALID || bytesPerSample == 0) {
+        setError("unsupported PCM format for AAudio exclusive mode");
+        return 0;
+    }
+    if (deviceId <= 0 || sampleRate <= 0 || channels <= 0) {
+        setError("invalid device or AudioTrack format for AAudio exclusive mode");
+        return 0;
+    }
+
+    AAudioStreamBuilder* builder = nullptr;
+    auto result = AAudio_createStreamBuilder(&builder);
+    if (result != AAUDIO_OK || builder == nullptr) {
+        setAaudioError("AAudio_createStreamBuilder", result);
+        return 0;
+    }
+
+    AAudioStreamBuilder_setDirection(builder, AAUDIO_DIRECTION_OUTPUT);
+    AAudioStreamBuilder_setDeviceId(builder, deviceId);
+    AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_EXCLUSIVE);
+    AAudioStreamBuilder_setSampleRate(builder, sampleRate);
+    AAudioStreamBuilder_setChannelCount(builder, channels);
+    AAudioStreamBuilder_setFormat(builder, requestedFormat);
+    AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_MEDIA);
+    AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC);
+
+    AAudioStream* stream = nullptr;
+    result = AAudioStreamBuilder_openStream(builder, &stream);
+    AAudioStreamBuilder_delete(builder);
+    if (result != AAUDIO_OK || stream == nullptr) {
+        setAaudioError("AAudioStreamBuilder_openStream", result);
+        return 0;
+    }
+
+    if (AAudioStream_getSharingMode(stream) != AAUDIO_SHARING_MODE_EXCLUSIVE) {
+        setError("AAudio returned SHARED instead of EXCLUSIVE");
+        closeStream(stream);
+        return 0;
+    }
+    if (AAudioStream_getDeviceId(stream) != deviceId) {
+        std::ostringstream message;
+        message << "AAudio opened deviceId=" << AAudioStream_getDeviceId(stream)
+                << " instead of requested deviceId=" << deviceId;
+        setError(message.str());
+        closeStream(stream);
+        return 0;
+    }
+    if (AAudioStream_getSampleRate(stream) != sampleRate ||
+        AAudioStream_getFormat(stream) != requestedFormat ||
+        AAudioStream_getChannelCount(stream) != channels) {
+        std::ostringstream message;
+        message << "AAudio actual format mismatch: "
+                << AAudioStream_getSampleRate(stream) << "Hz format="
+                << static_cast<int>(AAudioStream_getFormat(stream)) << " channels="
+                << AAudioStream_getChannelCount(stream);
+        setError(message.str());
+        closeStream(stream);
+        return 0;
+    }
+
+    result = AAudioStream_requestStart(stream);
+    if (result != AAUDIO_OK) {
+        setAaudioError("AAudioStream_requestStart", result);
+        closeStream(stream);
+        return 0;
+    }
+
+    auto* session = new Session();
+    session->stream = stream;
+    session->channels = channels;
+    session->bytesPerSample = bytesPerSample;
+    return static_cast<jlong>(reinterpret_cast<intptr_t>(session));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteBytes(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jbyteArray data,
+    jint offsetBytes,
+    jint sizeBytes,
+    jboolean blocking
+) {
+    auto* session = fromHandle(handle);
+    if (session == nullptr || data == nullptr) {
+        setError("AAudio byte write has no active session or buffer");
+        return -1;
+    }
+    const jsize length = env->GetArrayLength(data);
+    if (offsetBytes < 0 || sizeBytes < 0 || offsetBytes > length || sizeBytes > length - offsetBytes) {
+        setError("AAudio byte write range is invalid");
+        return -1;
+    }
+    const int32_t bytesPerFrame = session->bytesPerSample * session->channels;
+    if (bytesPerFrame <= 0 || sizeBytes % bytesPerFrame != 0) {
+        setError("AAudio byte write is not aligned to complete PCM frames");
+        return -1;
+    }
+
+    jboolean copied = JNI_FALSE;
+    jbyte* bytes = env->GetByteArrayElements(data, &copied);
+    if (bytes == nullptr) {
+        setError("GetByteArrayElements failed");
+        return -1;
+    }
+    const int32_t frames = sizeBytes / bytesPerFrame;
+    const int32_t writtenFrames = writeFrames(
+        session,
+        reinterpret_cast<const uint8_t*>(bytes) + offsetBytes,
+        frames,
+        blocking == JNI_TRUE
+    );
+    env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+    return writtenFrames < 0 ? writtenFrames : writtenFrames * bytesPerFrame;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteFloats(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jfloatArray data,
+    jint offsetFloats,
+    jint sizeFloats,
+    jboolean blocking
+) {
+    auto* session = fromHandle(handle);
+    if (session == nullptr || data == nullptr || session->bytesPerSample != 4) {
+        setError("AAudio float write is incompatible with the active session");
+        return -1;
+    }
+    const jsize length = env->GetArrayLength(data);
+    if (offsetFloats < 0 || sizeFloats < 0 || offsetFloats > length || sizeFloats > length - offsetFloats ||
+        sizeFloats % session->channels != 0) {
+        setError("AAudio float write range is invalid");
+        return -1;
+    }
+
+    jboolean copied = JNI_FALSE;
+    jfloat* samples = env->GetFloatArrayElements(data, &copied);
+    if (samples == nullptr) {
+        setError("GetFloatArrayElements failed");
+        return -1;
+    }
+    const int32_t frames = sizeFloats / session->channels;
+    const int32_t writtenFrames = writeFrames(
+        session,
+        reinterpret_cast<const uint8_t*>(samples + offsetFloats),
+        frames,
+        blocking == JNI_TRUE
+    );
+    env->ReleaseFloatArrayElements(data, samples, JNI_ABORT);
+    return writtenFrames < 0 ? writtenFrames : writtenFrames * session->channels;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteShorts(
+    JNIEnv* env,
+    jclass,
+    jlong handle,
+    jshortArray data,
+    jint offsetShorts,
+    jint sizeShorts,
+    jboolean blocking
+) {
+    auto* session = fromHandle(handle);
+    if (session == nullptr || data == nullptr || session->bytesPerSample != 2) {
+        setError("AAudio short write is incompatible with the active session");
+        return -1;
+    }
+    const jsize length = env->GetArrayLength(data);
+    if (offsetShorts < 0 || sizeShorts < 0 || offsetShorts > length || sizeShorts > length - offsetShorts ||
+        sizeShorts % session->channels != 0) {
+        setError("AAudio short write range is invalid");
+        return -1;
+    }
+
+    jboolean copied = JNI_FALSE;
+    jshort* samples = env->GetShortArrayElements(data, &copied);
+    if (samples == nullptr) {
+        setError("GetShortArrayElements failed");
+        return -1;
+    }
+    const int32_t frames = sizeShorts / session->channels;
+    const int32_t writtenFrames = writeFrames(
+        session,
+        reinterpret_cast<const uint8_t*>(samples + offsetShorts),
+        frames,
+        blocking == JNI_TRUE
+    );
+    env->ReleaseShortArrayElements(data, samples, JNI_ABORT);
+    return writtenFrames < 0 ? writtenFrames : writtenFrames * session->channels;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeClose(
+    JNIEnv*,
+    jclass,
+    jlong handle
+) {
+    auto* session = fromHandle(handle);
+    if (session == nullptr) return;
+    {
+        std::lock_guard<std::mutex> guard(session->mutex);
+        closeStream(session->stream);
+        session->stream = nullptr;
+    }
+    delete session;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeLastError(
+    JNIEnv* env,
+    jclass
+) {
+    return env->NewStringUTF(gLastError.c_str());
+}

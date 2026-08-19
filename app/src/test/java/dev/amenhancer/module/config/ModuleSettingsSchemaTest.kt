@@ -20,6 +20,7 @@ class ModuleSettingsSchemaTest {
                 navigationCompensationEnabled = false,
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
+                usbExclusiveAaudioEnabled = false,
                 titleCorrectionEnabled = false,
                 schemaVersion = ModuleConstants.CONFIG_SCHEMA_VERSION,
             ),
@@ -49,6 +50,7 @@ class ModuleSettingsSchemaTest {
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 6,
                 "usb_bit_perfect_enabled" to false,
+                "usb_exclusive_aaudio_enabled" to false,
                 "title_correction_enabled" to false,
                 "title_correction_target_language" to "tr-TR",
                 "custom_lyrics_enabled" to false,
@@ -83,6 +85,7 @@ class ModuleSettingsSchemaTest {
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 0,
                 "usb_bit_perfect_enabled" to false,
+                "usb_exclusive_aaudio_enabled" to false,
                 "title_correction_enabled" to false,
                 "title_correction_target_language" to "tr-TR",
                 "custom_lyrics_enabled" to false,
@@ -141,6 +144,7 @@ class ModuleSettingsSchemaTest {
                 navigationCompensationEnabled = false,
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
+                usbExclusiveAaudioEnabled = false,
                 titleCorrectionEnabled = false,
                 schemaVersion = ModuleConstants.CONFIG_SCHEMA_VERSION,
             ),
@@ -175,6 +179,16 @@ class ModuleSettingsSchemaTest {
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings(usbBitPerfectEnabled = true))
         assertEquals(true, encoded["usb_bit_perfect_enabled"])
         assertEquals(true, ModuleSettingsSchema.decode(encoded).usbBitPerfectEnabled)
+    }
+
+    @Test
+    fun `experimental AAudio exclusive defaults off and round trips`() {
+        assertFalse(ModuleSettingsSchema.decode(emptyMap<String, Any?>()).usbExclusiveAaudioEnabled)
+        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
+            ModuleSettings(usbExclusiveAaudioEnabled = true),
+        )
+        assertEquals(true, encoded["usb_exclusive_aaudio_enabled"])
+        assertEquals(true, ModuleSettingsSchema.decode(encoded).usbExclusiveAaudioEnabled)
     }
 
     @Test

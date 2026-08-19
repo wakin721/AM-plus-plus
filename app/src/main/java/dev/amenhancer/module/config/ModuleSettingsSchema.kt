@@ -27,6 +27,7 @@ internal object ModuleSettingsSchema {
                 ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
             ) ?: 0,
         usbBitPerfectEnabled = values.boolean(KEY_USB_BIT_PERFECT, default = false),
+        usbExclusiveAaudioEnabled = values.boolean(KEY_USB_EXCLUSIVE_AAUDIO, default = false),
         titleCorrectionEnabled = values.boolean(
             KEY_TITLE_CORRECTION_ENABLED,
             default = false,
@@ -69,6 +70,7 @@ internal object ModuleSettingsSchema {
                 ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
             ),
             KEY_USB_BIT_PERFECT to settings.usbBitPerfectEnabled,
+            KEY_USB_EXCLUSIVE_AAUDIO to settings.usbExclusiveAaudioEnabled,
             KEY_TITLE_CORRECTION_ENABLED to settings.titleCorrectionEnabled,
             KEY_TITLE_CORRECTION_TARGET_LANGUAGE to CatalogLanguagePolicy.normalize(
                 settings.titleCorrectionTargetLanguage,
@@ -171,6 +173,7 @@ internal object ModuleSettingsSchema {
         KEY_NAVIGATION_COMPENSATION,
         KEY_LYRIC_BLUR_RADIUS_OFFSET,
         KEY_USB_BIT_PERFECT,
+        KEY_USB_EXCLUSIVE_AAUDIO,
         KEY_TITLE_CORRECTION_ENABLED,
         KEY_TITLE_CORRECTION_TARGET_LANGUAGE,
         KEY_CUSTOM_LYRICS_ENABLED,
@@ -197,6 +200,7 @@ internal object ModuleSettingsSchema {
     private const val KEY_NAVIGATION_COMPENSATION = "navigation_compensation_enabled"
     private const val KEY_LYRIC_BLUR_RADIUS_OFFSET = "lyric_blur_radius_offset_px"
     private const val KEY_USB_BIT_PERFECT = "usb_bit_perfect_enabled"
+    private const val KEY_USB_EXCLUSIVE_AAUDIO = "usb_exclusive_aaudio_enabled"
     private const val KEY_TITLE_CORRECTION_ENABLED = "title_correction_enabled"
     private const val KEY_TITLE_CORRECTION_TARGET_LANGUAGE = "title_correction_target_language"
     private const val KEY_CUSTOM_LYRICS_ENABLED = "custom_lyrics_enabled"
