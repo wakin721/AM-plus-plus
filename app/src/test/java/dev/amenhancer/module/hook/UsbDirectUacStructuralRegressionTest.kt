@@ -59,6 +59,36 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `broker visibility is granted to the injected Apple Music process`() {
+        val manifest = projectFile("app/src/main/AndroidManifest.xml")
+        val provider = projectFile(
+            "app/src/main/java/dev/amenhancer/module/usb/UsbDirectVisibilityProvider.kt",
+        )
+        val application = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ModuleApplication.kt",
+        )
+        val permission = projectFile(
+            "app/src/main/java/dev/amenhancer/module/usb/UsbDirectPermissionActivity.kt",
+        )
+        val client = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectDeviceClient.kt",
+        )
+
+        assertTrue(manifest.contains("<package android:name=\"com.apple.android.music\" />"))
+        assertTrue(manifest.contains("android:name=\".usb.UsbDirectVisibilityProvider\""))
+        assertTrue(manifest.contains("android:authorities=\"\${applicationId}.usb-direct-visibility\""))
+        assertTrue(manifest.contains("android:grantUriPermissions=\"true\""))
+        assertTrue(manifest.contains("<grant-uri-permission android:path=\"/bridge\" />"))
+        assertTrue(provider.contains("application.grantUriPermission("))
+        assertTrue(provider.contains("ModuleConstants.TARGET_PACKAGE"))
+        assertTrue(provider.contains("Intent.FLAG_GRANT_READ_URI_PERMISSION"))
+        assertTrue(application.contains("UsbDirectVisibilityGrant.grantToAppleMusic(this)"))
+        assertTrue(permission.contains("UsbDirectVisibilityGrant.grantToAppleMusic(this)"))
+        assertTrue(client.contains("resolveService(intent"))
+        assertTrue(client.contains("not visible/resolvable"))
+    }
+
+    @Test
     fun `native engine uses usbfs isochronous URBs rather than AAudio`() {
         val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
         val cmake = projectFile("app/src/main/cpp/CMakeLists.txt")
