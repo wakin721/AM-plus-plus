@@ -45,6 +45,12 @@ class UsbDirectPermissionActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // The Xposed code that will bind the broker runs under Apple Music's
+        // package identity. Granting this one empty provider URI makes AM++
+        // visible to that process on Android 11+ before bindService() occurs.
+        UsbDirectVisibilityGrant.grantToAppleMusic(this)
+
         val manager = getSystemService(UsbManager::class.java)
         if (manager == null) {
             finish()
