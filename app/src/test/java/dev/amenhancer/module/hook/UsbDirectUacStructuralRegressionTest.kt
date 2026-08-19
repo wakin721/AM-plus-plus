@@ -45,6 +45,19 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `broker client follows the actual debug or release application id`() {
+        val client = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectDeviceClient.kt",
+        )
+        val gradle = projectFile("app/build.gradle.kts")
+
+        assertTrue(gradle.contains("applicationIdSuffix = \".debug\""))
+        assertTrue(client.contains("import dev.amenhancer.module.BuildConfig"))
+        assertTrue(client.contains("ComponentName(BuildConfig.APPLICATION_ID, UsbDirectIpc.SERVICE_CLASS)"))
+        assertFalse(client.contains("ComponentName(ModuleConstants.MODULE_PACKAGE"))
+    }
+
+    @Test
     fun `native engine uses usbfs isochronous URBs rather than AAudio`() {
         val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
         val cmake = projectFile("app/src/main/cpp/CMakeLists.txt")
@@ -80,5 +93,21 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(controller.contains("UsbDirectDeviceClient.release(context)"))
         assertTrue(protocol.contains("STATE_DIRECT_PERMISSION_REQUIRED"))
         assertTrue(protocol.contains("STATE_DIRECT_UNSUPPORTED_DEVICE"))
+    }
+
+    @Test
+    fun `USB Direct reports descriptor bit resolution separately from Apple Music float PCM`() {
+        val controller = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
+        )
+        val ui = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
+        )
+
+        assertTrue(controller.contains("lease.bitResolution <= 24 -> AudioFormat.ENCODING_PCM_24BIT_PACKED"))
+        assertTrue(controller.contains("mixerEncoding = lease?.let(::usbEncoding) ?: 0"))
+        assertTrue(ui.contains("AudioFormat.ENCODING_PCM_FLOAT -> \"PCM Float\""))
+        assertTrue(ui.contains("AudioFormat.ENCODING_PCM_24BIT_PACKED -> \"PCM 24-bit\""))
+        assertTrue(ui.contains("$mixerFormat · USB DIRECT · usbfs ISO PCM"))
     }
 }
