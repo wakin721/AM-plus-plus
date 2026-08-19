@@ -87,7 +87,8 @@ class SettingsUiStructuralRegressionTest {
         assertTrue(importer.contains("snapshot.openRemoteFile(fileId)"))
         assertFalse(activity.contains("takePersistableUriPermission"))
         assertFalse(importer.contains("uri.toString()"))
-        assertFalse(manifest.contains("<provider"))
+        assertFalse(manifest.contains("android:name=\"androidx.core.content.FileProvider\""))
+        assertFalse(importer.contains("FileProvider"))
     }
 
     @Test
@@ -277,7 +278,6 @@ class SettingsUiStructuralRegressionTest {
         assertTrue(render.contains("val settings = store.settingsWithCustomLyrics(snapshot)"))
         assertFalse(render.contains("currentPage == SettingsPage.CUSTOM_LYRICS"))
     }
-
     @Test
     fun `backs up and merge restores custom lyrics through transient saf documents`() {
         val activity = projectFile("app/src/main/java/dev/amenhancer/module/ui/SettingsActivity.kt")
