@@ -34,6 +34,14 @@ internal object UsbBitPerfectStatusProtocol {
     const val STATE_EXCLUSIVE_FALLBACK = "exclusive_fallback"
     const val STATE_EXCLUSIVE_UNSUPPORTED_PATH = "exclusive_unsupported_path"
 
+    const val STATE_DIRECT_ARMED = "direct_armed"
+    const val STATE_DIRECT_PERMISSION_REQUIRED = "direct_permission_required"
+    const val STATE_DIRECT_ACQUIRING = "direct_acquiring"
+    const val STATE_DIRECT_CONFIGURED = "direct_configured"
+    const val STATE_DIRECT_ACTIVE = "direct_active"
+    const val STATE_DIRECT_FALLBACK = "direct_fallback"
+    const val STATE_DIRECT_UNSUPPORTED_DEVICE = "direct_unsupported_device"
+
     const val RESULT_UNAVAILABLE = 0
     const val RESULT_AVAILABLE = 1
 }
