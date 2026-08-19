@@ -82,7 +82,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@drawable/ic_module"
-            android:label="@string.app_name"
+            android:label="@string/app_name"
             android:targetActivity=".ui.SettingsActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
