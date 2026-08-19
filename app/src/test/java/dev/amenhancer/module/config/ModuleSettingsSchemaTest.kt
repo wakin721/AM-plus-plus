@@ -21,6 +21,7 @@ class ModuleSettingsSchemaTest {
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
                 usbExclusiveAaudioEnabled = false,
+                usbDirectUacEnabled = false,
                 titleCorrectionEnabled = false,
                 schemaVersion = ModuleConstants.CONFIG_SCHEMA_VERSION,
             ),
@@ -51,6 +52,7 @@ class ModuleSettingsSchemaTest {
                 "lyric_blur_radius_offset_px" to 6,
                 "usb_bit_perfect_enabled" to false,
                 "usb_exclusive_aaudio_enabled" to false,
+                "usb_direct_uac_enabled" to false,
                 "title_correction_enabled" to false,
                 "title_correction_target_language" to "tr-TR",
                 "custom_lyrics_enabled" to false,
@@ -86,6 +88,7 @@ class ModuleSettingsSchemaTest {
                 "lyric_blur_radius_offset_px" to 0,
                 "usb_bit_perfect_enabled" to false,
                 "usb_exclusive_aaudio_enabled" to false,
+                "usb_direct_uac_enabled" to false,
                 "title_correction_enabled" to false,
                 "title_correction_target_language" to "tr-TR",
                 "custom_lyrics_enabled" to false,
@@ -145,6 +148,7 @@ class ModuleSettingsSchemaTest {
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
                 usbExclusiveAaudioEnabled = false,
+                usbDirectUacEnabled = false,
                 titleCorrectionEnabled = false,
                 schemaVersion = ModuleConstants.CONFIG_SCHEMA_VERSION,
             ),
@@ -189,6 +193,16 @@ class ModuleSettingsSchemaTest {
         )
         assertEquals(true, encoded["usb_exclusive_aaudio_enabled"])
         assertEquals(true, ModuleSettingsSchema.decode(encoded).usbExclusiveAaudioEnabled)
+    }
+
+    @Test
+    fun `experimental USB Direct defaults off and round trips`() {
+        assertFalse(ModuleSettingsSchema.decode(emptyMap<String, Any?>()).usbDirectUacEnabled)
+        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
+            ModuleSettings(usbDirectUacEnabled = true),
+        )
+        assertEquals(true, encoded["usb_direct_uac_enabled"])
+        assertEquals(true, ModuleSettingsSchema.decode(encoded).usbDirectUacEnabled)
     }
 
     @Test
