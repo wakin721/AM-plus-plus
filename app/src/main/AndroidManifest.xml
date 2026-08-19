@@ -58,7 +58,6 @@
             android:enabled="false"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:noHistory="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
@@ -83,7 +82,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@drawable/ic_module"
-            android:label="@string/app_name"
+            android:label="@string.app_name"
             android:targetActivity=".ui.SettingsActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
