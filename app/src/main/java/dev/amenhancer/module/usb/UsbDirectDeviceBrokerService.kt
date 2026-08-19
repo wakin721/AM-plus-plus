@@ -184,7 +184,7 @@ class UsbDirectDeviceBrokerService : Service() {
                 ((sampleRate ushr 24) and 0xff).toByte(),
             )
             connection.controlTransfer(
-                UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or UsbConstants.USB_RECIP_INTERFACE,
+                UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE,
                 UAC_CUR,
                 SAMPLING_FREQ_CONTROL shl 8,
                 (alternative.clockSourceId shl 8) or (alternative.audioControlInterface and 0xff),
@@ -199,7 +199,7 @@ class UsbDirectDeviceBrokerService : Service() {
                 ((sampleRate ushr 16) and 0xff).toByte(),
             )
             val transferred = connection.controlTransfer(
-                UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or UsbConstants.USB_RECIP_ENDPOINT,
+                UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_ENDPOINT,
                 UAC_CUR,
                 SAMPLING_FREQ_CONTROL shl 8,
                 alternative.endpointAddress,
@@ -274,5 +274,7 @@ class UsbDirectDeviceBrokerService : Service() {
         private const val CONTROL_TIMEOUT_MS = 1000
         private const val UAC_CUR = 0x01
         private const val SAMPLING_FREQ_CONTROL = 0x01
+        private const val USB_RECIPIENT_INTERFACE = 0x01
+        private const val USB_RECIPIENT_ENDPOINT = 0x02
     }
 }
