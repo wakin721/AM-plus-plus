@@ -4,6 +4,11 @@ import android.media.AudioFormat
 
 /** JNI wrapper for the usbfs isochronous UAC output engine. */
 internal object UsbDirectUacBridge {
+    private const val FORMAT_I16 = 1
+    private const val FORMAT_FLOAT = 2
+    private const val FORMAT_I24 = 3
+    private const val FORMAT_I32 = 4
+
     sealed interface OpenResult {
         data class Opened(val handle: Long) : OpenResult
         data class Failed(val reason: String) : OpenResult
@@ -23,15 +28,14 @@ internal object UsbDirectUacBridge {
     }
 
     fun open(lease: UsbDirectDeviceClient.Lease): OpenResult {
-        if (!supportsEncoding(lease.encoding)) {
-            return OpenResult.Failed("当前 AudioTrack PCM encoding 不受 USB Direct 原型支持")
-        }
+        val inputFormatCode = formatCode(lease.encoding)
+            ?: return OpenResult.Failed("当前 AudioTrack PCM encoding 不受 USB Direct 原型支持")
         if (!loaded) return OpenResult.Failed(loadFailure ?: "native USB Direct bridge unavailable")
         val handle = runCatching {
             nativeOpen(
                 lease.fd.fd,
                 lease.sampleRate,
-                lease.encoding,
+                inputFormatCode,
                 lease.channels,
                 lease.endpointAddress,
                 lease.maxPacketSize,
@@ -95,20 +99,21 @@ internal object UsbDirectUacBridge {
             ?: fallback
     }
 
-    fun supportsEncoding(encoding: Int): Boolean = when (encoding) {
-        AudioFormat.ENCODING_PCM_16BIT,
-        AudioFormat.ENCODING_PCM_FLOAT,
-        AudioFormat.ENCODING_PCM_24BIT_PACKED,
-        AudioFormat.ENCODING_PCM_32BIT,
-        -> true
-        else -> false
+    fun supportsEncoding(encoding: Int): Boolean = formatCode(encoding) != null
+
+    private fun formatCode(encoding: Int): Int? = when (encoding) {
+        AudioFormat.ENCODING_PCM_16BIT -> FORMAT_I16
+        AudioFormat.ENCODING_PCM_FLOAT -> FORMAT_FLOAT
+        AudioFormat.ENCODING_PCM_24BIT_PACKED -> FORMAT_I24
+        AudioFormat.ENCODING_PCM_32BIT -> FORMAT_I32
+        else -> null
     }
 
     @JvmStatic
     private external fun nativeOpen(
         fd: Int,
         sampleRate: Int,
-        inputEncoding: Int,
+        inputFormatCode: Int,
         channels: Int,
         endpointAddress: Int,
         maxPacketSize: Int,
