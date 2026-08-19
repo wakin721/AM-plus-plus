@@ -34,7 +34,7 @@ class UsbBitPerfectStructuralRegressionTest {
     }
 
     @Test
-    fun `feature remains explicitly gated and defaults off`() {
+    fun `feature remains explicitly gated and all invasive modes default off`() {
         val feature = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
         )
@@ -47,10 +47,13 @@ class UsbBitPerfectStructuralRegressionTest {
 
         assertTrue(feature.contains("val settings = context.config.settings()"))
         assertTrue(feature.contains("if (!settings.usbBitPerfectEnabled)"))
+        assertTrue(feature.contains("UsbDirectUacController.configure(settings.usbDirectUacEnabled)"))
         assertTrue(feature.contains("UsbExclusiveAaudioController.configure(settings.usbExclusiveAaudioEnabled)"))
         assertTrue(model.contains("val usbBitPerfectEnabled: Boolean = false"))
         assertTrue(model.contains("val usbExclusiveAaudioEnabled: Boolean = false"))
+        assertTrue(model.contains("val usbDirectUacEnabled: Boolean = false"))
         assertTrue(schema.contains("usb_bit_perfect_enabled"))
         assertTrue(schema.contains("usb_exclusive_aaudio_enabled"))
+        assertTrue(schema.contains("usb_direct_uac_enabled"))
     }
 }
