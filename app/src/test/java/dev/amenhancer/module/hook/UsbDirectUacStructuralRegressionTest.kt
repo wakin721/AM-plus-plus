@@ -108,6 +108,6 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(controller.contains("mixerEncoding = lease?.let(::usbEncoding) ?: 0"))
         assertTrue(ui.contains("AudioFormat.ENCODING_PCM_FLOAT -> \"PCM Float\""))
         assertTrue(ui.contains("AudioFormat.ENCODING_PCM_24BIT_PACKED -> \"PCM 24-bit\""))
-        assertTrue(ui.contains("$mixerFormat · USB DIRECT · usbfs ISO PCM"))
+        assertTrue(ui.contains("\$mixerFormat · USB DIRECT · usbfs ISO PCM"))
     }
 }
