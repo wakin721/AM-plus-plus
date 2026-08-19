@@ -44,7 +44,7 @@ internal object UsbExclusiveAaudioController {
 
     fun isEnabled(): Boolean = enabled.get()
 
-    fun isInternalTransition(): Boolean = internalTransition.get()
+    fun isInternalTransition(): Boolean = internalTransition.get() == true
 
     fun isActive(track: AudioTrack): Boolean = synchronized(lock) {
         session?.track?.get() === track
@@ -56,7 +56,7 @@ internal object UsbExclusiveAaudioController {
      * the original play(), because Apple Music may have pre-buffered PCM there.
      */
     fun beforePlay(context: Context, track: AudioTrack): Boolean {
-        if (!enabled.get() || internalTransition.get()) return false
+        if (!enabled.get() || internalTransition.get() == true) return false
         if (!track.isMediaTrack()) return false
         latestTrack = WeakReference(track)
         return synchronized(lock) { session?.track?.get() === track }
@@ -64,7 +64,7 @@ internal object UsbExclusiveAaudioController {
 
     /** Intercepts one supported write when an exclusive AAudio session owns this track. */
     fun interceptWrite(track: AudioTrack, args: Array<Any?>): Int? {
-        if (!enabled.get() || internalTransition.get()) return null
+        if (!enabled.get() || internalTransition.get() == true) return null
         val active = synchronized(lock) {
             session?.takeIf { it.track.get() === track }
         } ?: return null
@@ -140,7 +140,7 @@ internal object UsbExclusiveAaudioController {
         args: Array<Any?>,
         result: Any?,
     ) {
-        if (!enabled.get() || internalTransition.get()) return
+        if (!enabled.get() || internalTransition.get() == true) return
         if (!track.isMediaTrack()) return
         if (result !is Int || result <= 0) return
         if (!isSupportedWrite(track, args)) return
@@ -158,7 +158,7 @@ internal object UsbExclusiveAaudioController {
     }
 
     fun onTransportControl(track: AudioTrack, operation: String) {
-        if (internalTransition.get()) return
+        if (internalTransition.get() == true) return
         synchronized(lock) {
             if (session?.track?.get() === track) closeSessionLocked()
         }
