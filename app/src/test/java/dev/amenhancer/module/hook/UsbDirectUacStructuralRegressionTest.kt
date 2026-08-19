@@ -52,6 +52,7 @@ class UsbDirectUacStructuralRegressionTest {
         val gradle = projectFile("app/build.gradle.kts")
 
         assertTrue(gradle.contains("applicationIdSuffix = \".debug\""))
+        assertTrue(gradle.contains("buildConfig = true"))
         assertTrue(client.contains("import dev.amenhancer.module.BuildConfig"))
         assertTrue(client.contains("ComponentName(BuildConfig.APPLICATION_ID, UsbDirectIpc.SERVICE_CLASS)"))
         assertFalse(client.contains("ComponentName(ModuleConstants.MODULE_PACKAGE"))
