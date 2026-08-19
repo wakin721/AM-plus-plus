@@ -19,6 +19,11 @@ internal object UsbAudioDescriptorParser {
     private const val AC_INPUT_TERMINAL = 0x02
     private const val AC_OUTPUT_TERMINAL = 0x03
 
+    const val SYNC_NONE = 0
+    const val SYNC_ASYNCHRONOUS = 1
+    const val SYNC_ADAPTIVE = 2
+    const val SYNC_SYNCHRONOUS = 3
+
     data class StreamingAlt(
         val interfaceNumber: Int,
         val alternateSetting: Int,
@@ -32,10 +37,12 @@ internal object UsbAudioDescriptorParser {
         val endpointAddress: Int,
         val maxPacketSize: Int,
         val interval: Int,
+        val synchronizationType: Int,
         val audioControlInterface: Int,
         val clockSourceId: Int,
     ) {
         val isUac2: Boolean get() = protocol >= 0x20
+        val requiresExplicitFeedback: Boolean get() = synchronizationType == SYNC_ASYNCHRONOUS
 
         fun supportsSampleRate(sampleRate: Int): Boolean {
             if (isUac2) return true
@@ -44,6 +51,11 @@ internal object UsbAudioDescriptorParser {
             val max = maxSampleRate
             return min != null && max != null && sampleRate in min..max
         }
+
+        fun matchesFormat(sampleRate: Int, channels: Int): Boolean =
+            (protocol == 0x00 || protocol == 0x20) &&
+                (this.channels == 0 || this.channels == channels) &&
+                supportsSampleRate(sampleRate)
     }
 
     private data class AltBuilder(
@@ -60,6 +72,7 @@ internal object UsbAudioDescriptorParser {
         var endpointAddress: Int = 0,
         var maxPacketSize: Int = 0,
         var interval: Int = 0,
+        var synchronizationType: Int = SYNC_NONE,
     )
 
     fun parse(raw: ByteArray): List<StreamingAlt> {
@@ -176,6 +189,7 @@ internal object UsbAudioDescriptorParser {
                             builder.endpointAddress = address
                             builder.maxPacketSize = basePacket * transactions
                             builder.interval = raw.u8(offset + 6).coerceAtLeast(1)
+                            builder.synchronizationType = (attributes ushr 2) and 0x03
                         }
                     }
                 }
@@ -206,6 +220,7 @@ internal object UsbAudioDescriptorParser {
                 endpointAddress = builder.endpointAddress,
                 maxPacketSize = builder.maxPacketSize,
                 interval = builder.interval,
+                synchronizationType = builder.synchronizationType,
                 audioControlInterface = clock?.first ?: -1,
                 clockSourceId = clock?.second ?: 0,
             )
@@ -219,9 +234,12 @@ internal object UsbAudioDescriptorParser {
         preferredBits: Int,
     ): StreamingAlt? = alternatives
         .asSequence()
-        .filter { it.protocol == 0x00 || it.protocol == 0x20 }
-        .filter { it.channels == 0 || it.channels == channels }
-        .filter { it.supportsSampleRate(sampleRate) }
+        .filter { it.matchesFormat(sampleRate, channels) }
+        // Phase 1 intentionally refuses asynchronous endpoints. Their DAC clock
+        // must be paced from a feedback endpoint; sending nominal-rate packets
+        // without feedback eventually drifts and is not acceptable for a direct
+        // audio path.
+        .filterNot(StreamingAlt::requiresExplicitFeedback)
         .sortedWith(
             compareByDescending<StreamingAlt> {
                 // Prefer formats nearest the source precision, then the higher resolution.
