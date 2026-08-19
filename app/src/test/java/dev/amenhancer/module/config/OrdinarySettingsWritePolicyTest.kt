@@ -86,6 +86,7 @@ class OrdinarySettingsWritePolicyTest {
                 lyricBlurRadiusOffsetPx = 6,
                 usbBitPerfectEnabled = true,
                 usbExclusiveAaudioEnabled = true,
+                usbDirectUacEnabled = true,
                 fontManifest = committedManifest,
             ),
         )
@@ -99,6 +100,7 @@ class OrdinarySettingsWritePolicyTest {
                 "lyric_blur_radius_offset_px" to 6,
                 "usb_bit_perfect_enabled" to true,
                 "usb_exclusive_aaudio_enabled" to true,
+                "usb_direct_uac_enabled" to true,
                 "title_correction_enabled" to false,
                 "title_correction_target_language" to "tr-TR",
                 "custom_lyrics_enabled" to false,
