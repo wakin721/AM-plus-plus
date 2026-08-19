@@ -1,7 +1,9 @@
 package dev.amenhancer.module
 
 import android.app.Application
+import dev.amenhancer.module.config.ConfigStore
 import dev.amenhancer.module.ui.UsbBitPerfectSettingsInjector
+import dev.amenhancer.module.usb.UsbDirectVisibilityGrant
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
 import java.util.concurrent.CopyOnWriteArraySet
@@ -22,13 +24,18 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
             return
         }
         val preferences = service.getRemotePreferences(ModuleConstants.REMOTE_PREFERENCES_GROUP)
-        dev.amenhancer.module.config.ConfigStore.migrateLegacyPreferences(this, preferences)
+        ConfigStore.migrateLegacyPreferences(this, preferences)
         publish(XposedServiceSnapshot.connected(
             preferences = preferences,
             frameworkName = service.frameworkName,
             apiVersion = service.apiVersion,
             service = service,
         ))
+
+        val settings = ConfigStore(this).settings()
+        if (settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled) {
+            UsbDirectVisibilityGrant.grantToAppleMusic(this)
+        }
     }
 
     override fun onServiceDied(service: XposedService) {
