@@ -47,6 +47,10 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     signingConfigs {
         if (releaseSigningAvailable) {
             create("release") {
