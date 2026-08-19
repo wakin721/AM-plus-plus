@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_CURRENT_SONG_ID" />
     <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_LIBRARY_REFRESH" />
@@ -43,6 +47,36 @@
         <activity
             android:name=".ui.UsbBitPerfectSettingsActivity"
             android:exported="false" />
+
+        <!--
+          Disabled until the user opts into USB Direct UAC. When enabled, the
+          platform USB attach resolver can show its native "open with AM++"
+          permission/default-app dialog for a connected DAC.
+        -->
+        <activity
+            android:name=".usb.UsbDirectPermissionActivity"
+            android:enabled="false"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_direct_device_filter" />
+        </activity>
+
+        <!--
+          Cross-UID bridge used by the Xposed code running inside Apple Music.
+          The service is exported because the caller has Apple Music's UID; it
+          validates Message.sendingUid against com.apple.android.music before
+          returning any ParcelFileDescriptor.
+        -->
+        <service
+            android:name=".usb.UsbDirectDeviceBrokerService"
+            android:exported="true" />
 
         <activity-alias
             android:name=".LauncherAlias"
