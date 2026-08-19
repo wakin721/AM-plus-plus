@@ -4,7 +4,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.media.AudioFormat
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -111,11 +113,13 @@ internal object UsbDirectDeviceClient {
                 }
             }
             serviceConnection = connection
+            val brokerIntent = Intent().setComponent(
+                ComponentName(BuildConfig.APPLICATION_ID, UsbDirectIpc.SERVICE_CLASS),
+            )
+            val resolvableBeforeBind = isBrokerResolvable(application, brokerIntent)
             val bound = runCatching {
                 application.bindService(
-                    Intent().setComponent(
-                        ComponentName(BuildConfig.APPLICATION_ID, UsbDirectIpc.SERVICE_CLASS),
-                    ),
+                    brokerIntent,
                     connection,
                     Context.BIND_AUTO_CREATE,
                 )
@@ -123,7 +127,11 @@ internal object UsbDirectDeviceClient {
             if (!bound) {
                 serviceConnection = null
                 failPendingLocked(
-                    "Unable to bind AM++ USB Direct broker (${BuildConfig.APPLICATION_ID})",
+                    if (resolvableBeforeBind) {
+                        "bindService returned false for resolved AM++ USB Direct broker (${BuildConfig.APPLICATION_ID})"
+                    } else {
+                        "AM++ USB Direct broker is not visible/resolvable (${BuildConfig.APPLICATION_ID}); open AM++ USB settings or reconnect the DAC to refresh package visibility"
+                    },
                 )
             }
             return bound
@@ -216,6 +224,16 @@ internal object UsbDirectDeviceClient {
         synchronized(lock) { activeLease = lease }
         request.callback(AcquireResult.Acquired(lease))
     }
+
+    private fun isBrokerResolvable(context: Context, intent: Intent): Boolean = runCatching {
+        val manager = context.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            manager.resolveService(intent, PackageManager.ResolveInfoFlags.of(0)) != null
+        } else {
+            @Suppress("DEPRECATION")
+            manager.resolveService(intent, 0) != null
+        }
+    }.getOrDefault(false)
 
     private fun failPendingLocked(reason: String) {
         val request = pending ?: return
