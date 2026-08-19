@@ -1,6 +1,7 @@
 package dev.amenhancer.module.hook
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -35,6 +36,12 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(broker.contains("connection.claimInterface(usbInterface, true)"))
         assertTrue(broker.contains("connection.setInterface(usbInterface)"))
         assertTrue(broker.contains("ParcelFileDescriptor.fromFd(connection.fileDescriptor)"))
+        assertTrue(broker.contains("USB_RECIPIENT_INTERFACE = 0x01"))
+        assertTrue(broker.contains("USB_RECIPIENT_ENDPOINT = 0x02"))
+        assertTrue(broker.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE"))
+        assertTrue(broker.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_ENDPOINT"))
+        assertFalse(broker.contains("UsbConstants.USB_RECIP_INTERFACE"))
+        assertFalse(broker.contains("UsbConstants.USB_RECIP_ENDPOINT"))
     }
 
     @Test
