@@ -125,7 +125,6 @@ class UsbBitPerfectSettingsActivity : Activity() {
     private fun toggleCard(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = roundedDrawable(palette.surface, 20, palette.outline)
-        elevation = dp(2).toFloat()
         clipToOutline = true
 
         addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
@@ -265,7 +264,6 @@ class UsbBitPerfectSettingsActivity : Activity() {
     private fun audioPathCard(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         background = roundedDrawable(palette.surface, 20, palette.outline)
-        elevation = dp(2).toFloat()
         clipToOutline = true
         setPadding(dp(16), dp(18), dp(16), dp(14))
 
