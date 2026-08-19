@@ -13,6 +13,8 @@ data class ModuleSettings(
     val usbBitPerfectEnabled: Boolean = false,
     /** Experimental AAudio takeover layered on top of the USB audio feature. */
     val usbExclusiveAaudioEnabled: Boolean = false,
+    /** Experimental USB Host / UAC direct path. Disabled by default. */
+    val usbDirectUacEnabled: Boolean = false,
     val titleCorrectionEnabled: Boolean = false,
     /** BCP-47 language used for Apple Music Catalog title lookups; AMTool defaults to Turkish. */
     val titleCorrectionTargetLanguage: String = CatalogLanguagePolicy.DEFAULT_TARGET_LANGUAGE,
