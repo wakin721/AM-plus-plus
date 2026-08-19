@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The attach activity using this filter is disabled by default and enabled
+      only after the user turns on experimental USB Direct UAC. A wildcard is
+      required because many USB DACs advertise device class 0 and expose the
+      Audio class only on their interfaces.
+    -->
+    <usb-device />
+</resources>
