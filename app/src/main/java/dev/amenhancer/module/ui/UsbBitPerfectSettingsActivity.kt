@@ -1,5 +1,6 @@
 package dev.amenhancer.module.ui
 
+import android.app.Activity
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
