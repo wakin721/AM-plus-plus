@@ -21,8 +21,10 @@ class UsbExclusiveAaudioStructuralRegressionTest {
 
         assertTrue(native.contains("AAUDIO_SHARING_MODE_EXCLUSIVE"))
         assertTrue(native.contains("AAudioStreamBuilder_setDeviceId"))
-        assertTrue(native.contains("AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_MEDIA)"))
-        assertTrue(native.contains("AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC)"))
+        assertTrue(native.contains("configureMediaAttributes(builder)"))
+        assertTrue(native.contains("dlsym(library, \"AAudioStreamBuilder_setUsage\")"))
+        assertTrue(native.contains("setUsage(builder, AAUDIO_USAGE_MEDIA)"))
+        assertTrue(native.contains("setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC)"))
         assertTrue(native.contains("AAudioStream_getSharingMode(stream) != AAUDIO_SHARING_MODE_EXCLUSIVE"))
         assertTrue(native.contains("AAudioStream_getDeviceId(stream) != deviceId"))
         assertTrue(native.contains("AAudioStream_getSampleRate(stream) != sampleRate"))
@@ -35,6 +37,7 @@ class UsbExclusiveAaudioStructuralRegressionTest {
         assertTrue(native.contains("gainLeft"))
         assertTrue(native.contains("gainRight"))
         assertTrue(cmake.contains("find_library(aaudio_lib aaudio)"))
+        assertTrue(cmake.contains("find_library(dl_lib dl)"))
         assertTrue(gradle.contains("src/main/cpp/CMakeLists.txt"))
     }
 

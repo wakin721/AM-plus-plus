@@ -1,4 +1,5 @@
 #include <aaudio/AAudio.h>
+#include <dlfcn.h>
 #include <jni.h>
 
 #include <algorithm>
@@ -70,6 +71,26 @@ int32_t bytesPerSampleForCode(int formatCode) {
         default:
             return 0;
     }
+}
+
+/**
+ * These builder attributes were added in API 28 while AM++ still supports
+ * loading on API 26. Resolve them dynamically so the shared object keeps its
+ * API-26 link contract; the exclusive feature itself is gated to Android 14+.
+ */
+void configureMediaAttributes(AAudioStreamBuilder* builder) {
+    void* library = dlopen("libaaudio.so", RTLD_NOW | RTLD_LOCAL);
+    if (library == nullptr) return;
+
+    using SetUsage = void (*)(AAudioStreamBuilder*, aaudio_usage_t);
+    using SetContentType = void (*)(AAudioStreamBuilder*, aaudio_content_type_t);
+    auto setUsage = reinterpret_cast<SetUsage>(dlsym(library, "AAudioStreamBuilder_setUsage"));
+    auto setContentType = reinterpret_cast<SetContentType>(
+        dlsym(library, "AAudioStreamBuilder_setContentType")
+    );
+    if (setUsage != nullptr) setUsage(builder, AAUDIO_USAGE_MEDIA);
+    if (setContentType != nullptr) setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC);
+    dlclose(library);
 }
 
 void waitForTransition(AAudioStream* stream, aaudio_stream_state_t transientState) {
@@ -319,8 +340,7 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
     // An EXCLUSIVE stream bypasses AudioFlinger's mixer, but it must still be
     // identified as media playback so Android routes the hardware volume keys
     // to STREAM_MUSIC while the original AudioTrack is paused.
-    AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_MEDIA);
-    AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC);
+    configureMediaAttributes(builder);
     AAudioStreamBuilder_setSampleRate(builder, sampleRate);
     AAudioStreamBuilder_setChannelCount(builder, channels);
     AAudioStreamBuilder_setFormat(builder, requestedFormat);
