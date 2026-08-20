@@ -62,7 +62,7 @@ internal class AppleMusicUsbBitPerfectTarget(
                     param.result = null
                     return
                 }
-                if (UsbExclusiveAaudioController.beforePlay(application, track)) {
+                if (UsbExclusiveAaudioController.beforePlay(track)) {
                     param.result = null
                     return
                 }
@@ -88,7 +88,11 @@ internal class AppleMusicUsbBitPerfectTarget(
                         param.result = written
                         return
                     }
-                    UsbExclusiveAaudioController.interceptWrite(track, param.args)?.let { written ->
+                    UsbExclusiveAaudioController.interceptWrite(
+                        application,
+                        track,
+                        param.args,
+                    )?.let { written ->
                         param.result = written
                     }
                 }
@@ -98,7 +102,6 @@ internal class AppleMusicUsbBitPerfectTarget(
                     val track = param.thisObject as? AudioTrack ?: return
                     if (UsbDirectUacController.isActive(track)) return
                     if (UsbExclusiveAaudioController.isActive(track)) return
-
                     UsbDirectUacController.afterOriginalWrite(
                         application,
                         track,
@@ -108,7 +111,6 @@ internal class AppleMusicUsbBitPerfectTarget(
                     if (UsbDirectUacController.isActive(track)) return
                     if (UsbDirectUacController.allowsAaudioFallback(track)) {
                         UsbExclusiveAaudioController.afterOriginalWrite(
-                            application,
                             track,
                             param.args,
                             param.result,
@@ -117,6 +119,25 @@ internal class AppleMusicUsbBitPerfectTarget(
                 }
             },
         )
+
+        listOf("setVolume", "setStereoVolume").forEach { operation ->
+            ModernXposedRuntime.hookAllMethods(
+                AudioTrack::class.java,
+                operation,
+                object : ModernMethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (param.throwable != null) return
+                        val track = param.thisObject as? AudioTrack ?: return
+                        UsbExclusiveAaudioController.afterVolumeChange(
+                            track,
+                            operation,
+                            param.args,
+                            param.result,
+                        )
+                    }
+                },
+            )
+        }
 
         listOf("pause", "stop", "flush", "release").forEach { operation ->
             ModernXposedRuntime.hookAllMethods(

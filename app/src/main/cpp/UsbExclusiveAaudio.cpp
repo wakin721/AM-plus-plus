@@ -2,10 +2,14 @@
 #include <jni.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -14,13 +18,17 @@ constexpr int kFormatFloat = 2;
 constexpr int kFormatI24 = 3;
 constexpr int kFormatI32 = 4;
 constexpr int64_t kBlockingWriteTimeoutNanos = 100'000'000LL;
+constexpr int64_t kStateTransitionTimeoutNanos = 100'000'000LL;
 
 thread_local std::string gLastError;
 
 struct Session {
     AAudioStream* stream = nullptr;
+    int32_t formatCode = 0;
     int32_t channels = 0;
     int32_t bytesPerSample = 0;
+    bool started = false;
+    std::vector<uint8_t> scratch;
     std::mutex mutex;
 };
 
@@ -64,14 +72,144 @@ int32_t bytesPerSampleForCode(int formatCode) {
     }
 }
 
-void closeStream(AAudioStream* stream) {
+void waitForTransition(AAudioStream* stream, aaudio_stream_state_t transientState) {
+    if (stream == nullptr || AAudioStream_getState(stream) != transientState) return;
+    aaudio_stream_state_t nextState = AAUDIO_STREAM_STATE_UNKNOWN;
+    AAudioStream_waitForStateChange(
+        stream,
+        transientState,
+        &nextState,
+        kStateTransitionTimeoutNanos
+    );
+}
+
+void discardAndCloseStream(AAudioStream* stream) {
     if (stream == nullptr) return;
-    AAudioStream_requestStop(stream);
+    waitForTransition(stream, AAUDIO_STREAM_STATE_STARTING);
+
+    auto state = AAudioStream_getState(stream);
+    if (state == AAUDIO_STREAM_STATE_STARTED) {
+        const auto pauseResult = AAudioStream_requestPause(stream);
+        if (pauseResult == AAUDIO_OK) {
+            waitForTransition(stream, AAUDIO_STREAM_STATE_PAUSING);
+        } else {
+            AAudioStream_requestStop(stream);
+            waitForTransition(stream, AAUDIO_STREAM_STATE_STOPPING);
+        }
+    }
+
+    state = AAudioStream_getState(stream);
+    if (state == AAUDIO_STREAM_STATE_OPEN ||
+        state == AAUDIO_STREAM_STATE_PAUSED ||
+        state == AAUDIO_STREAM_STATE_STOPPED ||
+        state == AAUDIO_STREAM_STATE_FLUSHED) {
+        if (AAudioStream_requestFlush(stream) == AAUDIO_OK) {
+            waitForTransition(stream, AAUDIO_STREAM_STATE_FLUSHING);
+        }
+    }
     AAudioStream_close(stream);
 }
 
-int32_t writeFrames(Session* session, const uint8_t* data, int32_t frameCount, bool blocking) {
-    if (session == nullptr || session->stream == nullptr || data == nullptr || frameCount < 0) {
+float sanitizeGain(float gain) {
+    if (!std::isfinite(gain)) return 0.0F;
+    return std::clamp(gain, 0.0F, 1.0F);
+}
+
+float gainForChannel(float left, float right, int32_t channel, int32_t channels) {
+    if (channels <= 1 || channel == 0) return left;
+    if (channel == 1) return right;
+    return (left + right) * 0.5F;
+}
+
+const uint8_t* attenuatePcm(
+    Session* session,
+    const uint8_t* data,
+    int32_t frameCount,
+    float gainLeft,
+    float gainRight,
+    std::vector<uint8_t>* scratch
+) {
+    const float left = sanitizeGain(gainLeft);
+    const float right = sanitizeGain(gainRight);
+    if (left == 1.0F && right == 1.0F) return data;
+
+    const int32_t sampleCount = frameCount * session->channels;
+    const int64_t byteCount = static_cast<int64_t>(sampleCount) * session->bytesPerSample;
+    scratch->resize(static_cast<size_t>(byteCount));
+    auto* output = scratch->data();
+
+    for (int32_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
+        const float gain = gainForChannel(
+            left,
+            right,
+            sampleIndex % session->channels,
+            session->channels
+        );
+        const int64_t byteOffset = static_cast<int64_t>(sampleIndex) * session->bytesPerSample;
+        const uint8_t* source = data + byteOffset;
+        uint8_t* target = output + byteOffset;
+
+        switch (session->formatCode) {
+            case kFormatI16: {
+                int16_t sample = 0;
+                std::memcpy(&sample, source, sizeof(sample));
+                const auto scaled = static_cast<int16_t>(std::clamp<int64_t>(
+                    std::llround(static_cast<double>(sample) * gain),
+                    std::numeric_limits<int16_t>::min(),
+                    std::numeric_limits<int16_t>::max()
+                ));
+                std::memcpy(target, &scaled, sizeof(scaled));
+                break;
+            }
+            case kFormatFloat: {
+                float sample = 0.0F;
+                std::memcpy(&sample, source, sizeof(sample));
+                const float scaled = std::clamp(sample * gain, -1.0F, 1.0F);
+                std::memcpy(target, &scaled, sizeof(scaled));
+                break;
+            }
+            case kFormatI24: {
+                int32_t sample = static_cast<int32_t>(source[0]) |
+                    (static_cast<int32_t>(source[1]) << 8) |
+                    (static_cast<int32_t>(source[2]) << 16);
+                if ((sample & 0x00800000) != 0) sample |= static_cast<int32_t>(0xFF000000);
+                const auto scaled = static_cast<int32_t>(std::clamp<int64_t>(
+                    std::llround(static_cast<double>(sample) * gain),
+                    -8'388'608,
+                    8'388'607
+                ));
+                target[0] = static_cast<uint8_t>(scaled & 0xFF);
+                target[1] = static_cast<uint8_t>((scaled >> 8) & 0xFF);
+                target[2] = static_cast<uint8_t>((scaled >> 16) & 0xFF);
+                break;
+            }
+            case kFormatI32: {
+                int32_t sample = 0;
+                std::memcpy(&sample, source, sizeof(sample));
+                const auto scaled = static_cast<int32_t>(std::clamp<int64_t>(
+                    std::llround(static_cast<double>(sample) * gain),
+                    std::numeric_limits<int32_t>::min(),
+                    std::numeric_limits<int32_t>::max()
+                ));
+                std::memcpy(target, &scaled, sizeof(scaled));
+                break;
+            }
+            default:
+                return data;
+        }
+    }
+    return scratch->data();
+}
+
+int32_t writeFrames(
+    Session* session,
+    const uint8_t* data,
+    int32_t frameCount,
+    bool blocking,
+    float gainLeft,
+    float gainRight
+) {
+    if (session == nullptr || data == nullptr || frameCount < 0) {
         setError("invalid AAudio write arguments");
         return -1;
     }
@@ -84,13 +222,49 @@ int32_t writeFrames(Session* session, const uint8_t* data, int32_t frameCount, b
     }
 
     std::lock_guard<std::mutex> guard(session->mutex);
+    if (session->stream == nullptr) {
+        setError("AAudio write raced with a closed session");
+        return -1;
+    }
+
+    const uint8_t* writeData = attenuatePcm(
+        session,
+        data,
+        frameCount,
+        gainLeft,
+        gainRight,
+        &session->scratch
+    );
     int32_t total = 0;
+    if (!session->started) {
+        const auto prefilled = AAudioStream_write(
+            session->stream,
+            writeData,
+            frameCount,
+            0
+        );
+        if (prefilled < 0) {
+            setAaudioError("AAudioStream_write prefill", prefilled);
+            return prefilled;
+        }
+        total = prefilled;
+        if (total == 0) return 0;
+
+        const auto startResult = AAudioStream_requestStart(session->stream);
+        if (startResult != AAUDIO_OK) {
+            setAaudioError("AAudioStream_requestStart", startResult);
+            return startResult;
+        }
+        session->started = true;
+        if (!blocking || total == frameCount) return total;
+    }
+
     while (total < frameCount) {
         const int32_t remaining = frameCount - total;
         const int64_t timeout = blocking ? kBlockingWriteTimeoutNanos : 0;
         const auto result = AAudioStream_write(
             session->stream,
-            data + static_cast<int64_t>(total) * bytesPerFrame,
+            writeData + static_cast<int64_t>(total) * bytesPerFrame,
             remaining,
             timeout
         );
@@ -156,7 +330,7 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
 
     if (AAudioStream_getSharingMode(stream) != AAUDIO_SHARING_MODE_EXCLUSIVE) {
         setError("AAudio returned SHARED instead of EXCLUSIVE");
-        closeStream(stream);
+        discardAndCloseStream(stream);
         return 0;
     }
     if (AAudioStream_getDeviceId(stream) != deviceId) {
@@ -164,7 +338,7 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
         message << "AAudio opened deviceId=" << AAudioStream_getDeviceId(stream)
                 << " instead of requested deviceId=" << deviceId;
         setError(message.str());
-        closeStream(stream);
+        discardAndCloseStream(stream);
         return 0;
     }
     if (AAudioStream_getSampleRate(stream) != sampleRate ||
@@ -176,19 +350,13 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
                 << static_cast<int>(AAudioStream_getFormat(stream)) << " channels="
                 << AAudioStream_getChannelCount(stream);
         setError(message.str());
-        closeStream(stream);
-        return 0;
-    }
-
-    result = AAudioStream_requestStart(stream);
-    if (result != AAUDIO_OK) {
-        setAaudioError("AAudioStream_requestStart", result);
-        closeStream(stream);
+        discardAndCloseStream(stream);
         return 0;
     }
 
     auto* session = new Session();
     session->stream = stream;
+    session->formatCode = formatCode;
     session->channels = channels;
     session->bytesPerSample = bytesPerSample;
     return static_cast<jlong>(reinterpret_cast<intptr_t>(session));
@@ -202,7 +370,9 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteBytes(
     jbyteArray data,
     jint offsetBytes,
     jint sizeBytes,
-    jboolean blocking
+    jboolean blocking,
+    jfloat gainLeft,
+    jfloat gainRight
 ) {
     auto* session = fromHandle(handle);
     if (session == nullptr || data == nullptr) {
@@ -231,7 +401,9 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteBytes(
         session,
         reinterpret_cast<const uint8_t*>(bytes) + offsetBytes,
         frames,
-        blocking == JNI_TRUE
+        blocking == JNI_TRUE,
+        gainLeft,
+        gainRight
     );
     env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
     return writtenFrames < 0 ? writtenFrames : writtenFrames * bytesPerFrame;
@@ -245,7 +417,9 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteFloats(
     jfloatArray data,
     jint offsetFloats,
     jint sizeFloats,
-    jboolean blocking
+    jboolean blocking,
+    jfloat gainLeft,
+    jfloat gainRight
 ) {
     auto* session = fromHandle(handle);
     if (session == nullptr || data == nullptr || session->bytesPerSample != 4) {
@@ -270,7 +444,9 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteFloats(
         session,
         reinterpret_cast<const uint8_t*>(samples + offsetFloats),
         frames,
-        blocking == JNI_TRUE
+        blocking == JNI_TRUE,
+        gainLeft,
+        gainRight
     );
     env->ReleaseFloatArrayElements(data, samples, JNI_ABORT);
     return writtenFrames < 0 ? writtenFrames : writtenFrames * session->channels;
@@ -284,7 +460,9 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteShorts(
     jshortArray data,
     jint offsetShorts,
     jint sizeShorts,
-    jboolean blocking
+    jboolean blocking,
+    jfloat gainLeft,
+    jfloat gainRight
 ) {
     auto* session = fromHandle(handle);
     if (session == nullptr || data == nullptr || session->bytesPerSample != 2) {
@@ -309,7 +487,9 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeWriteShorts(
         session,
         reinterpret_cast<const uint8_t*>(samples + offsetShorts),
         frames,
-        blocking == JNI_TRUE
+        blocking == JNI_TRUE,
+        gainLeft,
+        gainRight
     );
     env->ReleaseShortArrayElements(data, samples, JNI_ABORT);
     return writtenFrames < 0 ? writtenFrames : writtenFrames * session->channels;
@@ -325,7 +505,7 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeClose(
     if (session == nullptr) return;
     {
         std::lock_guard<std::mutex> guard(session->mutex);
-        closeStream(session->stream);
+        discardAndCloseStream(session->stream);
         session->stream = nullptr;
     }
     delete session;

@@ -56,8 +56,10 @@ internal object UsbExclusiveAaudioBridge {
         offsetBytes: Int,
         sizeBytes: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int = runCatching {
-        nativeWriteBytes(handle, data, offsetBytes, sizeBytes, blocking)
+        nativeWriteBytes(handle, data, offsetBytes, sizeBytes, blocking, gainLeft, gainRight)
     }.getOrElse { error ->
         ModernXposedRuntime.log("usb_exclusive: byte write bridge failed", error)
         -1
@@ -69,8 +71,10 @@ internal object UsbExclusiveAaudioBridge {
         offsetFloats: Int,
         sizeFloats: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int = runCatching {
-        nativeWriteFloats(handle, data, offsetFloats, sizeFloats, blocking)
+        nativeWriteFloats(handle, data, offsetFloats, sizeFloats, blocking, gainLeft, gainRight)
     }.getOrElse { error ->
         ModernXposedRuntime.log("usb_exclusive: float write bridge failed", error)
         -1
@@ -82,8 +86,10 @@ internal object UsbExclusiveAaudioBridge {
         offsetShorts: Int,
         sizeShorts: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int = runCatching {
-        nativeWriteShorts(handle, data, offsetShorts, sizeShorts, blocking)
+        nativeWriteShorts(handle, data, offsetShorts, sizeShorts, blocking, gainLeft, gainRight)
     }.getOrElse { error ->
         ModernXposedRuntime.log("usb_exclusive: short write bridge failed", error)
         -1
@@ -141,6 +147,8 @@ internal object UsbExclusiveAaudioBridge {
         offsetBytes: Int,
         sizeBytes: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int
 
     @JvmStatic
@@ -150,6 +158,8 @@ internal object UsbExclusiveAaudioBridge {
         offsetFloats: Int,
         sizeFloats: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int
 
     @JvmStatic
@@ -159,6 +169,8 @@ internal object UsbExclusiveAaudioBridge {
         offsetShorts: Int,
         sizeShorts: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int
 
     @JvmStatic

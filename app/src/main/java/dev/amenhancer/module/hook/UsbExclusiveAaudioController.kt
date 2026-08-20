@@ -10,6 +10,7 @@ import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
+import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -17,9 +18,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Safety rule: never suppress the original AudioTrack until a supported Java
  * AudioTrack.write(...) path has actually been observed and an AAudio session
- * already owns that exact track. The first takeover is performed only after a
- * successful original write while the track is playing, so unsupported/native
- * write paths stay fail-open instead of becoming silent.
+ * already owns that exact track. One successful original write proves the Java
+ * PCM path; takeover happens before the following write so that buffer can
+ * prefill AAudio instead of being flushed or duplicated during the transition.
  */
 internal object UsbExclusiveAaudioController {
     private val enabled = AtomicBoolean(false)
@@ -31,11 +32,15 @@ internal object UsbExclusiveAaudioController {
     private var observedTrack: WeakReference<AudioTrack>? = null
     private var failedTrack: WeakReference<AudioTrack>? = null
     private var lastFailure: String? = null
+    private val trackVolumes = WeakHashMap<AudioTrack, StereoGain>()
 
     fun configure(isEnabled: Boolean) {
         enabled.set(isEnabled)
         if (!isEnabled) {
-            synchronized(lock) { closeSessionLocked() }
+            synchronized(lock) {
+                closeSessionLocked()
+                trackVolumes.clear()
+            }
             observedTrack = null
             failedTrack = null
             lastFailure = null
@@ -51,91 +56,119 @@ internal object UsbExclusiveAaudioController {
     }
 
     /**
-     * Returns true only for a redundant play() on a track that is already owned
-     * by AAudio. Merely observing a compatible write is not enough to suppress
-     * the original play(), because Apple Music may have pre-buffered PCM there.
+     * Returns true only for a redundant play() on the active owner. A different
+     * track first closes the stale exclusive queue, then keeps its original
+     * play() path until the Java PCM write seam has been proven.
      */
-    fun beforePlay(context: Context, track: AudioTrack): Boolean {
+    fun beforePlay(track: AudioTrack): Boolean {
         if (!enabled.get() || internalTransition.get() == true) return false
         if (!track.isMediaTrack()) return false
         latestTrack = WeakReference(track)
-        return synchronized(lock) { session?.track?.get() === track }
+        return synchronized(lock) {
+            val owner = session?.track?.get()
+            if (owner != null && owner !== track) {
+                // A new song can start before Apple Music releases the previous
+                // AudioTrack. Drop the old exclusive queue before new PCM plays.
+                closeSessionLocked()
+            }
+            session?.track?.get() === track
+        }
     }
 
     /** Intercepts one supported write when an exclusive AAudio session owns this track. */
-    fun interceptWrite(track: AudioTrack, args: Array<Any?>): Int? {
+    fun interceptWrite(context: Context, track: AudioTrack, args: Array<Any?>): Int? {
         if (!enabled.get() || internalTransition.get() == true) return null
-        val active = synchronized(lock) {
-            session?.takeIf { it.track.get() === track }
-        } ?: return null
+        if (!track.isMediaTrack()) return null
 
-        val written = when (val data = args.firstOrNull()) {
-            is FloatArray -> {
-                if (track.format.encoding != AudioFormat.ENCODING_PCM_FLOAT) {
-                    return failWrite(track, "FloatArray write 与当前 AudioTrack encoding 不一致")
-                }
-                val offset = args.getOrNull(1) as? Int
-                    ?: return failWrite(track, "FloatArray write 缺少 offset")
-                val size = args.getOrNull(2) as? Int
-                    ?: return failWrite(track, "FloatArray write 缺少 size")
-                UsbExclusiveAaudioBridge.writeFloats(
-                    active.handle,
-                    data,
-                    offset,
-                    size,
-                    blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
-                )
-            }
-            is ShortArray -> {
-                if (track.format.encoding != AudioFormat.ENCODING_PCM_16BIT) {
-                    return failWrite(track, "ShortArray write 与当前 AudioTrack encoding 不一致")
-                }
-                val offset = args.getOrNull(1) as? Int
-                    ?: return failWrite(track, "ShortArray write 缺少 offset")
-                val size = args.getOrNull(2) as? Int
-                    ?: return failWrite(track, "ShortArray write 缺少 size")
-                UsbExclusiveAaudioBridge.writeShorts(
-                    active.handle,
-                    data,
-                    offset,
-                    size,
-                    blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
-                )
-            }
-            is ByteArray -> {
-                val offset = args.getOrNull(1) as? Int
-                    ?: return failWrite(track, "ByteArray write 缺少 offset")
-                val size = args.getOrNull(2) as? Int
-                    ?: return failWrite(track, "ByteArray write 缺少 size")
-                UsbExclusiveAaudioBridge.writeBytes(
-                    active.handle,
-                    data,
-                    offset,
-                    size,
-                    blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
-                )
-            }
-            is ByteBuffer -> writeByteBuffer(active, track, data, args)
-            else -> return failWrite(
-                track,
-                "Apple Music 切换到了当前实验版本无法接管的 AudioTrack.write 重载",
-            )
+        var active = synchronized(lock) { session?.takeIf { it.track.get() === track } }
+        if (active == null) {
+            if (observedTrack?.get() !== track || failedTrack?.get() === track) return null
+            if (!isSupportedWrite(track, args)) return null
+            if (track.playState != AudioTrack.PLAYSTATE_PLAYING) return null
+            val manager = context.getSystemService(AudioManager::class.java) ?: return null
+            val routed = runCatching { track.routedDevice }.getOrNull()
+                ?.takeIf { it.isUsbAudioOutput() }
+                ?: return null
+            hotTakeover(track, routed, manager)
+            active = synchronized(lock) { session?.takeIf { it.track.get() === track } }
+                ?: return null
         }
 
-        if (written < 0) {
-            return failWrite(track, UsbExclusiveAaudioBridge.lastError("AAudio PCM 写入失败"))
-        }
-        if (written > 0) {
-            synchronized(lock) {
+        return synchronized(lock) {
+            val owned = session?.takeIf { it === active && it.track.get() === track }
+                ?: return@synchronized null
+            val gains = effectiveGains(owned)
+            val written = when (val data = args.firstOrNull()) {
+                is FloatArray -> {
+                    if (track.format.encoding != AudioFormat.ENCODING_PCM_FLOAT) {
+                        return failWrite(track, "FloatArray write 与当前 AudioTrack encoding 不一致")
+                    }
+                    val offset = args.getOrNull(1) as? Int
+                        ?: return failWrite(track, "FloatArray write 缺少 offset")
+                    val size = args.getOrNull(2) as? Int
+                        ?: return failWrite(track, "FloatArray write 缺少 size")
+                    UsbExclusiveAaudioBridge.writeFloats(
+                        owned.handle,
+                        data,
+                        offset,
+                        size,
+                        blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
+                        gainLeft = gains.left,
+                        gainRight = gains.right,
+                    )
+                }
+                is ShortArray -> {
+                    if (track.format.encoding != AudioFormat.ENCODING_PCM_16BIT) {
+                        return failWrite(track, "ShortArray write 与当前 AudioTrack encoding 不一致")
+                    }
+                    val offset = args.getOrNull(1) as? Int
+                        ?: return failWrite(track, "ShortArray write 缺少 offset")
+                    val size = args.getOrNull(2) as? Int
+                        ?: return failWrite(track, "ShortArray write 缺少 size")
+                    UsbExclusiveAaudioBridge.writeShorts(
+                        owned.handle,
+                        data,
+                        offset,
+                        size,
+                        blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
+                        gainLeft = gains.left,
+                        gainRight = gains.right,
+                    )
+                }
+                is ByteArray -> {
+                    val offset = args.getOrNull(1) as? Int
+                        ?: return failWrite(track, "ByteArray write 缺少 offset")
+                    val size = args.getOrNull(2) as? Int
+                        ?: return failWrite(track, "ByteArray write 缺少 size")
+                    UsbExclusiveAaudioBridge.writeBytes(
+                        owned.handle,
+                        data,
+                        offset,
+                        size,
+                        blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
+                        gainLeft = gains.left,
+                        gainRight = gains.right,
+                    )
+                }
+                is ByteBuffer -> writeByteBuffer(owned, track, data, args, gains)
+                else -> return failWrite(
+                    track,
+                    "Apple Music 切换到了当前实验版本无法接管的 AudioTrack.write 重载",
+                )
+            }
+
+            if (written < 0) {
+                return failWrite(track, UsbExclusiveAaudioBridge.lastError("AAudio PCM 写入失败"))
+            }
+            if (written > 0) {
                 session?.takeIf { it.track.get() === track }?.hasWrittenPcm = true
             }
+            written
         }
-        return written
     }
 
-    /** Observe a successful original write and opportunistically switch a playing track. */
+    /** Observe a successful original write; the next write is the lossless takeover boundary. */
     fun afterOriginalWrite(
-        context: Context,
         track: AudioTrack,
         args: Array<Any?>,
         result: Any?,
@@ -148,13 +181,33 @@ internal object UsbExclusiveAaudioController {
 
         latestTrack = WeakReference(track)
         observedTrack = WeakReference(track)
-        if (track.playState != AudioTrack.PLAYSTATE_PLAYING) return
+    }
 
-        val manager = context.getSystemService(AudioManager::class.java) ?: return
-        val routed = runCatching { track.routedDevice }.getOrNull()
-            ?.takeIf { it.isUsbAudioOutput() }
-            ?: return
-        hotTakeover(track, routed)
+    /** Mirrors AudioTrack's app-level fades because the original track is paused during takeover. */
+    fun afterVolumeChange(
+        track: AudioTrack,
+        operation: String,
+        args: Array<Any?>,
+        result: Any?,
+    ) {
+        if (!enabled.get()) return
+        if (result is Int && result != AudioTrack.SUCCESS) return
+        val updated = when (operation) {
+            "setVolume" -> (args.firstOrNull() as? Float)?.let { gain ->
+                StereoGain(gain.coerceIn(0f, 1f), gain.coerceIn(0f, 1f))
+            }
+            "setStereoVolume" -> {
+                val left = args.getOrNull(0) as? Float
+                val right = args.getOrNull(1) as? Float
+                if (left != null && right != null) {
+                    StereoGain(left.coerceIn(0f, 1f), right.coerceIn(0f, 1f))
+                } else {
+                    null
+                }
+            }
+            else -> null
+        } ?: return
+        synchronized(lock) { trackVolumes[track] = updated }
     }
 
     fun onTransportControl(track: AudioTrack, operation: String) {
@@ -169,6 +222,7 @@ internal object UsbExclusiveAaudioController {
             }
         }
         if (operation == "release") {
+            synchronized(lock) { trackVolumes.remove(track) }
             if (observedTrack?.get() === track) observedTrack = null
             if (failedTrack?.get() === track) failedTrack = null
             if (latestTrack?.get() === track) latestTrack = null
@@ -245,29 +299,45 @@ internal object UsbExclusiveAaudioController {
         )
     }
 
-    private fun hotTakeover(track: AudioTrack, device: AudioDeviceInfo) {
-        if (synchronized(lock) { session != null || failedTrack?.get() === track }) return
+    private fun hotTakeover(
+        track: AudioTrack,
+        device: AudioDeviceInfo,
+        manager: AudioManager,
+    ) {
         internalTransition.set(true)
         try {
-            val paused = runCatching {
-                track.pause()
-                true
-            }.getOrElse { error ->
-                markFailure(track, "暂停原 AudioTrack 失败：${error.message ?: error.javaClass.simpleName}")
-                false
-            }
-            if (!paused) return
-            runCatching { track.flush() }
-            if (!startExclusive(track, device)) {
-                runCatching { track.play() }
-                    .onFailure { error -> ModernXposedRuntime.log("usb_exclusive: fallback play failed", error) }
+            synchronized(lock) {
+                if (session?.track?.get() === track || failedTrack?.get() === track) return
+                // Apple Music can start the next AudioTrack before releasing the old
+                // one. Release that stale exclusive owner before opening the new format.
+                closeSessionLocked()
+
+                val paused = runCatching {
+                    track.pause()
+                    true
+                }.getOrElse { error ->
+                    markFailure(track, "暂停原 AudioTrack 失败：${error.message ?: error.javaClass.simpleName}")
+                    false
+                }
+                if (!paused) return
+                runCatching { track.flush() }
+                if (!startExclusive(track, device, manager)) {
+                    runCatching { track.play() }
+                        .onFailure { error ->
+                            ModernXposedRuntime.log("usb_exclusive: fallback play failed", error)
+                        }
+                }
             }
         } finally {
             internalTransition.set(false)
         }
     }
 
-    private fun startExclusive(track: AudioTrack, device: AudioDeviceInfo): Boolean {
+    private fun startExclusive(
+        track: AudioTrack,
+        device: AudioDeviceInfo,
+        manager: AudioManager,
+    ): Boolean {
         val opened = UsbExclusiveAaudioBridge.open(device.id, track.format)
         return when (opened) {
             is UsbExclusiveAaudioBridge.OpenResult.Failed -> {
@@ -284,7 +354,9 @@ internal object UsbExclusiveAaudioController {
                         track = WeakReference(track),
                         handle = opened.handle,
                         deviceId = device.id,
+                        deviceType = device.type,
                         deviceName = device.productName?.toString()?.takeIf(String::isNotBlank),
+                        audioManager = manager,
                     )
                     failedTrack = null
                     lastFailure = null
@@ -323,6 +395,7 @@ internal object UsbExclusiveAaudioController {
         track: AudioTrack,
         data: ByteBuffer,
         args: Array<Any?>,
+        gains: StereoGain,
     ): Int {
         val sizeBytes = args.getOrNull(1) as? Int ?: return -1
         if (sizeBytes < 0 || sizeBytes > data.remaining()) return -1
@@ -337,6 +410,8 @@ internal object UsbExclusiveAaudioController {
             0,
             sizeBytes,
             blocking = (args.getOrNull(2) as? Int) != AudioTrack.WRITE_NON_BLOCKING,
+            gainLeft = gains.left,
+            gainRight = gains.right,
         )
         if (written > 0) data.position(data.position() + written)
         return written
@@ -355,6 +430,32 @@ internal object UsbExclusiveAaudioController {
 
     private fun writeModeForArray(args: Array<Any?>): Int =
         (args.getOrNull(3) as? Int) ?: AudioTrack.WRITE_BLOCKING
+
+    private fun effectiveGains(active: Session): StereoGain {
+        val manager = active.audioManager
+        val index = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
+            .getOrNull()
+            ?: return combineWithTrackGain(active, active.streamGain)
+        val maximum = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+            .getOrNull()
+            ?: return combineWithTrackGain(active, active.streamGain)
+        val muted = runCatching { manager.isStreamMute(AudioManager.STREAM_MUSIC) }
+            .getOrDefault(index <= 0)
+        val db = runCatching {
+            manager.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, active.deviceType)
+        }.getOrNull()
+        val streamGain = UsbExclusiveVolumePolicy.streamGain(index, maximum, muted, db)
+        active.streamGain = streamGain
+        return combineWithTrackGain(active, streamGain)
+    }
+
+    private fun combineWithTrackGain(active: Session, streamGain: Float): StereoGain {
+        val trackGain = trackVolumes[active.track.get()] ?: StereoGain.FULL
+        return StereoGain(
+            left = UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain.left),
+            right = UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain.right),
+        )
+    }
 
     private fun resolveVisibleUsbDevice(manager: AudioManager, track: AudioTrack): AudioDeviceInfo? {
         runCatching { track.routedDevice }.getOrNull()
@@ -411,7 +512,16 @@ internal object UsbExclusiveAaudioController {
         val track: WeakReference<AudioTrack>,
         val handle: Long,
         val deviceId: Int,
+        val deviceType: Int,
         val deviceName: String?,
+        val audioManager: AudioManager,
+        var streamGain: Float = 1f,
         var hasWrittenPcm: Boolean = false,
     )
+
+    private data class StereoGain(val left: Float, val right: Float) {
+        companion object {
+            val FULL = StereoGain(1f, 1f)
+        }
+    }
 }
