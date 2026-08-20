@@ -12,6 +12,7 @@ import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Experimental AAudio takeover for Apple Music media AudioTracks.
@@ -33,6 +34,7 @@ internal object UsbExclusiveAaudioController {
     private var failedTrack: WeakReference<AudioTrack>? = null
     private var lastFailure: String? = null
     private val trackVolumes = WeakHashMap<AudioTrack, StereoGain>()
+    private val observedMediaVolumeIndex = AtomicInteger(UNKNOWN_VOLUME_INDEX)
 
     fun configure(isEnabled: Boolean) {
         enabled.set(isEnabled)
@@ -44,6 +46,7 @@ internal object UsbExclusiveAaudioController {
             observedTrack = null
             failedTrack = null
             lastFailure = null
+            observedMediaVolumeIndex.set(UNKNOWN_VOLUME_INDEX)
         }
     }
 
@@ -53,6 +56,12 @@ internal object UsbExclusiveAaudioController {
 
     fun isActive(track: AudioTrack): Boolean = synchronized(lock) {
         session?.track?.get() === track
+    }
+
+    /** Receives the media step selected by Android's system volume UI. */
+    fun onSystemMediaVolumeChanged(volumeIndex: Int) {
+        if (!enabled.get() || volumeIndex < 0) return
+        observedMediaVolumeIndex.set(volumeIndex)
     }
 
     /**
@@ -433,12 +442,14 @@ internal object UsbExclusiveAaudioController {
 
     private fun effectiveGains(active: Session): StereoGain {
         val manager = active.audioManager
-        val index = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
+        val queriedIndex = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
             .getOrNull()
             ?: return combineWithTrackGain(active, active.streamGain)
         val maximum = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
             .getOrNull()
             ?: return combineWithTrackGain(active, active.streamGain)
+        val observedIndex = observedMediaVolumeIndex.get()
+        val index = if (observedIndex in 0..maximum) observedIndex else queriedIndex
         val muted = runCatching { manager.isStreamMute(AudioManager.STREAM_MUSIC) }
             .getOrDefault(index <= 0)
         val db = runCatching {
@@ -524,4 +535,6 @@ internal object UsbExclusiveAaudioController {
             val FULL = StereoGain(1f, 1f)
         }
     }
+
+    private const val UNKNOWN_VOLUME_INDEX = -1
 }

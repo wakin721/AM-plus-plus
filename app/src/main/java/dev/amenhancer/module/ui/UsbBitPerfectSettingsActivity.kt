@@ -1,6 +1,5 @@
 package dev.amenhancer.module.ui
 
-import android.app.Activity
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
@@ -19,16 +18,23 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import dev.amenhancer.module.ModuleApplication
 import dev.amenhancer.module.R
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import dev.amenhancer.module.XposedServiceSnapshot
 import dev.amenhancer.module.config.ConfigStore
+import dev.amenhancer.module.model.ModuleSettings
+import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
 import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 
 /** Dedicated USB output settings and live audio-path diagnostics page. */
-class UsbBitPerfectSettingsActivity : Activity() {
+class UsbBitPerfectSettingsActivity : ComponentActivity() {
     private lateinit var store: ConfigStore
     private lateinit var requester: UsbBitPerfectStatusRequester
     private lateinit var palette: Palette
@@ -41,6 +47,11 @@ class UsbBitPerfectSettingsActivity : Activity() {
     private lateinit var mixerValue: TextView
     private lateinit var usbValue: TextView
     private var suppressToggleCallback = false
+    private var expressiveUiActive = false
+    private var expressiveSettings by mutableStateOf(ModuleSettings())
+    private var expressiveSnapshot by mutableStateOf(XposedServiceSnapshot.waiting())
+    private var expressiveStatus by mutableStateOf<UsbBitPerfectStatusDetails?>(null)
+    private var expressiveChecking by mutableStateOf(false)
 
     private val serviceListener: (XposedServiceSnapshot) -> Unit = { snapshot ->
         runOnUiThread { updateToggles(snapshot) }
@@ -53,8 +64,39 @@ class UsbBitPerfectSettingsActivity : Activity() {
         palette = Palette.resolve(this)
         syncUsbAttachHandling()
         configureSystemBars()
-        setContentView(buildScreen().also(::applySystemBarInsets))
+        expressiveUiActive = true
         updateToggles(ModuleApplication.serviceSnapshot)
+        setContent {
+            AmppExpressiveTheme {
+                UsbAudioSettingsScreen(
+                    settings = expressiveSettings,
+                    snapshot = expressiveSnapshot,
+                    status = expressiveStatus,
+                    checking = expressiveChecking,
+                    actions = UsbAudioSettingsActions(
+                        navigateBack = ::finish,
+                        setEnabled = { enabled ->
+                            store.saveSettings(store.settings().copy(usbBitPerfectEnabled = enabled))
+                            syncUsbAttachHandling()
+                            updateToggles(ModuleApplication.serviceSnapshot)
+                        },
+                        setDirectEnabled = { enabled ->
+                            store.saveSettings(store.settings().copy(usbDirectUacEnabled = enabled))
+                            syncUsbAttachHandling()
+                            if (enabled) {
+                                UsbDirectPermissionActivity.requestCurrentDevice(this)
+                            }
+                            updateToggles(ModuleApplication.serviceSnapshot)
+                        },
+                        setExclusiveEnabled = { enabled ->
+                            store.saveSettings(store.settings().copy(usbExclusiveAaudioEnabled = enabled))
+                            updateToggles(ModuleApplication.serviceSnapshot)
+                        },
+                        refresh = ::refreshStatus,
+                    ),
+                )
+            }
+        }
     }
 
     override fun onResume() {
@@ -359,6 +401,12 @@ class UsbBitPerfectSettingsActivity : Activity() {
     }
 
     private fun updateToggles(snapshot: XposedServiceSnapshot) {
+        if (expressiveUiActive) {
+            expressiveSnapshot = snapshot
+            expressiveSettings = store.settings()
+            syncUsbAttachHandling()
+            return
+        }
         if (!::toggle.isInitialized || !::directToggle.isInitialized || !::exclusiveToggle.isInitialized) return
         val settings = store.settings()
         suppressToggleCallback = true
@@ -401,6 +449,14 @@ class UsbBitPerfectSettingsActivity : Activity() {
             )
             return
         }
+        if (expressiveUiActive) {
+            expressiveChecking = true
+            requester.request { status ->
+                if (isFinishing || isDestroyed) return@request
+                renderStatus(status, enabled)
+            }
+            return
+        }
         statusTitle.text = "正在检查…"
         statusMessage.text = "正在向 Apple Music 进程读取实时 AudioTrack / USB Direct / AAudio 状态"
         requester.request { status ->
@@ -410,6 +466,12 @@ class UsbBitPerfectSettingsActivity : Activity() {
     }
 
     private fun renderStatus(status: UsbBitPerfectStatusDetails?, enabled: Boolean) {
+        if (expressiveUiActive) {
+            expressiveStatus = status
+            expressiveChecking = false
+            expressiveSettings = store.settings()
+            return
+        }
         if (status == null) {
             statusTitle.text = if (enabled) "无法查询实时状态" else "已关闭"
             appleMusicValue.text = "等待 Apple Music"

@@ -316,6 +316,11 @@ Java_dev_amenhancer_module_hook_UsbExclusiveAaudioBridge_nativeOpen(
     AAudioStreamBuilder_setDirection(builder, AAUDIO_DIRECTION_OUTPUT);
     AAudioStreamBuilder_setDeviceId(builder, deviceId);
     AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_EXCLUSIVE);
+    // An EXCLUSIVE stream bypasses AudioFlinger's mixer, but it must still be
+    // identified as media playback so Android routes the hardware volume keys
+    // to STREAM_MUSIC while the original AudioTrack is paused.
+    AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_MEDIA);
+    AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_MUSIC);
     AAudioStreamBuilder_setSampleRate(builder, sampleRate);
     AAudioStreamBuilder_setChannelCount(builder, channels);
     AAudioStreamBuilder_setFormat(builder, requestedFormat);

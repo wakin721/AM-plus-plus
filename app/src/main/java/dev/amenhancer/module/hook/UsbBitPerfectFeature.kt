@@ -19,6 +19,7 @@ import dev.amenhancer.module.ModuleConstants
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 internal class UsbBitPerfectFeature : FeatureHook {
@@ -53,6 +54,7 @@ internal class AppleMusicUsbBitPerfectTarget(
                 "USB Bit-Perfect status request receiver could not be registered",
             )
         }
+        UsbExclusiveSystemVolumeObserver.register(application)
 
         val play = AudioTrack::class.java.getDeclaredMethod("play")
         ModernXposedRuntime.hookMethod(play, object : ModernMethodHook() {
@@ -164,6 +166,45 @@ internal class AppleMusicUsbBitPerfectTarget(
                 }
             },
         )
+    }
+}
+
+/**
+ * AAudio EXCLUSIVE does not pass through AudioFlinger's software volume stage.
+ * Mirror the media step selected by the system volume UI into the PCM gain used
+ * by [UsbExclusiveAaudioController]. The receiver is process-local and only
+ * accepts the framework media-stream broadcast.
+ */
+internal object UsbExclusiveSystemVolumeObserver {
+    private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
+    private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+    private const val EXTRA_VOLUME_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
+    private val registered = AtomicBoolean(false)
+
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != VOLUME_CHANGED_ACTION) return
+            if (intent.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1) != AudioManager.STREAM_MUSIC) return
+            val index = intent.getIntExtra(EXTRA_VOLUME_STREAM_VALUE, -1)
+            UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)
+        }
+    }
+
+    fun register(application: Application) {
+        if (!registered.compareAndSet(false, true)) return
+        val result = runCatching {
+            val filter = IntentFilter(VOLUME_CHANGED_ACTION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                application.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                application.registerReceiver(receiver, filter)
+            }
+        }
+        if (result.isFailure) {
+            registered.set(false)
+            ModernXposedRuntime.log("usb_exclusive: system media volume observer unavailable", result.exceptionOrNull())
+        }
     }
 }
 

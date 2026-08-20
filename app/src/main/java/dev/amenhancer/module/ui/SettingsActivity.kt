@@ -1,7 +1,6 @@
 package dev.amenhancer.module.ui
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
@@ -31,6 +30,11 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import dev.amenhancer.module.ModuleApplication
 import dev.amenhancer.module.LibraryRefreshProtocol
 import dev.amenhancer.module.R
@@ -64,6 +68,7 @@ import dev.amenhancer.module.model.CustomLyricsManifest
 import dev.amenhancer.module.model.CustomLyricsSources
 import dev.amenhancer.module.model.LyricsFontManifest
 import dev.amenhancer.module.model.ModuleSettings
+import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -77,7 +82,7 @@ private enum class SettingsPage {
     CUSTOM_LYRICS,
 }
 
-class SettingsActivity : Activity() {
+class SettingsActivity : ComponentActivity() {
     private lateinit var store: ConfigStore
     private lateinit var launcherIconController: LauncherIconController
     private lateinit var content: LinearLayout
@@ -91,13 +96,18 @@ class SettingsActivity : Activity() {
     private val backgroundExecutor: ExecutorService get() = settingsExecutor
     private var pendingCustomTtmlImport: ((String) -> Unit)? = null
     private var awaitingCustomTtmlPickerResult = false
-    private var currentPage = SettingsPage.MAIN
+    private var currentPage by mutableStateOf(SettingsPage.MAIN)
     private val customLyricsListState = CustomLyricsListState()
     private var customLyricsSearchQuery = ""
     private var customLyricsListRegion: LinearLayout? = null
+    private var expressiveUiActive = false
+    private var expressiveSettings by mutableStateOf(ModuleSettings())
+    private var expressiveSnapshot by mutableStateOf(XposedServiceSnapshot.waiting())
+    private var expressiveLauncherHidden by mutableStateOf(false)
+    private var expressiveSearchQuery by mutableStateOf("")
 
     private val serviceListener: (XposedServiceSnapshot) -> Unit = { snapshot ->
-        runOnUiThread { if (::content.isInitialized) render(snapshot) }
+        runOnUiThread { render(snapshot) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,14 +125,54 @@ class SettingsActivity : Activity() {
             ?.let { saved -> runCatching { SettingsPage.valueOf(saved) }.getOrNull() }
             ?: SettingsPage.MAIN
         configureSystemBars()
-        setContentView(buildScreen().also(::applySystemBarInsets))
+        expressiveUiActive = true
+        expressiveLauncherHidden = launcherIconController.isHidden()
         render()
+        setContent {
+            AmppExpressiveTheme {
+                AmppSettingsScreen(
+                    settings = expressiveSettings,
+                    snapshot = expressiveSnapshot,
+                    launcherHidden = expressiveLauncherHidden,
+                    customLyricsPage = currentPage == SettingsPage.CUSTOM_LYRICS,
+                    customLyricsQuery = expressiveSearchQuery,
+                    actions = AmppSettingsActions(
+                        saveSettings = { updated ->
+                            store.saveSettings(updated)
+                            render()
+                        },
+                        showTargetLanguage = ::showTargetLanguagePicker,
+                        refreshLibrary = ::requestLibraryRefresh,
+                        openCustomLyrics = { showPage(SettingsPage.CUSTOM_LYRICS) },
+                        chooseFont = ::chooseFont,
+                        restoreFont = ::restoreFont,
+                        openUsbAudio = {
+                            startActivity(Intent(this, UsbBitPerfectSettingsActivity::class.java))
+                        },
+                        setLauncherHidden = { hidden ->
+                            launcherIconController.setHidden(hidden)
+                            expressiveLauncherHidden = hidden
+                        },
+                        showHelp = ::showHelp,
+                        backToMain = { showPage(SettingsPage.MAIN) },
+                        setCustomLyricsQuery = { query -> expressiveSearchQuery = query },
+                        addCustomLyrics = { showCustomLyricsEditor() },
+                        syncCustomLyrics = ::syncCustomLyricsFromGitHub,
+                        backupCustomLyrics = ::chooseCustomLyricsBackupDestination,
+                        restoreCustomLyrics = ::chooseCustomLyricsBackupRestore,
+                        setCustomLyricsEnabled = ::setCustomLyricsEnabled,
+                        editCustomLyrics = { group -> showCustomLyricsEditor(group) },
+                        deleteCustomLyrics = ::confirmDeleteCustomLyrics,
+                    ),
+                )
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
         ModuleApplication.addServiceListener(serviceListener)
-        if (::content.isInitialized) render()
+        render()
     }
 
     override fun onPause() {
@@ -271,6 +321,12 @@ class SettingsActivity : Activity() {
     }
 
     private fun render(snapshot: XposedServiceSnapshot = ModuleApplication.serviceSnapshot) {
+        if (expressiveUiActive) {
+            expressiveSnapshot = snapshot
+            expressiveSettings = store.settingsWithCustomLyrics(snapshot)
+            expressiveLauncherHidden = launcherIconController.isHidden()
+            return
+        }
         content.removeAllViews()
         val settings = store.settingsWithCustomLyrics(snapshot)
         updateTopBar()
@@ -315,7 +371,9 @@ class SettingsActivity : Activity() {
         if (page == SettingsPage.MAIN) currentSongIdentityRequester.cancel()
         currentPage = page
         render()
-        settingsScroll.post { settingsScroll.scrollTo(0, 0) }
+        if (::settingsScroll.isInitialized) {
+            settingsScroll.post { settingsScroll.scrollTo(0, 0) }
+        }
     }
 
     private fun updateTopBar() {
@@ -734,7 +792,7 @@ class SettingsActivity : Activity() {
             val result = SafFontImporter(applicationContext, snapshot, store).import(uri)
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
-                    if (::content.isInitialized) render()
+                    render()
                     when (result) {
                         is FontImportResult.Imported -> toast("字体已导入，重开 Apple Music 后生效")
                         is FontImportResult.Failed -> toast(result.message)
@@ -756,7 +814,7 @@ class SettingsActivity : Activity() {
             if (cleared && oldManifest.enabled) snapshot.deleteRemoteFile(oldManifest.fileId)
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
-                    if (::content.isInitialized) render()
+                    render()
                     toast(if (cleared) "已恢复原字体，重开 Apple Music 后生效" else "恢复原字体失败")
                 }
             }
