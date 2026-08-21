@@ -67,6 +67,7 @@ internal class AmppSettingsActions(
     val chooseFont: () -> Unit,
     val restoreFont: () -> Unit,
     val openUsbAudio: () -> Unit,
+    val openAppearance: () -> Unit,
     val setLauncherHidden: (Boolean) -> Unit,
     val showHelp: () -> Unit,
     val backToMain: () -> Unit,
@@ -252,6 +253,12 @@ private fun MainSettingsPage(
                     checked = launcherHidden,
                     enabled = true,
                     onChanged = actions.setLauncherHidden,
+                )
+                GroupDivider()
+                ExpressiveActionRow(
+                    title = "外观与主题",
+                    summary = "原有主题、MD3 调色板、动态颜色与显示模式",
+                    onClick = actions.openAppearance,
                 )
             }
         }

@@ -73,4 +73,43 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(dialogs.contains("shape = RoundedCornerShape(36.dp)"))
         assertFalse(dialogs.contains("android.app.AlertDialog"))
     }
+
+    @Test
+    fun `appearance entry supports original md3 palettes dynamic color and display modes`() {
+        val activity = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/SettingsActivity.kt",
+        )
+        val usb = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
+        )
+        val screen = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/AppearanceSettingsActivity.kt",
+        )
+        val preferences = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/theme/AppearancePreferences.kt",
+        )
+        val theme = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/theme/AmppExpressiveTheme.kt",
+        )
+        val manifest = projectFile("app/src/main/AndroidManifest.xml")
+
+        assertTrue(activity.contains("title = \"外观与主题\""))
+        assertTrue(activity.contains("activeAppearance.style == AppUiStyle.MATERIAL3"))
+        assertTrue(activity.contains("setContentView(root)"))
+        assertTrue(usb.contains("activeAppearance.style == AppUiStyle.MATERIAL3"))
+        assertTrue(screen.contains("AppThemePalette.entries"))
+        assertTrue(screen.contains("关闭动态颜色后可选择调色板"))
+        assertTrue(screen.contains("AppThemeMode.entries"))
+        assertTrue(screen.contains("AppUiStyle.ORIGINAL"))
+        assertTrue(screen.contains("AppUiStyle.MATERIAL3"))
+        assertTrue(preferences.contains("ORIGINAL(\"原有主题\")"))
+        assertTrue(preferences.contains("MATERIAL3(\"Material 3 Expressive\")"))
+        assertTrue(preferences.contains("SYSTEM(\"自动\")"))
+        assertTrue(preferences.contains("LIGHT(\"浅色\")"))
+        assertTrue(preferences.contains("DARK(\"深色\")"))
+        assertTrue(preferences.contains("val dynamicColor: Boolean = true"))
+        assertTrue(theme.contains("dynamicLightColorScheme(context)"))
+        assertTrue(theme.contains("appearance.palette.lightColorScheme()"))
+        assertTrue(manifest.contains(".ui.AppearanceSettingsActivity"))
+    }
 }

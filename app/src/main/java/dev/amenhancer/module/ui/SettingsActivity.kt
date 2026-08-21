@@ -74,6 +74,9 @@ import dev.amenhancer.module.translation.AiTranslationSettings
 import dev.amenhancer.module.translation.DeepSeekTranslationClient
 import dev.amenhancer.module.translation.DeepSeekTranslationResult
 import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
+import dev.amenhancer.module.ui.theme.AppAppearanceSettings
+import dev.amenhancer.module.ui.theme.AppUiStyle
+import dev.amenhancer.module.ui.theme.AppearancePreferences
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -112,13 +115,21 @@ class SettingsActivity : ComponentActivity() {
     private var expressiveSearchQuery by mutableStateOf("")
     private var expressiveDialog by mutableStateOf<ExpressiveSettingsDialog?>(null)
     private var expressiveSyncCancellation: AtomicBoolean? = null
+    private lateinit var appearancePreferences: AppearancePreferences
+    private var activeAppearance = AppAppearanceSettings()
 
     private val serviceListener: (XposedServiceSnapshot) -> Unit = { snapshot ->
         runOnUiThread { render(snapshot) }
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppearancePreferences.themedContext(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appearancePreferences = AppearancePreferences(this)
+        activeAppearance = appearancePreferences.settings()
         store = ConfigStore(this)
         launcherIconController = LauncherIconController(this)
         currentSongIdentityRequester = CurrentSongIdentityRequester(this)
@@ -132,11 +143,18 @@ class SettingsActivity : ComponentActivity() {
             ?.let { saved -> runCatching { SettingsPage.valueOf(saved) }.getOrNull() }
             ?: SettingsPage.MAIN
         configureSystemBars()
-        expressiveUiActive = true
+        expressiveUiActive = activeAppearance.style == AppUiStyle.MATERIAL3
         expressiveLauncherHidden = launcherIconController.isHidden()
+        if (!expressiveUiActive) {
+            val root = buildScreen()
+            setContentView(root)
+            applySystemBarInsets(root)
+            render()
+            return
+        }
         render()
         setContent {
-            AmppExpressiveTheme {
+            AmppExpressiveTheme(appearance = activeAppearance) {
                 AmppSettingsScreen(
                     settings = expressiveSettings,
                     snapshot = expressiveSnapshot,
@@ -156,6 +174,7 @@ class SettingsActivity : ComponentActivity() {
                         openUsbAudio = {
                             startActivity(Intent(this, UsbBitPerfectSettingsActivity::class.java))
                         },
+                        openAppearance = ::openAppearanceSettings,
                         setLauncherHidden = { hidden ->
                             launcherIconController.setHidden(hidden)
                             expressiveLauncherHidden = hidden
@@ -203,6 +222,10 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::appearancePreferences.isInitialized && appearancePreferences.settings() != activeAppearance) {
+            recreate()
+            return
+        }
         ModuleApplication.addServiceListener(serviceListener)
         render()
     }
@@ -2163,6 +2186,17 @@ class SettingsActivity : ComponentActivity() {
         ) { hidden ->
             launcherIconController.setHidden(hidden)
         })
+        addView(insetDivider())
+        addView(actionRow(
+            title = "外观与主题",
+            summary = "原有主题、MD3 调色板、动态颜色与显示模式",
+            enabled = true,
+            onClick = ::openAppearanceSettings,
+        ))
+    }
+
+    private fun openAppearanceSettings() {
+        startActivity(Intent(this, AppearanceSettingsActivity::class.java))
     }
 
     private fun settingRow(

@@ -1,6 +1,7 @@
 package dev.amenhancer.module.ui
 
 import android.app.Activity
+import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
@@ -32,6 +33,9 @@ import dev.amenhancer.module.XposedServiceSnapshot
 import dev.amenhancer.module.config.ConfigStore
 import dev.amenhancer.module.model.ModuleSettings
 import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
+import dev.amenhancer.module.ui.theme.AppAppearanceSettings
+import dev.amenhancer.module.ui.theme.AppUiStyle
+import dev.amenhancer.module.ui.theme.AppearancePreferences
 import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 
 /** Dedicated USB output settings and live audio-path diagnostics page. */
@@ -53,22 +57,37 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
     private var expressiveSnapshot by mutableStateOf(XposedServiceSnapshot.waiting())
     private var expressiveStatus by mutableStateOf<UsbBitPerfectStatusDetails?>(null)
     private var expressiveChecking by mutableStateOf(false)
+    private lateinit var appearancePreferences: AppearancePreferences
+    private var activeAppearance = AppAppearanceSettings()
 
     private val serviceListener: (XposedServiceSnapshot) -> Unit = { snapshot ->
         runOnUiThread { updateToggles(snapshot) }
     }
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppearancePreferences.themedContext(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appearancePreferences = AppearancePreferences(this)
+        activeAppearance = appearancePreferences.settings()
         store = ConfigStore(this)
         requester = UsbBitPerfectStatusRequester(this)
         palette = Palette.resolve(this)
         syncUsbAttachHandling()
         configureSystemBars()
-        expressiveUiActive = true
+        expressiveUiActive = activeAppearance.style == AppUiStyle.MATERIAL3
+        if (!expressiveUiActive) {
+            val root = buildScreen()
+            setContentView(root)
+            applySystemBarInsets(root)
+            updateToggles(ModuleApplication.serviceSnapshot)
+            return
+        }
         updateToggles(ModuleApplication.serviceSnapshot)
         setContent {
-            AmppExpressiveTheme {
+            AmppExpressiveTheme(appearance = activeAppearance) {
                 UsbAudioSettingsScreen(
                     settings = expressiveSettings,
                     snapshot = expressiveSnapshot,
@@ -102,6 +121,10 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::appearancePreferences.isInitialized && appearancePreferences.settings() != activeAppearance) {
+            recreate()
+            return
+        }
         ModuleApplication.addServiceListener(serviceListener)
         updateToggles(ModuleApplication.serviceSnapshot)
         refreshStatus()

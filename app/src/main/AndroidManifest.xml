@@ -65,6 +65,10 @@
             android:name=".ui.UsbBitPerfectSettingsActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".ui.AppearanceSettingsActivity"
+            android:exported="false" />
+
         <!--
           Disabled until the user opts into USB Direct UAC. When enabled, the
           platform USB attach resolver can show its native "open with AM++"
