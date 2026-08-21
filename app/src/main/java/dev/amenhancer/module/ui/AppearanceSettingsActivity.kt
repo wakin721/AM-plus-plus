@@ -11,9 +11,11 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -24,10 +26,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +62,7 @@ import dev.amenhancer.module.ui.theme.AppThemeMode
 import dev.amenhancer.module.ui.theme.AppThemePalette
 import dev.amenhancer.module.ui.theme.AppUiStyle
 import dev.amenhancer.module.ui.theme.AppearancePreferences
+import dev.amenhancer.module.ui.theme.staticBackgroundColor
 
 class AppearanceSettingsActivity : ComponentActivity() {
     private lateinit var appearancePreferences: AppearancePreferences
@@ -127,133 +130,149 @@ private fun AppearanceSettingsScreen(
     navigateBack: () -> Unit,
     updateAppearance: (AppAppearanceSettings) -> Unit,
 ) {
+    val darkTheme = when (appearance.mode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
+    val usesDynamicColor = appearance.dynamicColor && dynamicColorSupported
+    val screenBackground = if (usesDynamicColor) {
+        MaterialTheme.colorScheme.background
+    } else {
+        appearance.palette.staticBackgroundColor(darkTheme)
+    }
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets.safeDrawing,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = screenBackground,
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 24.dp,
+                top = innerPadding.calculateTopPadding() + 4.dp,
+                end = 24.dp,
+                bottom = innerPadding.calculateBottomPadding() + 64.dp,
+            ),
         ) {
-            IconButton(
-                modifier = Modifier.padding(top = 4.dp),
-                onClick = navigateBack,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_arrow_back),
-                    contentDescription = "返回",
-                )
-            }
-
-            Text(
-                modifier = Modifier.padding(top = 20.dp, bottom = 40.dp),
-                text = "主题与色彩",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Normal,
-            )
-
-            SectionTitle("界面风格")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 18.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ThemeStyleOption(
-                    modifier = Modifier.weight(1f),
-                    title = "原有主题",
-                    summary = "经典 AM++",
-                    selected = appearance.style == AppUiStyle.ORIGINAL,
-                    onClick = {
-                        updateAppearance(appearance.copy(style = AppUiStyle.ORIGINAL))
-                    },
-                )
-                ThemeStyleOption(
-                    modifier = Modifier.weight(1f),
-                    title = "MD3",
-                    summary = "Material 3 Expressive",
-                    selected = appearance.style == AppUiStyle.MATERIAL3,
-                    onClick = {
-                        updateAppearance(appearance.copy(style = AppUiStyle.MATERIAL3))
-                    },
-                )
-            }
-
-            Spacer(Modifier.height(36.dp))
-            SectionTitle("主题")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 22.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                listOf(
-                    AppThemeMode.LIGHT,
-                    AppThemeMode.DARK,
-                    AppThemeMode.SYSTEM,
-                ).forEach { mode ->
-                    ThemeModePreview(
-                        modifier = Modifier.weight(1f),
-                        mode = mode,
-                        selected = appearance.mode == mode,
-                        onClick = { updateAppearance(appearance.copy(mode = mode)) },
+            item(key = "back") {
+                IconButton(onClick = navigateBack) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_arrow_back),
+                        contentDescription = "返回",
                     )
+                }
+            }
+
+            item(key = "title") {
+                Text(
+                    modifier = Modifier.padding(top = 20.dp, bottom = 40.dp),
+                    text = "主题与色彩",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Normal,
+                )
+            }
+
+            item(key = "style-title") {
+                SectionTitle("界面风格")
+            }
+
+            item(key = "styles") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    ThemeStyleOption(
+                        modifier = Modifier.weight(1f),
+                        title = "原有主题",
+                        summary = "经典 AM++",
+                        selected = appearance.style == AppUiStyle.ORIGINAL,
+                        onClick = {
+                            updateAppearance(appearance.copy(style = AppUiStyle.ORIGINAL))
+                        },
+                    )
+                    ThemeStyleOption(
+                        modifier = Modifier.weight(1f),
+                        title = "MD3",
+                        summary = "Material 3 Expressive",
+                        selected = appearance.style == AppUiStyle.MATERIAL3,
+                        onClick = {
+                            updateAppearance(appearance.copy(style = AppUiStyle.MATERIAL3))
+                        },
+                    )
+                }
+            }
+
+            item(key = "theme-title") {
+                Spacer(Modifier.height(36.dp))
+                SectionTitle("主题")
+            }
+
+            item(key = "themes") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 22.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    listOf(
+                        AppThemeMode.LIGHT,
+                        AppThemeMode.DARK,
+                        AppThemeMode.SYSTEM,
+                    ).forEach { mode ->
+                        ThemeModePreview(
+                            modifier = Modifier.weight(1f),
+                            mode = mode,
+                            selected = appearance.mode == mode,
+                            onClick = { updateAppearance(appearance.copy(mode = mode)) },
+                        )
+                    }
                 }
             }
 
             if (appearance.style == AppUiStyle.MATERIAL3) {
-                Spacer(Modifier.height(34.dp))
-                DynamicColorRow(
-                    checked = appearance.dynamicColor && dynamicColorSupported,
-                    supported = dynamicColorSupported,
-                    onChanged = { enabled ->
-                        updateAppearance(appearance.copy(dynamicColor = enabled))
-                    },
-                )
-
-                Spacer(Modifier.height(36.dp))
-                val paletteEnabled = !appearance.dynamicColor || !dynamicColorSupported
-                SectionTitle("调色板")
-                if (!paletteEnabled) {
-                    Text(
-                        modifier = Modifier.padding(top = 6.dp),
-                        text = "动态颜色开启时不可选择",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                item(key = "dynamic-color") {
+                    Spacer(Modifier.height(34.dp))
+                    DynamicColorRow(
+                        checked = appearance.dynamicColor && dynamicColorSupported,
+                        supported = dynamicColorSupported,
+                        onChanged = { enabled ->
+                            updateAppearance(appearance.copy(dynamicColor = enabled))
+                        },
                     )
                 }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .alpha(if (paletteEnabled) 1f else 0.38f)
-                        .padding(top = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    AppThemePalette.entries.chunked(PALETTE_COLUMNS).forEach { paletteRow ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            paletteRow.forEach { palette ->
-                                PaletteCard(
-                                    modifier = Modifier.weight(1f),
-                                    palette = palette,
-                                    selected = appearance.palette == palette,
-                                    enabled = paletteEnabled,
-                                    onClick = {
-                                        updateAppearance(appearance.copy(palette = palette))
-                                    },
-                                )
-                            }
-                            repeat(PALETTE_COLUMNS - paletteRow.size) {
-                                Spacer(Modifier.weight(1f))
-                            }
-                        }
+
+                val paletteEnabled = !appearance.dynamicColor || !dynamicColorSupported
+                item(key = "palette-title") {
+                    Spacer(Modifier.height(36.dp))
+                    SectionTitle("调色板")
+                    if (!paletteEnabled) {
+                        Text(
+                            modifier = Modifier.padding(top = 6.dp),
+                            text = "动态颜色开启时不可选择",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
+                }
+
+                itemsIndexed(
+                    items = AppThemePalette.entries.chunked(PALETTE_COLUMNS),
+                    key = { _, paletteRow -> paletteRow.first().name },
+                ) { rowIndex, paletteRow ->
+                    PaletteRow(
+                        modifier = Modifier
+                            .padding(top = if (rowIndex == 0) 16.dp else 10.dp)
+                            .alpha(if (paletteEnabled) 1f else 0.38f),
+                        palettes = paletteRow,
+                        selectedPalette = appearance.palette,
+                        enabled = paletteEnabled,
+                        onPaletteSelected = { palette ->
+                            updateAppearance(appearance.copy(palette = palette))
+                        },
+                    )
                 }
             }
         }
@@ -500,6 +519,33 @@ private fun PaletteCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PaletteRow(
+    modifier: Modifier,
+    palettes: List<AppThemePalette>,
+    selectedPalette: AppThemePalette,
+    enabled: Boolean,
+    onPaletteSelected: (AppThemePalette) -> Unit,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        palettes.forEach { palette ->
+            PaletteCard(
+                modifier = Modifier.weight(1f),
+                palette = palette,
+                selected = selectedPalette == palette,
+                enabled = enabled,
+                onClick = { onPaletteSelected(palette) },
+            )
+        }
+        repeat(PALETTE_COLUMNS - palettes.size) {
+            Spacer(Modifier.weight(1f))
         }
     }
 }

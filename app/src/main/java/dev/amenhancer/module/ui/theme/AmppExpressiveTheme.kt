@@ -58,7 +58,7 @@ private fun AppThemePalette.lightColorScheme(): ColorScheme {
     val secondaryColor = Color(secondary.toInt())
     val secondaryContainerColor = Color(secondaryContainer.toInt())
     val foreground = primaryColor.mixWith(Color.Black, 0.56f)
-    val lightBackground = primaryContainerColor.mixWith(Color.White, 0.78f)
+    val lightBackground = staticBackgroundColor(dark = false)
 
     return lightColorScheme(
         primary = primaryColor,
@@ -84,11 +84,11 @@ private fun AppThemePalette.lightColorScheme(): ColorScheme {
         outlineVariant = secondaryContainerColor.mixWith(Color.White, 0.18f),
         surfaceDim = primaryContainerColor.mixWith(Color.White, 0.50f),
         surfaceBright = primaryContainerColor.mixWith(Color.White, 0.88f),
-        surfaceContainerLowest = primaryContainerColor.mixWith(Color.White, 0.92f),
-        surfaceContainerLow = primaryContainerColor.mixWith(Color.White, 0.72f),
-        surfaceContainer = primaryContainerColor.mixWith(Color.White, 0.62f),
-        surfaceContainerHigh = primaryContainerColor.mixWith(Color.White, 0.52f),
-        surfaceContainerHighest = primaryContainerColor.mixWith(Color.White, 0.42f),
+        surfaceContainerLowest = primaryContainerColor.mixWith(Color.White, 0.76f),
+        surfaceContainerLow = primaryContainerColor.mixWith(Color.White, 0.68f),
+        surfaceContainer = primaryContainerColor.mixWith(Color.White, 0.58f),
+        surfaceContainerHigh = primaryContainerColor.mixWith(Color.White, 0.48f),
+        surfaceContainerHighest = primaryContainerColor.mixWith(Color.White, 0.38f),
     )
 }
 
@@ -97,7 +97,7 @@ private fun AppThemePalette.darkColorScheme(): ColorScheme {
     val primaryContainerColor = Color(primaryContainer.toInt())
     val secondaryColor = Color(secondary.toInt())
     val secondaryContainerColor = Color(secondaryContainer.toInt())
-    val darkBackground = primaryColor.mixWith(Color.Black, 0.80f)
+    val darkBackground = staticBackgroundColor(dark = true)
     val foreground = primaryContainerColor.mixWith(Color.White, 0.18f)
 
     return darkColorScheme(
@@ -124,13 +124,20 @@ private fun AppThemePalette.darkColorScheme(): ColorScheme {
         outlineVariant = secondaryColor.mixWith(Color.Black, 0.42f),
         surfaceDim = primaryColor.mixWith(Color.Black, 0.84f),
         surfaceBright = primaryColor.mixWith(Color.Black, 0.46f),
-        surfaceContainerLowest = primaryColor.mixWith(Color.Black, 0.88f),
-        surfaceContainerLow = primaryColor.mixWith(Color.Black, 0.74f),
-        surfaceContainer = primaryColor.mixWith(Color.Black, 0.66f),
-        surfaceContainerHigh = primaryColor.mixWith(Color.Black, 0.56f),
-        surfaceContainerHighest = primaryColor.mixWith(Color.Black, 0.46f),
+        surfaceContainerLowest = primaryColor.mixWith(Color.Black, 0.78f),
+        surfaceContainerLow = primaryColor.mixWith(Color.Black, 0.68f),
+        surfaceContainer = primaryColor.mixWith(Color.Black, 0.60f),
+        surfaceContainerHigh = primaryColor.mixWith(Color.Black, 0.50f),
+        surfaceContainerHighest = primaryColor.mixWith(Color.Black, 0.42f),
     )
 }
+
+internal fun AppThemePalette.staticBackgroundColor(dark: Boolean): Color =
+    if (dark) {
+        Color(primary.toInt()).mixWith(Color.Black, 0.72f)
+    } else {
+        Color(primaryContainer.toInt()).mixWith(Color.White, 0.66f)
+    }
 
 private fun Color.mixWith(other: Color, fraction: Float): Color {
     val amount = fraction.coerceIn(0f, 1f)

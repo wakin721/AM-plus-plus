@@ -91,6 +91,8 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         val theme = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/theme/AmppExpressiveTheme.kt",
         )
+        val appBuild = projectFile("app/build.gradle.kts")
+        val workflow = projectFile(".github/workflows/build.yml")
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
 
         assertTrue(activity.contains("title = \"外观与主题\""))
@@ -105,9 +107,13 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(screen.contains("clipPath(darkHalf)"))
         assertTrue(screen.contains("AppThemePalette.entries"))
         assertTrue(screen.contains("动态颜色开启时不可选择"))
+        assertTrue(screen.contains("LazyColumn("))
+        assertTrue(screen.contains("itemsIndexed("))
         assertTrue(screen.contains("chunked(PALETTE_COLUMNS)"))
         assertTrue(screen.contains("private const val PALETTE_COLUMNS = 4"))
         assertFalse(screen.contains(".height(256.dp)"))
+        assertTrue(screen.contains("bottom = innerPadding.calculateBottomPadding() + 64.dp"))
+        assertTrue(screen.contains("containerColor = screenBackground"))
         assertTrue(screen.contains("AppUiStyle.ORIGINAL"))
         assertTrue(screen.contains("AppUiStyle.MATERIAL3"))
         assertTrue(preferences.contains("ORIGINAL(\"原有主题\")"))
@@ -121,7 +127,11 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(theme.contains("background = lightBackground"))
         assertTrue(theme.contains("surfaceContainerLowest = primaryContainerColor.mixWith"))
         assertTrue(theme.contains("background = darkBackground"))
+        assertTrue(theme.contains("staticBackgroundColor(dark = false)"))
         assertTrue(theme.contains("private fun Color.mixWith"))
+        assertTrue(appBuild.contains("versionCode = 102"))
+        assertTrue(appBuild.contains("versionName = \"1.5.1\""))
+        assertTrue(workflow.contains("name: AM-plus-plus-debug-"))
         assertTrue(manifest.contains(".ui.AppearanceSettingsActivity"))
     }
 }
