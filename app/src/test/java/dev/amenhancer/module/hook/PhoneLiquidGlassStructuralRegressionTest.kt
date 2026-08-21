@@ -130,6 +130,19 @@ class PhoneLiquidGlassStructuralRegressionTest {
     }
 
     @Test
+    fun `uses a dark graphite glass palette when apple music is in night mode`() {
+        val glass = source("dev/amenhancer/module/hook/PhoneLiquidGlassFeature.kt")
+
+        assertTrue(glass.contains("android.R.attr.isLightTheme"))
+        assertTrue(glass.contains("themeValue.data == 0"))
+        assertTrue(glass.contains("nightMode == Configuration.UI_MODE_NIGHT_YES"))
+        assertTrue(glass.contains("Color.argb(164, 28, 28, 34)"))
+        assertTrue(glass.contains("Color.argb(148, 24, 24, 30)"))
+        assertTrue(glass.contains("Color.argb(44, 0, 0, 0)"))
+        assertFalse(glass.contains("intArrayOf(Color.argb(72, 255, 255, 255)"))
+    }
+
+    @Test
     fun `pins the apache blur dependency and reports a separate feature`() {
         val appBuild = projectFile("app/build.gradle.kts")
         val settingsBuild = projectFile("settings.gradle.kts")

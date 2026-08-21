@@ -25,6 +25,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -258,7 +259,7 @@ private object PhoneLiquidGlassStyler {
                 return@post
             }
             val overlay = if (isNightMode(blurView.context)) {
-                Color.argb(20, 0, 0, 0)
+                Color.argb(44, 0, 0, 0)
             } else {
                 Color.argb(20, 255, 255, 255)
             }
@@ -490,7 +491,14 @@ private object PhoneLiquidGlassStyler {
     private fun glassSurfaceDrawable(context: Context, surface: GlassSurface): Drawable {
         val night = isNightMode(context)
         val colors = if (night) {
-            intArrayOf(Color.argb(72, 255, 255, 255), Color.argb(32, 255, 255, 255))
+            // A white tint remains visibly light even over a dark blurred
+            // backdrop. Night mode needs a translucent graphite veil; the
+            // mini player is slightly denser so artwork and text stay legible.
+            if (surface == GlassSurface.MINI_PLAYER) {
+                intArrayOf(Color.argb(164, 28, 28, 34), Color.argb(126, 17, 17, 22))
+            } else {
+                intArrayOf(Color.argb(148, 24, 24, 30), Color.argb(112, 12, 12, 17))
+            }
         } else {
             // SurfingTile's runtime bar keeps the sampled content visible instead
             // of painting an opaque white card over it. The mini player remains
@@ -506,7 +514,7 @@ private object PhoneLiquidGlassStyler {
             cornerRadius = dp(context, GLASS_CORNER_RADIUS_DP).toFloat()
             setStroke(
                 dp(context, 1),
-                if (night) Color.argb(145, 255, 255, 255) else Color.argb(92, 128, 132, 140),
+                if (night) Color.argb(82, 235, 238, 245) else Color.argb(92, 128, 132, 140),
             )
         }
         val inner = GradientDrawable().apply {
@@ -514,7 +522,7 @@ private object PhoneLiquidGlassStyler {
             cornerRadius = dp(context, GLASS_CORNER_RADIUS_DP - 1).toFloat()
             setStroke(
                 dp(context, 1),
-                if (night) Color.argb(54, 255, 255, 255) else Color.argb(150, 255, 255, 255),
+                if (night) Color.argb(28, 235, 238, 245) else Color.argb(150, 255, 255, 255),
             )
         }
         return LayerDrawable(arrayOf(outer, InsetDrawable(inner, dp(context, 1))))
@@ -789,9 +797,15 @@ private object PhoneLiquidGlassStyler {
     private fun targetId(context: Context, name: String): Int =
         context.resources.getIdentifier(name, "id", ModuleConstants.TARGET_PACKAGE)
 
-    private fun isNightMode(context: Context): Boolean =
-        context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
+    private fun isNightMode(context: Context): Boolean {
+        val nightMode = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        if (nightMode == Configuration.UI_MODE_NIGHT_YES) return true
+        val themeValue = TypedValue()
+        if (context.theme.resolveAttribute(android.R.attr.isLightTheme, themeValue, true)) {
+            return themeValue.data == 0
+        }
+        return false
+    }
 
     private fun Context.findActivity(): Activity? {
         var current: Context? = this
