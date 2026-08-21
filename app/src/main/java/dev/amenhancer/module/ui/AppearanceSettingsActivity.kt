@@ -232,7 +232,7 @@ private fun AppearanceSettingsScreen(
                             .padding(horizontal = 12.dp, vertical = 12.dp),
                     ) {
                         Text(
-                            modifier = Modifier.padding(horizontal = 6.dp, bottom = 10.dp),
+                            modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 10.dp),
                             text = if (paletteEnabled) "选择预设颜色" else "关闭动态颜色后可选择调色板",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
