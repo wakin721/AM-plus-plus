@@ -25,11 +25,11 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         )
 
         assertTrue(settings.contains("setContent {"))
-        assertTrue(settings.contains("AmppExpressiveTheme {"))
+        assertTrue(settings.contains("AmppExpressiveTheme(appearance = activeAppearance) {"))
         assertTrue(settings.contains("AmppSettingsScreen("))
         assertFalse(settings.contains("setContentView(buildScreen()"))
         assertTrue(usb.contains("setContent {"))
-        assertTrue(usb.contains("AmppExpressiveTheme {"))
+        assertTrue(usb.contains("AmppExpressiveTheme(appearance = activeAppearance) {"))
         assertTrue(usb.contains("UsbAudioSettingsScreen("))
         assertFalse(usb.contains("setContentView(buildScreen()"))
         assertTrue(theme.contains("MaterialExpressiveTheme("))
