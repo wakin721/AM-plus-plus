@@ -105,7 +105,9 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(screen.contains("clipPath(darkHalf)"))
         assertTrue(screen.contains("AppThemePalette.entries"))
         assertTrue(screen.contains("动态颜色开启时不可选择"))
-        assertTrue(screen.contains("GridCells.Fixed(4)"))
+        assertTrue(screen.contains("chunked(PALETTE_COLUMNS)"))
+        assertTrue(screen.contains("private const val PALETTE_COLUMNS = 4"))
+        assertFalse(screen.contains(".height(256.dp)"))
         assertTrue(screen.contains("AppUiStyle.ORIGINAL"))
         assertTrue(screen.contains("AppUiStyle.MATERIAL3"))
         assertTrue(preferences.contains("ORIGINAL(\"原有主题\")"))
@@ -116,6 +118,10 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(preferences.contains("val dynamicColor: Boolean = true"))
         assertTrue(theme.contains("dynamicLightColorScheme(context)"))
         assertTrue(theme.contains("appearance.palette.lightColorScheme()"))
+        assertTrue(theme.contains("background = lightBackground"))
+        assertTrue(theme.contains("surfaceContainerLowest = primaryContainerColor.mixWith"))
+        assertTrue(theme.contains("background = darkBackground"))
+        assertTrue(theme.contains("private fun Color.mixWith"))
         assertTrue(manifest.contains(".ui.AppearanceSettingsActivity"))
     }
 }

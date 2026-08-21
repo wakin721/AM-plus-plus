@@ -14,7 +14,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -25,9 +24,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -230,27 +226,33 @@ private fun AppearanceSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                LazyVerticalGrid(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(256.dp)
                         .alpha(if (paletteEnabled) 1f else 0.38f)
                         .padding(top = 16.dp),
-                    columns = GridCells.Fixed(4),
-                    userScrollEnabled = false,
-                    contentPadding = PaddingValues(0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(AppThemePalette.entries, key = AppThemePalette::name) { palette ->
-                        PaletteCard(
-                            palette = palette,
-                            selected = appearance.palette == palette,
-                            enabled = paletteEnabled,
-                            onClick = {
-                                updateAppearance(appearance.copy(palette = palette))
-                            },
-                        )
+                    AppThemePalette.entries.chunked(PALETTE_COLUMNS).forEach { paletteRow ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            paletteRow.forEach { palette ->
+                                PaletteCard(
+                                    modifier = Modifier.weight(1f),
+                                    palette = palette,
+                                    selected = appearance.palette == palette,
+                                    enabled = paletteEnabled,
+                                    onClick = {
+                                        updateAppearance(appearance.copy(palette = palette))
+                                    },
+                                )
+                            }
+                            repeat(PALETTE_COLUMNS - paletteRow.size) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }
@@ -458,6 +460,7 @@ private fun DynamicColorRow(
 
 @Composable
 private fun PaletteCard(
+    modifier: Modifier,
     palette: AppThemePalette,
     selected: Boolean,
     enabled: Boolean,
@@ -466,8 +469,7 @@ private fun PaletteCard(
     val shape = RoundedCornerShape(22.dp)
     val outline = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .aspectRatio(1f)
             .border(3.dp, outline, shape)
             .clip(shape)
@@ -501,3 +503,5 @@ private fun PaletteCard(
         }
     }
 }
+
+private const val PALETTE_COLUMNS = 4
