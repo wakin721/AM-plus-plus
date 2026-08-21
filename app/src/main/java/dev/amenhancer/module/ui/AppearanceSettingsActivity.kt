@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,19 +32,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,10 +48,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.amenhancer.module.R
 import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
@@ -124,7 +124,6 @@ class AppearanceSettingsActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppearanceSettingsScreen(
     appearance: AppAppearanceSettings,
@@ -135,190 +134,284 @@ private fun AppearanceSettingsScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets.safeDrawing,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        "外观与主题",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = navigateBack) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_arrow_back),
-                            contentDescription = "返回",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                ),
-            )
-        },
+        containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
         ) {
-            AppearanceCard("界面主题") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ThemeStyleCard(
+            IconButton(
+                modifier = Modifier.padding(top = 4.dp),
+                onClick = navigateBack,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_arrow_back),
+                    contentDescription = "返回",
+                )
+            }
+
+            Text(
+                modifier = Modifier.padding(top = 20.dp, bottom = 40.dp),
+                text = "主题与色彩",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Normal,
+            )
+
+            SectionTitle("界面风格")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ThemeStyleOption(
+                    modifier = Modifier.weight(1f),
+                    title = "原有主题",
+                    summary = "经典 AM++",
+                    selected = appearance.style == AppUiStyle.ORIGINAL,
+                    onClick = {
+                        updateAppearance(appearance.copy(style = AppUiStyle.ORIGINAL))
+                    },
+                )
+                ThemeStyleOption(
+                    modifier = Modifier.weight(1f),
+                    title = "MD3",
+                    summary = "Material 3 Expressive",
+                    selected = appearance.style == AppUiStyle.MATERIAL3,
+                    onClick = {
+                        updateAppearance(appearance.copy(style = AppUiStyle.MATERIAL3))
+                    },
+                )
+            }
+
+            Spacer(Modifier.height(36.dp))
+            SectionTitle("主题")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                listOf(
+                    AppThemeMode.LIGHT,
+                    AppThemeMode.DARK,
+                    AppThemeMode.SYSTEM,
+                ).forEach { mode ->
+                    ThemeModePreview(
                         modifier = Modifier.weight(1f),
-                        title = "原有主题",
-                        summary = "保留经典 AM++ 设置界面",
-                        selected = appearance.style == AppUiStyle.ORIGINAL,
-                        onClick = {
-                            updateAppearance(appearance.copy(style = AppUiStyle.ORIGINAL))
-                        },
-                    )
-                    ThemeStyleCard(
-                        modifier = Modifier.weight(1f),
-                        title = "MD3",
-                        summary = "Material 3 Expressive",
-                        selected = appearance.style == AppUiStyle.MATERIAL3,
-                        onClick = {
-                            updateAppearance(appearance.copy(style = AppUiStyle.MATERIAL3))
-                        },
+                        mode = mode,
+                        selected = appearance.mode == mode,
+                        onClick = { updateAppearance(appearance.copy(mode = mode)) },
                     )
                 }
             }
 
-            AppearanceCard("显示模式") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            if (appearance.style == AppUiStyle.MATERIAL3) {
+                Spacer(Modifier.height(34.dp))
+                DynamicColorRow(
+                    checked = appearance.dynamicColor && dynamicColorSupported,
+                    supported = dynamicColorSupported,
+                    onChanged = { enabled ->
+                        updateAppearance(appearance.copy(dynamicColor = enabled))
+                    },
+                )
+
+                Spacer(Modifier.height(36.dp))
+                val paletteEnabled = !appearance.dynamicColor || !dynamicColorSupported
+                SectionTitle("调色板")
+                if (!paletteEnabled) {
+                    Text(
+                        modifier = Modifier.padding(top = 6.dp),
+                        text = "动态颜色开启时不可选择",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                LazyVerticalGrid(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(256.dp)
+                        .alpha(if (paletteEnabled) 1f else 0.38f)
+                        .padding(top = 16.dp),
+                    columns = GridCells.Fixed(4),
+                    userScrollEnabled = false,
+                    contentPadding = PaddingValues(0.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    AppThemeMode.entries.forEach { mode ->
-                        FilterChip(
-                            modifier = Modifier.weight(1f),
-                            selected = appearance.mode == mode,
-                            onClick = { updateAppearance(appearance.copy(mode = mode)) },
-                            label = {
-                                Text(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    text = mode.displayName,
-                                    textAlign = TextAlign.Center,
-                                )
+                    items(AppThemePalette.entries, key = AppThemePalette::name) { palette ->
+                        PaletteCard(
+                            palette = palette,
+                            selected = appearance.palette == palette,
+                            enabled = paletteEnabled,
+                            onClick = {
+                                updateAppearance(appearance.copy(palette = palette))
                             },
                         )
                     }
                 }
             }
-
-            if (appearance.style == AppUiStyle.MATERIAL3) {
-                AppearanceCard("MD3 配色") {
-                    DynamicColorRow(
-                        checked = appearance.dynamicColor && dynamicColorSupported,
-                        supported = dynamicColorSupported,
-                        onChanged = { enabled ->
-                            updateAppearance(appearance.copy(dynamicColor = enabled))
-                        },
-                    )
-                    val paletteEnabled = !appearance.dynamicColor || !dynamicColorSupported
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .alpha(if (paletteEnabled) 1f else 0.38f)
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 10.dp),
-                            text = if (paletteEnabled) "选择预设颜色" else "关闭动态颜色后可选择调色板",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        LazyVerticalGrid(
-                            modifier = Modifier.fillMaxWidth().height(276.dp),
-                            columns = GridCells.Fixed(5),
-                            userScrollEnabled = false,
-                            contentPadding = PaddingValues(2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            items(AppThemePalette.entries, key = AppThemePalette::name) { palette ->
-                                PaletteCard(
-                                    palette = palette,
-                                    selected = appearance.palette == palette,
-                                    enabled = paletteEnabled,
-                                    onClick = {
-                                        updateAppearance(appearance.copy(palette = palette))
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun AppearanceCard(
-    title: String,
-    content: @Composable () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Column {
-            Text(
-                modifier = Modifier.padding(start = 20.dp, top = 18.dp, end = 20.dp),
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-            )
-            content()
-        }
-    }
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    )
 }
 
 @Composable
-private fun ThemeStyleCard(
+private fun ThemeStyleOption(
     modifier: Modifier,
     title: String,
     summary: String,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    val shape = RoundedCornerShape(22.dp)
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
     Surface(
         modifier = modifier
-            .border(2.dp, borderColor, RoundedCornerShape(24.dp))
+            .height(86.dp)
+            .border(if (selected) 2.dp else 1.dp, borderColor, shape)
+            .clip(shape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
+        shape = shape,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+            MaterialTheme.colorScheme.surfaceContainer
         },
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Text(
-                modifier = Modifier.padding(top = 5.dp),
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                modifier = Modifier.padding(top = 3.dp),
                 text = summary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun ThemeModePreview(
+    modifier: Modifier,
+    mode: AppThemeMode,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(20.dp)
+    val selectedColor = MaterialTheme.colorScheme.primary
+    val outlineColor = MaterialTheme.colorScheme.outlineVariant
+    val accent = MaterialTheme.colorScheme.primary
+    val accentContainer = MaterialTheme.colorScheme.primaryContainer
+    val borderWidth = if (selected) 3.dp else 1.dp
+    val borderColor = if (selected) selectedColor else outlineColor
+
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(144.dp)
+                .border(borderWidth, borderColor, shape)
+                .padding(6.dp)
+                .clip(RoundedCornerShape(15.dp)),
+        ) {
+            fun drawFace(dark: Boolean) {
+                val background = if (dark) Color(0xFF171112) else Color(0xFFFFF8F7)
+                val container = if (dark) Color(0xFF271D1E) else Color(0xFFF6ECEB)
+                val muted = if (dark) Color(0xFF6B4B4F) else accent.copy(alpha = 0.42f)
+                val bright = if (dark) accentContainer else accent
+                val radius = 8.dp.toPx()
+
+                drawRect(background)
+                drawRoundRect(
+                    color = container,
+                    topLeft = Offset(size.width * 0.09f, size.height * 0.08f),
+                    size = Size(size.width * 0.68f, size.height * 0.26f),
+                    cornerRadius = CornerRadius(radius),
+                )
+                drawRoundRect(
+                    color = muted,
+                    topLeft = Offset(size.width * 0.09f, size.height * 0.42f),
+                    size = Size(size.width * 0.68f, size.height * 0.055f),
+                    cornerRadius = CornerRadius(radius),
+                )
+                drawRoundRect(
+                    color = muted.copy(alpha = 0.7f),
+                    topLeft = Offset(size.width * 0.09f, size.height * 0.52f),
+                    size = Size(size.width * 0.48f, size.height * 0.055f),
+                    cornerRadius = CornerRadius(radius),
+                )
+                drawRoundRect(
+                    color = bright,
+                    topLeft = Offset(size.width * 0.09f, size.height * 0.63f),
+                    size = Size(size.width * 0.76f, size.height * 0.055f),
+                    cornerRadius = CornerRadius(radius),
+                )
+                drawRect(
+                    color = container,
+                    topLeft = Offset(0f, size.height * 0.78f),
+                    size = Size(size.width, size.height * 0.22f),
+                )
+                drawCircle(
+                    color = bright,
+                    radius = size.width * 0.11f,
+                    center = Offset(size.width * 0.19f, size.height * 0.89f),
+                )
+                drawRoundRect(
+                    color = muted,
+                    topLeft = Offset(size.width * 0.38f, size.height * 0.83f),
+                    size = Size(size.width * 0.5f, size.height * 0.12f),
+                    cornerRadius = CornerRadius(size.height * 0.06f),
+                )
+            }
+
+            when (mode) {
+                AppThemeMode.LIGHT -> drawFace(dark = false)
+                AppThemeMode.DARK -> drawFace(dark = true)
+                AppThemeMode.SYSTEM -> {
+                    drawFace(dark = false)
+                    val darkHalf = Path().apply {
+                        moveTo(size.width, 0f)
+                        lineTo(size.width, size.height)
+                        lineTo(0f, size.height)
+                        close()
+                    }
+                    clipPath(darkHalf) { drawFace(dark = true) }
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(selected = selected, onClick = null)
             Text(
-                text = if (selected) "已选择" else "选择",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+                text = mode.displayName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
         }
     }
@@ -335,15 +428,19 @@ private fun DynamicColorRow(
             .fillMaxWidth()
             .clickable(enabled = supported) { onChanged(!checked) }
             .alpha(if (supported) 1f else 0.5f)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("动态颜色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                modifier = Modifier.padding(top = 4.dp),
+                text = "动态色彩",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Normal,
+            )
+            Text(
+                modifier = Modifier.padding(top = 5.dp),
                 text = if (supported) {
-                    "使用系统壁纸生成的颜色；开启后禁用调色板"
+                    "使用系统强调色"
                 } else {
                     "需要 Android 12 或更高版本"
                 },
@@ -351,7 +448,11 @@ private fun DynamicColorRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Switch(checked = checked, enabled = supported, onCheckedChange = onChanged)
+        Switch(
+            checked = checked,
+            enabled = supported,
+            onCheckedChange = onChanged,
+        )
     }
 }
 
@@ -362,21 +463,22 @@ private fun PaletteCard(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(22.dp)
     val outline = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(82.dp)
-            .border(3.dp, outline, RoundedCornerShape(24.dp))
-            .clip(RoundedCornerShape(24.dp))
+            .aspectRatio(1f)
+            .border(3.dp, outline, shape)
+            .clip(shape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = MaterialTheme.colorScheme.surfaceContainer,
         ) {}
-        Canvas(Modifier.size(56.dp).clip(CircleShape)) {
+        Canvas(Modifier.size(50.dp).clip(CircleShape)) {
             drawArc(Color(palette.primaryContainer.toInt()), -90f, 90f, true)
             drawArc(Color(palette.secondaryContainer.toInt()), 0f, 90f, true)
             drawArc(Color(palette.primary.toInt()), 90f, 90f, true)
@@ -384,9 +486,9 @@ private fun PaletteCard(
         }
         if (selected) {
             Surface(
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(32.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
