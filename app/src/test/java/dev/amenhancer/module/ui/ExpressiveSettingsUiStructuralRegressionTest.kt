@@ -50,4 +50,27 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(ui.contains("CustomLyricsPage("))
         assertTrue(ui.contains("UsbAudioSettingsScreen("))
     }
+
+    @Test
+    fun `active settings dialogs use the expressive compose host`() {
+        val activity = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/SettingsActivity.kt",
+        )
+        val screen = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/ExpressiveSettingsUi.kt",
+        )
+        val dialogs = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/ExpressiveSettingsDialogs.kt",
+        )
+
+        assertTrue(screen.contains("ExpressiveSettingsDialogHost(dialogState, dialogActions)"))
+        assertTrue(activity.contains("showTargetLanguage = ::showTargetLanguagePickerExpressive"))
+        assertTrue(activity.contains("addCustomLyrics = { showCustomLyricsEditorExpressive() }"))
+        assertTrue(activity.contains("syncCustomLyrics = ::syncCustomLyricsFromGitHubExpressive"))
+        assertTrue(dialogs.contains("ExpressiveSettingsDialogHost("))
+        assertTrue(dialogs.contains("AlertDialog("))
+        assertTrue(dialogs.contains("shape = RoundedCornerShape(32.dp)"))
+        assertTrue(dialogs.contains("shape = RoundedCornerShape(36.dp)"))
+        assertFalse(dialogs.contains("android.app.AlertDialog"))
+    }
 }

@@ -68,6 +68,11 @@ import dev.amenhancer.module.model.CustomLyricsManifest
 import dev.amenhancer.module.model.CustomLyricsSources
 import dev.amenhancer.module.model.LyricsFontManifest
 import dev.amenhancer.module.model.ModuleSettings
+import dev.amenhancer.module.lyrics.AppleTtmlTranslationEditor
+import dev.amenhancer.module.translation.AiTranslationConfigStore
+import dev.amenhancer.module.translation.AiTranslationSettings
+import dev.amenhancer.module.translation.DeepSeekTranslationClient
+import dev.amenhancer.module.translation.DeepSeekTranslationResult
 import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -105,6 +110,8 @@ class SettingsActivity : ComponentActivity() {
     private var expressiveSnapshot by mutableStateOf(XposedServiceSnapshot.waiting())
     private var expressiveLauncherHidden by mutableStateOf(false)
     private var expressiveSearchQuery by mutableStateOf("")
+    private var expressiveDialog by mutableStateOf<ExpressiveSettingsDialog?>(null)
+    private var expressiveSyncCancellation: AtomicBoolean? = null
 
     private val serviceListener: (XposedServiceSnapshot) -> Unit = { snapshot ->
         runOnUiThread { render(snapshot) }
@@ -141,8 +148,8 @@ class SettingsActivity : ComponentActivity() {
                             store.saveSettings(updated)
                             render()
                         },
-                        showTargetLanguage = ::showTargetLanguagePicker,
-                        refreshLibrary = ::requestLibraryRefresh,
+                        showTargetLanguage = ::showTargetLanguagePickerExpressive,
+                        refreshLibrary = ::requestLibraryRefreshExpressive,
                         openCustomLyrics = { showPage(SettingsPage.CUSTOM_LYRICS) },
                         chooseFont = ::chooseFont,
                         restoreFont = ::restoreFont,
@@ -153,16 +160,41 @@ class SettingsActivity : ComponentActivity() {
                             launcherIconController.setHidden(hidden)
                             expressiveLauncherHidden = hidden
                         },
-                        showHelp = ::showHelp,
+                        showHelp = { expressiveDialog = ExpressiveSettingsDialog.Help },
                         backToMain = { showPage(SettingsPage.MAIN) },
                         setCustomLyricsQuery = { query -> expressiveSearchQuery = query },
-                        addCustomLyrics = { showCustomLyricsEditor() },
-                        syncCustomLyrics = ::syncCustomLyricsFromGitHub,
+                        addCustomLyrics = { showCustomLyricsEditorExpressive() },
+                        syncCustomLyrics = ::syncCustomLyricsFromGitHubExpressive,
                         backupCustomLyrics = ::chooseCustomLyricsBackupDestination,
                         restoreCustomLyrics = ::chooseCustomLyricsBackupRestore,
                         setCustomLyricsEnabled = ::setCustomLyricsEnabled,
-                        editCustomLyrics = { group -> showCustomLyricsEditor(group) },
-                        deleteCustomLyrics = ::confirmDeleteCustomLyrics,
+                        editCustomLyrics = ::showCustomLyricsEditorExpressive,
+                        deleteCustomLyrics = { group ->
+                            expressiveDialog = ExpressiveSettingsDialog.DeleteLyrics(group)
+                        },
+                    ),
+                    dialogState = expressiveDialog,
+                    dialogActions = ExpressiveSettingsDialogActions(
+                        dismiss = ::dismissExpressiveDialog,
+                        selectTargetLanguage = ::selectTargetLanguageExpressive,
+                        openCustomLanguage = ::openCustomLanguageExpressive,
+                        updateCustomLanguage = ::updateCustomLanguageExpressive,
+                        saveCustomLanguage = ::saveCustomLanguageExpressive,
+                        cancelProgress = ::cancelExpressiveProgress,
+                        restoreLyrics = ::restoreLyricsExpressive,
+                        deleteLyrics = ::deleteLyricsExpressive,
+                        updateLyricsDraft = ::updateLyricsDraftExpressive,
+                        chooseTtml = ::chooseTtmlExpressive,
+                        requestCurrentSong = ::requestCurrentSongExpressive,
+                        importAmll = { importOnlineLyricsExpressive(CustomLyricsSources.AMLL) },
+                        importNetease = { importOnlineLyricsExpressive(CustomLyricsSources.NETEASE) },
+                        importAmLyrics = {
+                            importOnlineLyricsExpressive(CustomLyricsSources.AM_LYRICS)
+                        },
+                        openDeepSeek = ::openDeepSeekExpressive,
+                        saveLyrics = ::saveLyricsExpressive,
+                        updateDeepSeek = { expressiveDialog = it },
+                        translateDeepSeek = ::translateDeepSeekExpressive,
                     ),
                 )
             }
@@ -217,7 +249,7 @@ class SettingsActivity : ComponentActivity() {
                 if (resultCode == RESULT_OK) data?.data?.let { uri ->
                     importCustomTtml(uri) { ttml ->
                         if (onImported != null) onImported(ttml) else if (restoreEditor) {
-                            showCustomLyricsEditor(initialTtml = ttml)
+                            showCustomLyricsEditorExpressive(initialTtml = ttml)
                         }
                     }
                 }
@@ -226,7 +258,9 @@ class SettingsActivity : ComponentActivity() {
                 if (resultCode == RESULT_OK) data?.data?.let(::backupCustomLyrics)
             }
             CUSTOM_LYRICS_BACKUP_RESTORE_REQUEST_CODE -> {
-                if (resultCode == RESULT_OK) data?.data?.let(::confirmRestoreCustomLyrics)
+                if (resultCode == RESULT_OK) data?.data?.let { uri ->
+                    expressiveDialog = ExpressiveSettingsDialog.RestoreLyrics(uri)
+                }
             }
         }
     }
@@ -383,6 +417,511 @@ class SettingsActivity : ComponentActivity() {
         (topBarTitle.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
             params.marginStart = dp(if (customLyrics) 52 else 12)
             topBarTitle.layoutParams = params
+        }
+    }
+
+    private fun dismissExpressiveDialog() {
+        when (val dialog = expressiveDialog) {
+            is ExpressiveSettingsDialog.DeepSeek -> expressiveDialog = dialog.editor
+            is ExpressiveSettingsDialog.DeepSeekProgress -> Unit
+            is ExpressiveSettingsDialog.LyricsEditor -> {
+                currentSongIdentityRequester.cancel()
+                expressiveDialog = null
+            }
+            else -> expressiveDialog = null
+        }
+    }
+
+    private fun showTargetLanguagePickerExpressive() {
+        expressiveDialog = ExpressiveSettingsDialog.TargetLanguage(
+            CatalogLanguagePolicy.normalize(store.settings().titleCorrectionTargetLanguage),
+        )
+    }
+
+    private fun selectTargetLanguageExpressive(language: String) {
+        expressiveDialog = null
+        saveTargetLanguage(language)
+    }
+
+    private fun openCustomLanguageExpressive() {
+        val current = (expressiveDialog as? ExpressiveSettingsDialog.TargetLanguage)?.current
+            ?: CatalogLanguagePolicy.normalize(store.settings().titleCorrectionTargetLanguage)
+        expressiveDialog = ExpressiveSettingsDialog.CustomLanguage(current)
+    }
+
+    private fun updateCustomLanguageExpressive(value: String) {
+        expressiveDialog = (expressiveDialog as? ExpressiveSettingsDialog.CustomLanguage)
+            ?.copy(value = value, error = null)
+    }
+
+    private fun saveCustomLanguageExpressive() {
+        val dialog = expressiveDialog as? ExpressiveSettingsDialog.CustomLanguage ?: return
+        if (!CatalogLanguagePolicy.isValid(dialog.value)) {
+            expressiveDialog = dialog.copy(error = "请输入有效的 BCP-47 标签，例如 tr-TR")
+            return
+        }
+        expressiveDialog = null
+        saveTargetLanguage(dialog.value)
+    }
+
+    private fun requestLibraryRefreshExpressive() {
+        if (!libraryRefreshRequester.request { result ->
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
+                    if (current?.operation == ExpressiveSettingsDialog.Progress.Operation.LIBRARY_REFRESH) {
+                        expressiveDialog = null
+                    }
+                    when (result.resultCode) {
+                        LibraryRefreshProtocol.RESULT_COMPLETED -> toast(
+                            result.message ?: "资料库刷新完成",
+                        )
+                        LibraryRefreshProtocol.RESULT_CANCELLED -> toast(
+                            result.message ?: "已停止刷新资料库",
+                        )
+                        else -> toast(result.message ?: "资料库刷新失败")
+                    }
+                }
+            }
+        ) {
+            toast("刷新资料库请求正在进行")
+            return
+        }
+        expressiveDialog = ExpressiveSettingsDialog.Progress(
+            operation = ExpressiveSettingsDialog.Progress.Operation.LIBRARY_REFRESH,
+            title = "刷新资料库",
+            message = "正在刷新资料库，请稍候…",
+            cancelLabel = "停止",
+        )
+    }
+
+    private fun cancelExpressiveProgress() {
+        val dialog = expressiveDialog as? ExpressiveSettingsDialog.Progress ?: return
+        when (dialog.operation) {
+            ExpressiveSettingsDialog.Progress.Operation.LIBRARY_REFRESH -> {
+                libraryRefreshRequester.cancel()
+                expressiveDialog = null
+                toast("已停止刷新资料库")
+            }
+            ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC -> {
+                expressiveSyncCancellation?.set(true)
+                expressiveDialog = dialog.copy(message = "正在取消同步…", cancelLabel = null)
+            }
+        }
+    }
+
+    private fun restoreLyricsExpressive(policy: CustomLyricsRestorePolicy) {
+        val dialog = expressiveDialog as? ExpressiveSettingsDialog.RestoreLyrics ?: return
+        expressiveDialog = null
+        restoreCustomLyrics(dialog.uri, policy)
+    }
+
+    private fun deleteLyricsExpressive() {
+        val dialog = expressiveDialog as? ExpressiveSettingsDialog.DeleteLyrics ?: return
+        expressiveDialog = null
+        val snapshot = ModuleApplication.serviceSnapshot
+        backgroundExecutor.execute {
+            val result = CustomLyricsManager(snapshot, store).delete(dialog.group.appleMusicIds)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                render()
+                when (result) {
+                    is CustomLyricsMutationResult.Updated -> toast("已删除歌词映射")
+                    is CustomLyricsMutationResult.Failed -> toast(result.message)
+                }
+            }
+        }
+    }
+
+    private fun showCustomLyricsEditorExpressive(
+        existing: CustomLyricsUiGroup? = null,
+        initialTtml: String = "",
+    ) {
+        val editor = ExpressiveSettingsDialog.LyricsEditor(
+            title = if (existing == null) "添加自定义歌词" else "编辑自定义歌词",
+            draft = LyricsEditorDraft(
+                appleMusicIds = existing?.appleMusicIds?.let(CustomLyricsIdParser::format).orEmpty(),
+                displayName = existing?.primary?.displayName.orEmpty(),
+                ttml = initialTtml,
+                source = existing?.primary?.source ?: CustomLyricsSources.MANUAL,
+            ),
+            replacingAppleMusicIds = existing?.appleMusicIds.orEmpty(),
+            enabled = existing?.primary?.enabled ?: true,
+            busyMessage = if (existing != null && initialTtml.isBlank()) "正在读取已保存的 TTML…" else null,
+        )
+        expressiveDialog = editor
+        if (existing != null && initialTtml.isBlank()) {
+            loadExistingCustomTtmlExpressive(existing.primary, editor.replacingAppleMusicIds)
+        }
+    }
+
+    private fun updateLyricsDraftExpressive(draft: LyricsEditorDraft) {
+        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+        expressiveDialog = editor.copy(
+            draft = draft,
+            appleMusicIdError = null,
+            neteaseIdError = null,
+            ttmlError = null,
+        )
+    }
+
+    private fun chooseTtmlExpressive() {
+        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+        val editorIds = editor.replacingAppleMusicIds
+        chooseCustomTtml { imported ->
+            val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
+                ?: return@chooseCustomTtml
+            if (current.replacingAppleMusicIds != editorIds) return@chooseCustomTtml
+            expressiveDialog = current.copy(
+                draft = current.draft.copy(
+                    ttml = imported,
+                    source = CustomLyricsSources.MANUAL,
+                ),
+                ttmlError = null,
+            )
+        }
+    }
+
+    private fun requestCurrentSongExpressive() {
+        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+        if (!currentSongIdentityRequester.request { currentSong ->
+                val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
+                    ?: return@request
+                if (currentSong == null) {
+                    expressiveDialog = current.copy(busyMessage = null)
+                    toast("未获取到当前歌曲信息，请先在 Apple Music 播放一首歌")
+                    return@request
+                }
+                expressiveDialog = current.copy(
+                    draft = current.draft.copy(
+                        appleMusicIds = currentSong.appleMusicId.toString(),
+                        displayName = formatCurrentSongDisplayName(
+                            currentSong.title,
+                            currentSong.artist,
+                        ) ?: current.draft.displayName,
+                    ),
+                    busyMessage = null,
+                    appleMusicIdError = null,
+                )
+                toast("已获取当前歌曲信息")
+            }
+        ) {
+            toast("正在获取当前歌曲信息")
+            return
+        }
+        expressiveDialog = editor.copy(busyMessage = "正在获取当前歌曲信息…")
+    }
+
+    private fun importOnlineLyricsExpressive(source: String) {
+        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+        val appleMusicId = CustomLyricsIdParser.parsePrimary(editor.draft.appleMusicIds)
+        val neteaseId = parsePositiveId(editor.draft.neteaseId)
+        when {
+            source != CustomLyricsSources.NETEASE && appleMusicId == null -> {
+                expressiveDialog = editor.copy(
+                    appleMusicIdError = "请输入一个或多个正整数 Apple Music ID（用逗号分隔）",
+                )
+                return
+            }
+            source == CustomLyricsSources.NETEASE && neteaseId == null -> {
+                expressiveDialog = editor.copy(neteaseIdError = "请输入正整数网易云歌曲 ID")
+                return
+            }
+        }
+        expressiveDialog = editor.copy(busyMessage = "正在导入 ${customLyricsSourceName(source)} 歌词…")
+        backgroundExecutor.execute {
+            val importer = onlineLyricsImporter()
+            val result = when (source) {
+                CustomLyricsSources.AMLL -> importer.importAmll(requireNotNull(appleMusicId))
+                CustomLyricsSources.NETEASE -> importer.importNetease(
+                    requireNotNull(neteaseId),
+                    editor.draft.displayName,
+                )
+                else -> importer.importAmLyrics(requireNotNull(appleMusicId))
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
+                    ?: return@runOnUiThread
+                when (result) {
+                    is CustomLyricsOnlineImportResult.Imported -> {
+                        expressiveDialog = current.copy(
+                            draft = current.draft.copy(ttml = result.ttml, source = result.source),
+                            busyMessage = null,
+                            ttmlError = null,
+                        )
+                        val reformatNote = if (result.reformatted) {
+                            "，已自动转为 Apple Music 格式"
+                        } else {
+                            ""
+                        }
+                        toast(
+                            "已导入 ${customLyricsSourceName(result.source)} 歌词$reformatNote，请确认后保存",
+                        )
+                    }
+                    is CustomLyricsOnlineImportResult.Failed -> {
+                        expressiveDialog = current.copy(busyMessage = null)
+                        toast(result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun saveLyricsExpressive() {
+        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+        val ids = CustomLyricsIdParser.parse(editor.draft.appleMusicIds)
+        val idError = if (ids == null) {
+            "请输入一个或多个正整数 Apple Music ID（用逗号分隔）"
+        } else {
+            null
+        }
+        val ttmlError = if (editor.draft.ttml.isBlank()) "请输入或导入 TTML" else null
+        if (idError != null || ttmlError != null) {
+            expressiveDialog = editor.copy(
+                appleMusicIdError = idError,
+                ttmlError = ttmlError,
+            )
+            return
+        }
+        val snapshot = ModuleApplication.serviceSnapshot
+        if (!snapshot.isRemoteFileAvailable) {
+            toast("libxposed remote file 服务不可用")
+            return
+        }
+        expressiveDialog = editor.copy(busyMessage = "正在保存歌词映射…")
+        backgroundExecutor.execute {
+            val result = CustomLyricsManager(snapshot, store).saveMany(
+                draft = CustomLyricsMultiIdDraft(
+                    appleMusicIds = requireNotNull(ids),
+                    displayName = editor.draft.displayName,
+                    ttml = editor.draft.ttml,
+                    source = editor.draft.source,
+                    enabled = editor.enabled,
+                ),
+                replacingAppleMusicIds = editor.replacingAppleMusicIds,
+            )
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when (result) {
+                    is CustomLyricsBatchSaveResult.Saved -> {
+                        expressiveDialog = null
+                        render()
+                        toast("歌词映射已保存，重开 Apple Music 后生效")
+                    }
+                    is CustomLyricsBatchSaveResult.Failed -> {
+                        val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
+                        if (current != null) expressiveDialog = current.copy(busyMessage = null)
+                        toast(result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadExistingCustomTtmlExpressive(
+        entry: CustomLyricsEntry,
+        replacingAppleMusicIds: List<Long>,
+    ) {
+        val snapshot = ModuleApplication.serviceSnapshot
+        if (!snapshot.isRemoteFileAvailable) {
+            val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+            expressiveDialog = current.copy(busyMessage = null)
+            return
+        }
+        backgroundExecutor.execute {
+            val reader = CustomLyricsFileReader { fileId ->
+                snapshot.openRemoteFile(fileId)?.let { descriptor ->
+                    runCatching {
+                        android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).use(
+                            CustomLyricsFilePolicy::readBounded,
+                        )
+                    }.getOrNull()
+                }
+            }
+            val ttml = reader.read(entry)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
+                    ?: return@runOnUiThread
+                if (current.replacingAppleMusicIds != replacingAppleMusicIds) return@runOnUiThread
+                expressiveDialog = current.copy(
+                    draft = if (current.draft.ttml.isBlank() && ttml != null) {
+                        current.draft.copy(ttml = ttml)
+                    } else {
+                        current.draft
+                    },
+                    busyMessage = null,
+                )
+                if (ttml == null) toast("无法读取已保存的 TTML，请重新导入后保存")
+            }
+        }
+    }
+
+    private fun openDeepSeekExpressive() {
+        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
+        if (editor.draft.ttml.isBlank()) {
+            expressiveDialog = editor.copy(ttmlError = "请先导入或输入 TTML")
+            return
+        }
+        val lines = AppleTtmlTranslationEditor.extractLines(editor.draft.ttml)
+        if (lines.isEmpty()) {
+            toast("没有找到可安全对齐的歌词行")
+            return
+        }
+        val configStore = AiTranslationConfigStore(this)
+        val settings = configStore.settings()
+        expressiveDialog = ExpressiveSettingsDialog.DeepSeek(
+            editor = editor,
+            apiKey = configStore.apiKey(),
+            model = settings.model,
+            thinkingEnabled = settings.thinkingEnabled,
+            targetLanguage = settings.targetLanguage,
+            lineCount = lines.size,
+        )
+    }
+
+    private fun translateDeepSeekExpressive() {
+        val dialog = expressiveDialog as? ExpressiveSettingsDialog.DeepSeek ?: return
+        val key = dialog.apiKey.trim()
+        if (key.isEmpty()) {
+            expressiveDialog = dialog.copy(apiKeyError = "请输入 API Key")
+            return
+        }
+        val settings = AiTranslationSettings(
+            model = dialog.model,
+            thinkingEnabled = dialog.thinkingEnabled,
+            targetLanguage = dialog.targetLanguage.trim(),
+        )
+        val configStore = AiTranslationConfigStore(this)
+        if (!configStore.saveApiKey(key)) {
+            toast("API Key 安全存储失败")
+            return
+        }
+        configStore.saveSettings(settings)
+        val originalTtml = dialog.editor.draft.ttml
+        val lines = AppleTtmlTranslationEditor.extractLines(originalTtml)
+        expressiveDialog = ExpressiveSettingsDialog.DeepSeekProgress(dialog.editor, lines.size)
+        backgroundExecutor.execute {
+            val result = DeepSeekTranslationClient().translate(key, lines, settings)
+            val translatedTtml = if (result is DeepSeekTranslationResult.Success) {
+                AppleTtmlTranslationEditor.withTranslations(
+                    originalTtml,
+                    result.translations,
+                    settings.targetLanguage,
+                )
+            } else {
+                null
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                when (result) {
+                    is DeepSeekTranslationResult.Success -> {
+                        expressiveDialog = dialog.editor.copy(
+                            draft = if (translatedTtml != null) {
+                                dialog.editor.draft.copy(ttml = translatedTtml)
+                            } else {
+                                dialog.editor.draft
+                            },
+                            ttmlError = null,
+                        )
+                        if (translatedTtml == null) {
+                            toast("翻译成功，但无法安全写入当前 TTML")
+                        } else {
+                            toast("AI 翻译已写入，请确认后保存")
+                        }
+                    }
+                    is DeepSeekTranslationResult.Failed -> {
+                        expressiveDialog = dialog.editor
+                        toast(result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun syncCustomLyricsFromGitHubExpressive() {
+        if (!ModuleApplication.serviceSnapshot.isRemoteFileAvailable) {
+            toast("libxposed remote file 服务不可用")
+            return
+        }
+        val cancelled = AtomicBoolean(false)
+        expressiveSyncCancellation = cancelled
+        expressiveDialog = ExpressiveSettingsDialog.Progress(
+            operation = ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC,
+            title = "同步 GitHub 源",
+            message = "正在读取 GitHub 索引…",
+            cancelLabel = "取消",
+        )
+        backgroundExecutor.execute {
+            val result = runCatching {
+                val client = AmLyricsClient(HttpLyricTransport())
+                val index = client.fetchIndex()
+                    ?: return@runCatching CustomLyricsSyncResult.Failed(
+                        "GitHub 索引无效或读取失败",
+                    )
+                val enabledEntries = index.entries.filter(AmLyricsIndexEntry::enabled)
+                val plan = enabledEntries.map { entry ->
+                    CustomLyricsSyncPlanEntry(
+                        key = entry.path,
+                        appleMusicIds = entry.allAppleMusicIds,
+                        displayName = entry.displayName,
+                    )
+                }
+                val entriesByPath = enabledEntries.associateBy(AmLyricsIndexEntry::path)
+                CustomLyricsManager(ModuleApplication.serviceSnapshot, store).syncFromGitHub(
+                    plan = plan,
+                    loadTtml = { source ->
+                        if (cancelled.get()) {
+                            CustomLyricsSyncLoadResult.Cancelled
+                        } else {
+                            val entry = entriesByPath[source.key]
+                            if (entry == null) {
+                                CustomLyricsSyncLoadResult.Failed("GitHub 索引条目已变化")
+                            } else {
+                                client.fetchTtml(entry)?.let(CustomLyricsSyncLoadResult::Loaded)
+                                    ?: CustomLyricsSyncLoadResult.Failed(
+                                        "下载 GitHub 歌词失败：${source.displayName}",
+                                    )
+                            }
+                        }
+                    },
+                    isCancelled = cancelled::get,
+                    onProgress = { update ->
+                        runOnUiThread {
+                            val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
+                            if (!isFinishing && !isDestroyed && !cancelled.get() &&
+                                current?.operation == ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC
+                            ) {
+                                expressiveDialog = current.copy(
+                                    message = "正在同步 ${update.processedEntries} / " +
+                                        "${update.totalEntries} 首（已映射 " +
+                                        "${update.importedIds + update.overwrittenIds} 个 ID）",
+                                )
+                            }
+                        }
+                    },
+                )
+            }.getOrElse { error ->
+                CustomLyricsSyncResult.Failed("同步 GitHub 源失败：${error.message.orEmpty()}")
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                expressiveSyncCancellation = null
+                val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
+                if (current?.operation == ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC) {
+                    expressiveDialog = null
+                }
+                when (result) {
+                    is CustomLyricsSyncResult.Synced -> toast(
+                        "GitHub 同步完成：新增 ${result.importedIds} 个 ID，覆盖 " +
+                            "${result.overwrittenIds} 个 ID，保留 ${result.preservedIds} 个本地 ID",
+                    )
+                    CustomLyricsSyncResult.Cancelled -> toast("GitHub 同步已取消")
+                    is CustomLyricsSyncResult.Failed -> toast(result.message)
+                }
+                if (result is CustomLyricsSyncResult.Synced) render()
+            }
         }
     }
 

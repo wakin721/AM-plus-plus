@@ -89,6 +89,8 @@ internal fun AmppSettingsScreen(
     customLyricsPage: Boolean,
     customLyricsQuery: String,
     actions: AmppSettingsActions,
+    dialogState: ExpressiveSettingsDialog?,
+    dialogActions: ExpressiveSettingsDialogActions,
 ) {
     if (customLyricsPage) BackHandler(onBack = actions.backToMain)
     Scaffold(
@@ -138,6 +140,7 @@ internal fun AmppSettingsScreen(
             )
         }
     }
+    ExpressiveSettingsDialogHost(dialogState, dialogActions)
 }
 
 @Composable
