@@ -102,15 +102,22 @@ class UsbDirectDeviceBrokerService : Service() {
                 return
             }
         }
+        val alternatives = UsbAudioDescriptorParser.parse(rawDescriptors)
         val alternative = UsbAudioDescriptorParser.select(
-            UsbAudioDescriptorParser.parse(rawDescriptors),
+            alternatives,
             sampleRate = sampleRate,
             channels = channels,
             preferredBits = preferredBits,
         )
         if (alternative == null) {
             connection.close()
-            replyError(message, "No UAC1/UAC2 isochronous OUT alternate setting matches ${sampleRate}Hz/${channels}ch")
+            val deviceLabel = device.productName?.takeIf(String::isNotBlank) ?: device.deviceName
+            val reason = UsbAudioDescriptorParser.selectionFailureReason(
+                alternatives,
+                sampleRate,
+                channels,
+            )
+            replyError(message, "$deviceLabel: $reason")
             return
         }
         val usbInterface = findInterface(device, alternative)

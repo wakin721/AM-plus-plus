@@ -302,6 +302,25 @@ internal object UsbAudioDescriptorParser {
         )
         .firstOrNull()
 
+    fun selectionFailureReason(
+        alternatives: List<StreamingAlt>,
+        sampleRate: Int,
+        channels: Int,
+    ): String {
+        val formatMatches = alternatives.filter { alternative ->
+            alternative.matchesFormat(sampleRate, channels)
+        }
+        return if (
+            formatMatches.any { alternative ->
+                alternative.requiresExplicitFeedback && !alternative.hasExplicitFeedback
+            }
+        ) {
+            "Asynchronous UAC output has no standard explicit feedback endpoint"
+        } else {
+            "No UAC1/UAC2 isochronous OUT alternate setting matches ${sampleRate}Hz/${channels}ch"
+        }
+    }
+
     private fun ByteArray.u8(offset: Int): Int = this[offset].toInt() and 0xff
 
     private fun ByteArray.u16le(offset: Int): Int =

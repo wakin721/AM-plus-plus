@@ -250,7 +250,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
-                    text = "Android USB Host 授权 → claim AudioStreaming interface → native usbfs isochronous；第一版暂不支持异步 feedback DAC"
+                    text = "Android USB Host 授权 → claim AudioStreaming interface → native usbfs isochronous；支持 UAC1/UAC2 标准显式 feedback，隐式 feedback/厂商私有格式仍会回退"
                     textSize = 13.5f
                     setTextColor(palette.onSurfaceVariant)
                     setPadding(0, dp(4), dp(8), 0)
