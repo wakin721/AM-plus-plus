@@ -116,6 +116,7 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(native.contains("feedbackFitsPacket"))
         assertTrue(native.contains("USB Direct feedback timeout"))
         assertTrue(native.contains("USB Direct feedback payload invalid"))
+        assertTrue(native.contains("if (!session->running.load() || session->closing.load()) break;"))
     }
 
     @Test
