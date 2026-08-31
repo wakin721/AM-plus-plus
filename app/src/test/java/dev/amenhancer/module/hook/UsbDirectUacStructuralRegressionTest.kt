@@ -108,6 +108,14 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(native.contains("takeSession(handle)"))
         assertFalse(native.contains("delete session"))
         assertTrue(cmake.contains("UsbDirectUac.cpp"))
+        assertTrue(native.contains("#include \"UsbFeedbackClock.h\""))
+        assertTrue(native.contains("kFeedbackUrbCount = 2"))
+        assertTrue(native.contains("IsoRole::FeedbackIn"))
+        assertTrue(native.contains("decodeFeedbackQ16"))
+        assertTrue(native.contains("feedbackMatchesRate"))
+        assertTrue(native.contains("feedbackFitsPacket"))
+        assertTrue(native.contains("USB Direct feedback timeout"))
+        assertTrue(native.contains("USB Direct feedback payload invalid"))
     }
 
     @Test

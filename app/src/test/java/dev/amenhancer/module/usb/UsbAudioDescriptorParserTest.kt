@@ -43,7 +43,7 @@ class UsbAudioDescriptorParserTest {
     }
 
     @Test
-    fun `parses UAC1 explicit feedback linked by bSynchAddress but keeps takeover gated`() {
+    fun `selects UAC1 asynchronous output when explicit feedback is linked`() {
         val raw = bytes(
             9, 0x04, 1, 1, 2, 0x01, 0x02, 0x00, 0,
             7, 0x24, 0x01, 1, 1, 0x01, 0x00,
@@ -59,14 +59,13 @@ class UsbAudioDescriptorParserTest {
         assertEquals(0x81, alternative.feedbackEndpointAddress)
         assertEquals(3, alternative.feedbackMaxPacketSize)
         assertEquals(1, alternative.feedbackInterval)
-        assertNull(
-            UsbAudioDescriptorParser.select(
-                listOf(alternative),
-                sampleRate = 48_000,
-                channels = 2,
-                preferredBits = 24,
-            ),
+        val selected = UsbAudioDescriptorParser.select(
+            listOf(alternative),
+            sampleRate = 48_000,
+            channels = 2,
+            preferredBits = 24,
         )
+        assertEquals(alternative, selected)
     }
 
     @Test
@@ -88,6 +87,13 @@ class UsbAudioDescriptorParserTest {
         assertEquals(0x81, alternative.feedbackEndpointAddress)
         assertEquals(4, alternative.feedbackMaxPacketSize)
         assertEquals(4, alternative.feedbackInterval)
+        val selected = UsbAudioDescriptorParser.select(
+            listOf(alternative),
+            sampleRate = 48_000,
+            channels = 2,
+            preferredBits = 32,
+        )
+        assertEquals(alternative, selected)
     }
 
     @Test
