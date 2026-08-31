@@ -6,6 +6,7 @@ add_library(
     SHARED
     UsbExclusiveAaudio.cpp
     UsbDirectUac.cpp
+    UsbFeedbackClockCompileTest.cpp
     UsbPcmPackingCompileTest.cpp
 )
 
