@@ -1,9 +1,13 @@
 package dev.amenhancer.module.usb
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+
+private fun bytes(vararg values: Int): ByteArray =
+    ByteArray(values.size) { index -> values[index].toByte() }
 
 class UsbAudioDescriptorParserTest {
     @Test
@@ -39,26 +43,97 @@ class UsbAudioDescriptorParserTest {
     }
 
     @Test
-    fun `rejects asynchronous endpoint until feedback pacing is implemented`() {
-        val raw = byteArrayOf(
-            9, 0x04, 1, 1, 1, 0x01, 0x02, 0x00, 0,
+    fun `parses UAC1 explicit feedback linked by bSynchAddress but keeps takeover gated`() {
+        val raw = bytes(
+            9, 0x04, 1, 1, 2, 0x01, 0x02, 0x00, 0,
             7, 0x24, 0x01, 1, 1, 0x01, 0x00,
-            11, 0x24, 0x02, 0x01, 2, 3, 24, 1, 0x80.toByte(), 0xbb.toByte(), 0x00,
-            // ISO OUT endpoint, asynchronous synchronization type.
-            9, 0x05, 0x01, 0x05, 0x20, 0x01, 1, 0, 0,
+            11, 0x24, 0x02, 0x01, 2, 3, 24, 1, 0x80, 0xbb, 0x00,
+            9, 0x05, 0x01, 0x05, 0x20, 0x01, 1, 0, 0x81,
+            9, 0x05, 0x81, 0x01, 3, 0, 1, 4, 0,
         )
 
-        val alternatives = UsbAudioDescriptorParser.parse(raw)
-        assertEquals(1, alternatives.size)
-        assertTrue(alternatives.single().requiresExplicitFeedback)
+        val alternative = UsbAudioDescriptorParser.parse(raw).single()
+
+        assertTrue(alternative.requiresExplicitFeedback)
+        assertTrue(alternative.hasExplicitFeedback)
+        assertEquals(0x81, alternative.feedbackEndpointAddress)
+        assertEquals(3, alternative.feedbackMaxPacketSize)
+        assertEquals(1, alternative.feedbackInterval)
         assertNull(
             UsbAudioDescriptorParser.select(
-                alternatives,
+                listOf(alternative),
                 sampleRate = 48_000,
                 channels = 2,
                 preferredBits = 24,
             ),
         )
+    }
+
+    @Test
+    fun `parses UAC2 feedback usage in the same alternate setting`() {
+        val raw = bytes(
+            9, 0x04, 0, 0, 0, 0x01, 0x01, 0x20, 0,
+            17, 0x24, 0x02, 1, 0x01, 0x01, 0, 10, 2, 0x03, 0, 0, 0, 0, 0, 0, 0,
+            9, 0x04, 1, 1, 2, 0x01, 0x02, 0x20, 0,
+            16, 0x24, 0x01, 1, 0, 0x01, 0, 0, 0, 0, 2, 0x03, 0, 0, 0, 0,
+            6, 0x24, 0x02, 0x01, 4, 32,
+            7, 0x05, 0x01, 0x05, 0x80, 0x01, 1,
+            7, 0x05, 0x81, 0x11, 4, 0, 4,
+        )
+
+        val alternative = UsbAudioDescriptorParser.parse(raw).single()
+
+        assertEquals(0x20, alternative.protocol)
+        assertTrue(alternative.hasExplicitFeedback)
+        assertEquals(0x81, alternative.feedbackEndpointAddress)
+        assertEquals(4, alternative.feedbackMaxPacketSize)
+        assertEquals(4, alternative.feedbackInterval)
+    }
+
+    @Test
+    fun `does not pair a UAC1 feedback endpoint with a different address`() {
+        val raw = bytes(
+            9, 0x04, 1, 1, 2, 0x01, 0x02, 0x00, 0,
+            7, 0x24, 0x01, 1, 1, 0x01, 0x00,
+            11, 0x24, 0x02, 0x01, 2, 3, 24, 1, 0x80, 0xbb, 0x00,
+            9, 0x05, 0x01, 0x05, 0x20, 0x01, 1, 0, 0x82,
+            9, 0x05, 0x81, 0x01, 3, 0, 1, 4, 0,
+        )
+
+        val alternative = UsbAudioDescriptorParser.parse(raw).single()
+
+        assertTrue(alternative.requiresExplicitFeedback)
+        assertFalse(alternative.hasExplicitFeedback)
+        assertEquals(0, alternative.feedbackEndpointAddress)
+    }
+
+    @Test
+    fun `does not pair UAC2 feedback from another alternate setting`() {
+        val raw = bytes(
+            9, 0x04, 1, 1, 1, 0x01, 0x02, 0x20, 0,
+            16, 0x24, 0x01, 1, 0, 0x01, 0, 0, 0, 0, 2, 0x03, 0, 0, 0, 0,
+            6, 0x24, 0x02, 0x01, 4, 32,
+            7, 0x05, 0x01, 0x05, 0x80, 0x01, 1,
+            9, 0x04, 1, 2, 1, 0x01, 0x02, 0x20, 0,
+            7, 0x05, 0x81, 0x11, 4, 0, 4,
+        )
+
+        val first = UsbAudioDescriptorParser.parse(raw)
+            .single { it.alternateSetting == 1 }
+
+        assertFalse(first.hasExplicitFeedback)
+    }
+
+    @Test
+    fun `implicit feedback usage is not treated as an audio OUT data endpoint`() {
+        val raw = bytes(
+            9, 0x04, 1, 1, 1, 0x01, 0x02, 0x20, 0,
+            16, 0x24, 0x01, 1, 0, 0x01, 0, 0, 0, 0, 2, 0x03, 0, 0, 0, 0,
+            6, 0x24, 0x02, 0x01, 4, 32,
+            7, 0x05, 0x01, 0x25, 0x80, 0x01, 1,
+        )
+
+        assertTrue(UsbAudioDescriptorParser.parse(raw).isEmpty())
     }
 
     @Test
