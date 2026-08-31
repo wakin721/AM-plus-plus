@@ -72,6 +72,10 @@ struct Session {
     int endpointAddress = 0;
     int maxPacketSize = 0;
     int interval = 1;
+    int feedbackEndpointAddress = 0;
+    int feedbackMaxPacketSize = 0;
+    int feedbackInterval = 0;
+    bool usesExplicitFeedback = false;
     int targetSubslotBytes = 0;
     int targetBitResolution = 0;
     int intervalsPerSecond = 1000;
@@ -495,6 +499,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     jint endpointAddress,
     jint maxPacketSize,
     jint interval,
+    jint feedbackEndpointAddress,
+    jint feedbackMaxPacketSize,
+    jint feedbackInterval,
     jint targetSubslotBytes,
     jint targetBitResolution
 ) {
@@ -507,6 +514,19 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         targetBitResolution < 8 || targetBitResolution > targetSubslotBytes * 8
     ) {
         setError("Invalid USB Direct stream parameters");
+        return 0;
+    }
+
+    const bool anyFeedbackParameter = feedbackEndpointAddress != 0 ||
+        feedbackMaxPacketSize != 0 || feedbackInterval != 0;
+    const bool validFeedbackParameters = !anyFeedbackParameter || (
+        (feedbackEndpointAddress & 0x80) != 0 &&
+        (feedbackEndpointAddress & 0x0f) != 0 &&
+        feedbackMaxPacketSize >= 3 && feedbackMaxPacketSize <= 4 &&
+        feedbackInterval > 0
+    );
+    if (!validFeedbackParameters) {
+        setError("Invalid USB Direct explicit feedback parameters");
         return 0;
     }
 
@@ -525,6 +545,10 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     session->endpointAddress = endpointAddress;
     session->maxPacketSize = maxPacketSize;
     session->interval = std::max(1, interval);
+    session->feedbackEndpointAddress = feedbackEndpointAddress;
+    session->feedbackMaxPacketSize = feedbackMaxPacketSize;
+    session->feedbackInterval = feedbackInterval;
+    session->usesExplicitFeedback = anyFeedbackParameter;
     session->targetSubslotBytes = targetSubslotBytes;
     session->targetBitResolution = targetBitResolution;
     session->targetFrameBytes = static_cast<size_t>(channels) * targetSubslotBytes;

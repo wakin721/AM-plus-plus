@@ -40,6 +40,9 @@ internal object UsbDirectUacBridge {
                 lease.endpointAddress,
                 lease.maxPacketSize,
                 lease.interval,
+                lease.feedbackEndpointAddress,
+                lease.feedbackMaxPacketSize,
+                lease.feedbackInterval,
                 lease.subslotBytes,
                 lease.bitResolution,
             )
@@ -124,6 +127,9 @@ internal object UsbDirectUacBridge {
         endpointAddress: Int,
         maxPacketSize: Int,
         interval: Int,
+        feedbackEndpointAddress: Int,
+        feedbackMaxPacketSize: Int,
+        feedbackInterval: Int,
         targetSubslotBytes: Int,
         targetBitResolution: Int,
     ): Long
