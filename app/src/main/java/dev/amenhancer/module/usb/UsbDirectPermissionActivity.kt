@@ -1,5 +1,6 @@
 package dev.amenhancer.module.usb
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -95,6 +96,7 @@ class UsbDirectPermissionActivity : Activity() {
         super.onDestroy()
     }
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private fun registerPermissionReceiver() {
         val filter = IntentFilter(ACTION_USB_PERMISSION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

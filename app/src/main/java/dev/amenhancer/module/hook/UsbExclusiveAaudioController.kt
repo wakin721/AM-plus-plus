@@ -6,6 +6,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import java.lang.ref.WeakReference
@@ -69,9 +70,10 @@ internal object UsbExclusiveAaudioController {
      * track first closes the stale exclusive queue, then keeps its original
      * play() path until the Java PCM write seam has been proven.
      */
-    fun beforePlay(track: AudioTrack): Boolean {
+    fun beforePlay(context: Context, track: AudioTrack): Boolean {
         if (!enabled.get() || internalTransition.get() == true) return false
         if (!track.isMediaTrack()) return false
+        context.getSystemService(AudioManager::class.java)?.let(::rememberSystemMediaVolume)
         latestTrack = WeakReference(track)
         return synchronized(lock) {
             val owner = session?.track?.get()
@@ -320,6 +322,7 @@ internal object UsbExclusiveAaudioController {
                 // Apple Music can start the next AudioTrack before releasing the old
                 // one. Release that stale exclusive owner before opening the new format.
                 closeSessionLocked()
+                rememberSystemMediaVolume(manager)
 
                 val paused = runCatching {
                     track.pause()
@@ -452,12 +455,22 @@ internal object UsbExclusiveAaudioController {
         val index = if (observedIndex in 0..maximum) observedIndex else queriedIndex
         val muted = runCatching { manager.isStreamMute(AudioManager.STREAM_MUSIC) }
             .getOrDefault(index <= 0)
-        val db = runCatching {
-            manager.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, active.deviceType)
-        }.getOrNull()
+        val db = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                manager.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, active.deviceType)
+            }.getOrNull()
+        } else {
+            null
+        }
         val streamGain = UsbExclusiveVolumePolicy.streamGain(index, maximum, muted, db)
         active.streamGain = streamGain
         return combineWithTrackGain(active, streamGain)
+    }
+
+    private fun rememberSystemMediaVolume(manager: AudioManager) {
+        val index = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull()
+            ?: return
+        observedMediaVolumeIndex.compareAndSet(UNKNOWN_VOLUME_INDEX, index)
     }
 
     private fun combineWithTrackGain(active: Session, streamGain: Float): StereoGain {
@@ -509,7 +522,8 @@ internal object UsbExclusiveAaudioController {
     )
 
     private fun AudioTrack.isMediaTrack(): Boolean =
-        audioAttributes.usage == AudioAttributes.USAGE_MEDIA
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            audioAttributes.usage == AudioAttributes.USAGE_MEDIA
 
     private fun AudioDeviceInfo.isUsbAudioOutput(): Boolean = isSink && when (type) {
         AudioDeviceInfo.TYPE_USB_DEVICE,

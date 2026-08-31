@@ -64,7 +64,7 @@ internal class AppleMusicUsbBitPerfectTarget(
                     param.result = null
                     return
                 }
-                if (UsbExclusiveAaudioController.beforePlay(track)) {
+                if (UsbExclusiveAaudioController.beforePlay(application, track)) {
                     param.result = null
                     return
                 }
@@ -130,6 +130,12 @@ internal class AppleMusicUsbBitPerfectTarget(
                     override fun afterHookedMethod(param: MethodHookParam) {
                         if (param.throwable != null) return
                         val track = param.thisObject as? AudioTrack ?: return
+                        UsbDirectUacController.afterVolumeChange(
+                            track,
+                            operation,
+                            param.args,
+                            param.result,
+                        )
                         UsbExclusiveAaudioController.afterVolumeChange(
                             track,
                             operation,
@@ -186,6 +192,7 @@ internal object UsbExclusiveSystemVolumeObserver {
             if (intent?.action != VOLUME_CHANGED_ACTION) return
             if (intent.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1) != AudioManager.STREAM_MUSIC) return
             val index = intent.getIntExtra(EXTRA_VOLUME_STREAM_VALUE, -1)
+            UsbDirectUacController.onSystemMediaVolumeChanged(index)
             UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)
         }
     }

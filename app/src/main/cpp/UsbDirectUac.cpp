@@ -266,6 +266,24 @@ int64_t convertFloatSample(float value, int targetBits) {
     return clampToBits(static_cast<int64_t>(std::llround(scaled)), targetBits);
 }
 
+float sanitizeGain(float gain) {
+    if (!std::isfinite(gain)) return 0.0F;
+    return std::clamp(gain, 0.0F, 1.0F);
+}
+
+float gainForSample(float left, float right, int sampleIndex, int channels) {
+    if (channels <= 1 || sampleIndex % channels == 0) return left;
+    if (sampleIndex % channels == 1) return right;
+    return (left + right) * 0.5F;
+}
+
+int64_t attenuateIntegerSample(int64_t value, int bits, float gain) {
+    return clampToBits(
+        static_cast<int64_t>(std::llround(static_cast<double>(value) * gain)),
+        bits
+    );
+}
+
 void packLittleEndian(int64_t sample, int subslotBytes, uint8_t* destination) {
     const uint64_t bits = static_cast<uint64_t>(sample);
     for (int byte = 0; byte < subslotBytes; ++byte) {
@@ -277,8 +295,12 @@ std::vector<uint8_t> convertIntegerFrames(
     Session* session,
     const int64_t* samples,
     int sampleCount,
-    int sourceBits
+    int sourceBits,
+    float gainLeft,
+    float gainRight
 ) {
+    const float left = sanitizeGain(gainLeft);
+    const float right = sanitizeGain(gainRight);
     std::vector<uint8_t> output(
         static_cast<size_t>(sampleCount) * session->targetSubslotBytes
     );
@@ -287,7 +309,11 @@ std::vector<uint8_t> convertIntegerFrames(
             samples[index], sourceBits, session->targetBitResolution
         );
         packLittleEndian(
-            converted,
+            attenuateIntegerSample(
+                converted,
+                session->targetBitResolution,
+                gainForSample(left, right, index, session->channels)
+            ),
             session->targetSubslotBytes,
             output.data() + static_cast<size_t>(index) * session->targetSubslotBytes
         );
@@ -298,14 +324,21 @@ std::vector<uint8_t> convertIntegerFrames(
 std::vector<uint8_t> convertFloatFrames(
     Session* session,
     const float* samples,
-    int sampleCount
+    int sampleCount,
+    float gainLeft,
+    float gainRight
 ) {
+    const float left = sanitizeGain(gainLeft);
+    const float right = sanitizeGain(gainRight);
     std::vector<uint8_t> output(
         static_cast<size_t>(sampleCount) * session->targetSubslotBytes
     );
     for (int index = 0; index < sampleCount; ++index) {
         packLittleEndian(
-            convertFloatSample(samples[index], session->targetBitResolution),
+            convertFloatSample(
+                samples[index] * gainForSample(left, right, index, session->channels),
+                session->targetBitResolution
+            ),
             session->targetSubslotBytes,
             output.data() + static_cast<size_t>(index) * session->targetSubslotBytes
         );
@@ -328,7 +361,9 @@ int64_t readSignedLittleEndian(const uint8_t* data, int bytes) {
 std::vector<uint8_t> convertByteFrames(
     Session* session,
     const uint8_t* input,
-    int sampleCount
+    int sampleCount,
+    float gainLeft,
+    float gainRight
 ) {
     if (session->inputFormat == kFormatFloat) {
         std::vector<float> samples(sampleCount);
@@ -337,7 +372,13 @@ std::vector<uint8_t> convertByteFrames(
             std::memcpy(&value, input + static_cast<size_t>(index) * 4, sizeof(float));
             samples[index] = value;
         }
-        return convertFloatFrames(session, samples.data(), sampleCount);
+        return convertFloatFrames(
+            session,
+            samples.data(),
+            sampleCount,
+            gainLeft,
+            gainRight
+        );
     }
 
     const int sourceBits = session->inputBytesPerSample * 8;
@@ -348,7 +389,14 @@ std::vector<uint8_t> convertByteFrames(
             session->inputBytesPerSample
         );
     }
-    return convertIntegerFrames(session, samples.data(), sampleCount, sourceBits);
+    return convertIntegerFrames(
+        session,
+        samples.data(),
+        sampleCount,
+        sourceBits,
+        gainLeft,
+        gainRight
+    );
 }
 
 size_t enqueueTarget(Session* session, const uint8_t* data, size_t bytes, bool blocking) {
@@ -472,7 +520,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteFloats(
     jfloatArray data,
     jint offset,
     jint size,
-    jboolean blocking
+    jboolean blocking,
+    jfloat gainLeft,
+    jfloat gainRight
 ) {
     auto* session = fromHandle(handle);
     if (session == nullptr || data == nullptr || session->inputFormat != kFormatFloat) {
@@ -487,7 +537,13 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteFloats(
     std::vector<float> samples(size);
     env->GetFloatArrayRegion(data, offset, size, samples.data());
     if (env->ExceptionCheck()) return -1;
-    auto converted = convertFloatFrames(session, samples.data(), size);
+    auto converted = convertFloatFrames(
+        session,
+        samples.data(),
+        size,
+        gainLeft,
+        gainRight
+    );
     const size_t accepted = enqueueTarget(
         session, converted.data(), converted.size(), blocking == JNI_TRUE
     );
@@ -504,7 +560,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteShorts(
     jshortArray data,
     jint offset,
     jint size,
-    jboolean blocking
+    jboolean blocking,
+    jfloat gainLeft,
+    jfloat gainRight
 ) {
     auto* session = fromHandle(handle);
     if (session == nullptr || data == nullptr || session->inputFormat != kFormatI16) {
@@ -521,7 +579,14 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteShorts(
     if (env->ExceptionCheck()) return -1;
     std::vector<int64_t> samples(size);
     for (int index = 0; index < size; ++index) samples[index] = source[index];
-    auto converted = convertIntegerFrames(session, samples.data(), size, 16);
+    auto converted = convertIntegerFrames(
+        session,
+        samples.data(),
+        size,
+        16,
+        gainLeft,
+        gainRight
+    );
     const size_t accepted = enqueueTarget(
         session, converted.data(), converted.size(), blocking == JNI_TRUE
     );
@@ -537,7 +602,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
     jbyteArray data,
     jint offset,
     jint size,
-    jboolean blocking
+    jboolean blocking,
+    jfloat gainLeft,
+    jfloat gainRight
 ) {
     auto* session = fromHandle(handle);
     if (session == nullptr || data == nullptr) {
@@ -562,7 +629,13 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
     );
     if (env->ExceptionCheck()) return -1;
     const int sampleCount = size / session->inputBytesPerSample;
-    auto converted = convertByteFrames(session, source.data(), sampleCount);
+    auto converted = convertByteFrames(
+        session,
+        source.data(),
+        sampleCount,
+        gainLeft,
+        gainRight
+    );
     const size_t accepted = enqueueTarget(
         session, converted.data(), converted.size(), blocking == JNI_TRUE
     );

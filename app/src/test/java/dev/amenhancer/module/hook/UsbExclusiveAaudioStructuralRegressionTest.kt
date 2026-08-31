@@ -67,6 +67,8 @@ class UsbExclusiveAaudioStructuralRegressionTest {
         assertTrue(controller.contains("UsbExclusiveVolumePolicy.streamGain"))
         assertTrue(controller.contains("getStreamVolumeDb"))
         assertTrue(controller.contains("observedMediaVolumeIndex"))
+        assertTrue(controller.contains("rememberSystemMediaVolume(manager)"))
+        assertTrue(controller.contains("let(::rememberSystemMediaVolume)"))
         assertTrue(controller.contains("track.pause()"))
         assertTrue(controller.contains("track.flush()"))
         assertTrue(controller.contains("Drop the old exclusive queue before new PCM plays"))

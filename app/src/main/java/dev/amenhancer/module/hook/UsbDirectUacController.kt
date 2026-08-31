@@ -2,13 +2,18 @@ package dev.amenhancer.module.hook
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
+import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Experimental user-space USB Audio takeover.
@@ -31,18 +36,24 @@ internal object UsbDirectUacController {
     private var failedTrack: WeakReference<AudioTrack>? = null
     private var lastFailure: Failure? = null
     private var applicationContext: Context? = null
+    private val trackVolumes = WeakHashMap<AudioTrack, StereoGain>()
+    private val observedMediaVolumeIndex = AtomicInteger(UNKNOWN_VOLUME_INDEX)
 
     fun configure(isEnabled: Boolean) {
         enabled.set(isEnabled)
         if (!isEnabled) {
             val context = applicationContext
-            synchronized(lock) { closeSessionLocked() }
+            synchronized(lock) {
+                closeSessionLocked()
+                trackVolumes.clear()
+            }
             if (context != null) UsbDirectDeviceClient.release(context)
             pendingTrack = null
             observedTrack = null
             failedTrack = null
             lastFailure = null
             applicationContext = null
+            observedMediaVolumeIndex.set(UNKNOWN_VOLUME_INDEX)
         }
     }
 
@@ -54,11 +65,18 @@ internal object UsbDirectUacController {
         session?.track?.get() === track
     }
 
+    /** Receives the media step selected by Android's system volume UI. */
+    fun onSystemMediaVolumeChanged(volumeIndex: Int) {
+        if (!enabled.get() || volumeIndex < 0) return
+        observedMediaVolumeIndex.set(volumeIndex)
+    }
+
     /** Suppress only redundant play() calls after USB Direct already owns the track. */
     fun beforePlay(context: Context, track: AudioTrack): Boolean {
         if (!enabled.get() || isInternalTransition()) return false
         if (!track.isMediaTrack()) return false
         applicationContext = context.applicationContext
+        context.getSystemService(AudioManager::class.java)?.let(::rememberSystemMediaVolume)
         latestTrack = WeakReference(track)
         return isActive(track)
     }
@@ -69,6 +87,7 @@ internal object UsbDirectUacController {
         val active = synchronized(lock) {
             session?.takeIf { it.track.get() === track }
         } ?: return null
+        val gains = effectiveGains(active)
 
         val written = when (val data = args.firstOrNull()) {
             is FloatArray -> {
@@ -85,6 +104,8 @@ internal object UsbDirectUacController {
                     offset,
                     size,
                     blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
+                    gainLeft = gains.left,
+                    gainRight = gains.right,
                 )
             }
 
@@ -102,6 +123,8 @@ internal object UsbDirectUacController {
                     offset,
                     size,
                     blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
+                    gainLeft = gains.left,
+                    gainRight = gains.right,
                 )
             }
 
@@ -116,10 +139,12 @@ internal object UsbDirectUacController {
                     offset,
                     size,
                     blocking = writeModeForArray(args) != AudioTrack.WRITE_NON_BLOCKING,
+                    gainLeft = gains.left,
+                    gainRight = gains.right,
                 )
             }
 
-            is ByteBuffer -> writeByteBuffer(active, track, data, args)
+            is ByteBuffer -> writeByteBuffer(active, track, data, args, gains)
             else -> return failWrite(
                 track,
                 "Apple Music 切换到当前 USB Direct 原型无法接管的 AudioTrack.write 重载",
@@ -135,6 +160,33 @@ internal object UsbDirectUacController {
             }
         }
         return written
+    }
+
+    /** Mirrors AudioTrack's app-level fades after the original track is paused. */
+    fun afterVolumeChange(
+        track: AudioTrack,
+        operation: String,
+        args: Array<Any?>,
+        result: Any?,
+    ) {
+        if (!enabled.get()) return
+        if (result is Int && result != AudioTrack.SUCCESS) return
+        val updated = when (operation) {
+            "setVolume" -> (args.firstOrNull() as? Float)?.let { gain ->
+                StereoGain(gain.coerceIn(0f, 1f), gain.coerceIn(0f, 1f))
+            }
+            "setStereoVolume" -> {
+                val left = args.getOrNull(0) as? Float
+                val right = args.getOrNull(1) as? Float
+                if (left != null && right != null) {
+                    StereoGain(left.coerceIn(0f, 1f), right.coerceIn(0f, 1f))
+                } else {
+                    null
+                }
+            }
+            else -> null
+        } ?: return
+        synchronized(lock) { trackVolumes[track] = updated }
     }
 
     /**
@@ -227,6 +279,7 @@ internal object UsbDirectUacController {
             }
         }
         if (operation == "release") {
+            synchronized(lock) { trackVolumes.remove(track) }
             if (observedTrack?.get() === track) observedTrack = null
             if (pendingTrack?.get() === track) pendingTrack = null
             if (failedTrack?.get() === track) failedTrack = null
@@ -311,6 +364,16 @@ internal object UsbDirectUacController {
         }
         internalTransition.set(true)
         try {
+            val manager = context.getSystemService(AudioManager::class.java)
+            if (manager == null) {
+                markFailure(track, "无法读取系统媒体音量", FailureKind.OTHER)
+                UsbDirectDeviceClient.release(context)
+                return
+            }
+            rememberSystemMediaVolume(manager)
+            val deviceType = runCatching { track.routedDevice?.type }
+                .getOrNull()
+                ?: AudioDeviceInfo.TYPE_USB_DEVICE
             val paused = runCatching {
                 track.pause()
                 true
@@ -344,6 +407,8 @@ internal object UsbDirectUacController {
                             handle = opened.handle,
                             lease = lease,
                             context = context.applicationContext,
+                            audioManager = manager,
+                            deviceType = deviceType,
                         )
                         failedTrack = null
                         lastFailure = null
@@ -385,6 +450,7 @@ internal object UsbDirectUacController {
         track: AudioTrack,
         data: ByteBuffer,
         args: Array<Any?>,
+        gains: StereoGain,
     ): Int {
         val sizeBytes = args.getOrNull(1) as? Int ?: return -1
         if (sizeBytes < 0 || sizeBytes > data.remaining()) return -1
@@ -396,6 +462,8 @@ internal object UsbDirectUacController {
             0,
             sizeBytes,
             blocking = (args.getOrNull(2) as? Int) != AudioTrack.WRITE_NON_BLOCKING,
+            gainLeft = gains.left,
+            gainRight = gains.right,
         )
         if (written > 0) data.position(data.position() + written)
         return written
@@ -414,6 +482,46 @@ internal object UsbDirectUacController {
 
     private fun writeModeForArray(args: Array<Any?>): Int =
         (args.getOrNull(3) as? Int) ?: AudioTrack.WRITE_BLOCKING
+
+    private fun rememberSystemMediaVolume(manager: AudioManager) {
+        val index = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull()
+            ?: return
+        observedMediaVolumeIndex.compareAndSet(UNKNOWN_VOLUME_INDEX, index)
+    }
+
+    private fun effectiveGains(active: Session): StereoGain {
+        val manager = active.audioManager
+        val queriedIndex = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
+            .getOrNull()
+            ?: return combineWithTrackGain(active, active.streamGain)
+        val maximum = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+            .getOrNull()
+            ?: return combineWithTrackGain(active, active.streamGain)
+        val observedIndex = observedMediaVolumeIndex.get()
+        val index = if (observedIndex in 0..maximum) observedIndex else queriedIndex
+        val muted = runCatching { manager.isStreamMute(AudioManager.STREAM_MUSIC) }
+            .getOrDefault(index <= 0)
+        val db = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                manager.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, active.deviceType)
+            }.getOrNull()
+        } else {
+            null
+        }
+        val streamGain = UsbExclusiveVolumePolicy.streamGain(index, maximum, muted, db)
+        active.streamGain = streamGain
+        return combineWithTrackGain(active, streamGain)
+    }
+
+    private fun combineWithTrackGain(active: Session, streamGain: Float): StereoGain {
+        val trackGain = synchronized(lock) {
+            trackVolumes[active.track.get()] ?: StereoGain.FULL
+        }
+        return StereoGain(
+            left = UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain.left),
+            right = UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain.right),
+        )
+    }
 
     private fun markFailure(track: AudioTrack, reason: String, kind: FailureKind) {
         failedTrack = WeakReference(track)
@@ -462,15 +570,25 @@ internal object UsbDirectUacController {
     }
 
     private fun AudioTrack.isMediaTrack(): Boolean =
-        audioAttributes.usage == AudioAttributes.USAGE_MEDIA
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            audioAttributes.usage == AudioAttributes.USAGE_MEDIA
 
     private data class Session(
         val track: WeakReference<AudioTrack>,
         val handle: Long,
         val lease: UsbDirectDeviceClient.Lease,
         val context: Context,
+        val audioManager: AudioManager,
+        val deviceType: Int,
+        var streamGain: Float = 1f,
         var hasWrittenPcm: Boolean = false,
     )
+
+    private data class StereoGain(val left: Float, val right: Float) {
+        companion object {
+            val FULL = StereoGain(1f, 1f)
+        }
+    }
 
     private data class Failure(
         val reason: String,
@@ -482,4 +600,6 @@ internal object UsbDirectUacController {
         UNSUPPORTED,
         OTHER,
     }
+
+    private const val UNKNOWN_VOLUME_INDEX = -1
 }

@@ -59,8 +59,10 @@ internal object UsbDirectUacBridge {
         offset: Int,
         size: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int = runCatching {
-        nativeWriteFloats(handle, data, offset, size, blocking)
+        nativeWriteFloats(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
     fun writeShorts(
@@ -69,8 +71,10 @@ internal object UsbDirectUacBridge {
         offset: Int,
         size: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int = runCatching {
-        nativeWriteShorts(handle, data, offset, size, blocking)
+        nativeWriteShorts(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
     fun writeBytes(
@@ -79,8 +83,10 @@ internal object UsbDirectUacBridge {
         offset: Int,
         size: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int = runCatching {
-        nativeWriteBytes(handle, data, offset, size, blocking)
+        nativeWriteBytes(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
     fun close(handle: Long) {
@@ -129,6 +135,8 @@ internal object UsbDirectUacBridge {
         offset: Int,
         size: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int
 
     @JvmStatic
@@ -138,6 +146,8 @@ internal object UsbDirectUacBridge {
         offset: Int,
         size: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int
 
     @JvmStatic
@@ -147,6 +157,8 @@ internal object UsbDirectUacBridge {
         offset: Int,
         size: Int,
         blocking: Boolean,
+        gainLeft: Float,
+        gainRight: Float,
     ): Int
 
     @JvmStatic

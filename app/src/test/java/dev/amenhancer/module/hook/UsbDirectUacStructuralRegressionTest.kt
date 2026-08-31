@@ -99,6 +99,10 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(native.contains("USBDEVFS_REAPURB"))
         assertTrue(native.contains("USBDEVFS_DISCARDURB"))
         assertTrue(native.contains("dup(fd)"))
+        assertTrue(native.contains("attenuateIntegerSample"))
+        assertTrue(native.contains("gainForSample"))
+        assertTrue(native.contains("gainLeft"))
+        assertTrue(native.contains("gainRight"))
         assertTrue(cmake.contains("UsbDirectUac.cpp"))
     }
 
@@ -113,15 +117,26 @@ class UsbDirectUacStructuralRegressionTest {
         val protocol = projectFile(
             "app/src/main/java/dev/amenhancer/module/UsbBitPerfectStatusProtocol.kt",
         )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
 
         val directIntercept = hook.indexOf("UsbDirectUacController.interceptWrite")
         val aaudioIntercept = hook.indexOf("UsbExclusiveAaudioController.interceptWrite")
         assertTrue(directIntercept >= 0)
         assertTrue(aaudioIntercept > directIntercept)
         assertTrue(hook.contains("UsbDirectUacController.allowsAaudioFallback(track)"))
+        assertTrue(hook.contains("UsbDirectUacController.onSystemMediaVolumeChanged(index)"))
+        assertTrue(hook.contains("UsbDirectUacController.afterVolumeChange"))
         assertTrue(controller.contains("if (active.hasWrittenPcm)"))
         assertTrue(controller.contains("STATE_DIRECT_ACTIVE"))
         assertTrue(controller.contains("UsbDirectDeviceClient.release(context)"))
+        assertTrue(controller.contains("UsbExclusiveVolumePolicy.streamGain"))
+        assertTrue(controller.contains("rememberSystemMediaVolume(manager)"))
+        assertTrue(controller.contains("gainLeft = gains.left"))
+        assertTrue(controller.contains("gainRight = gains.right"))
+        assertTrue(bridge.contains("gainLeft: Float"))
+        assertTrue(bridge.contains("gainRight: Float"))
         assertTrue(protocol.contains("STATE_DIRECT_PERMISSION_REQUIRED"))
         assertTrue(protocol.contains("STATE_DIRECT_UNSUPPORTED_DEVICE"))
     }
