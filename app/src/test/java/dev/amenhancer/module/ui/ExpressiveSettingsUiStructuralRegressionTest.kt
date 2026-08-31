@@ -64,11 +64,21 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         )
 
         assertTrue(screen.contains("ExpressiveSettingsDialogHost(dialogState, dialogActions)"))
-        assertTrue(activity.contains("showTitleCorrectionMode = ::showTitleCorrectionModePicker"))
+        assertFalse(activity.contains("showTitleCorrectionMode = ::showTitleCorrectionModePicker"))
+        assertTrue(activity.contains(
+            "expressiveDialog = ExpressiveSettingsDialog.TitleCorrectionMode(",
+        ))
+        assertTrue(activity.contains(
+            "selectTitleCorrectionMode = ::selectTitleCorrectionModeExpressive",
+        ))
         assertTrue(activity.contains("addCustomLyrics = { showCustomLyricsEditorExpressive() }"))
         assertTrue(activity.contains("updateCustomLyrics = ::updateCustomLyricsExpressive"))
         assertTrue(dialogs.contains("ExpressiveSettingsDialogHost("))
+        assertTrue(dialogs.contains("is ExpressiveSettingsDialog.TitleCorrectionMode ->"))
+        assertTrue(dialogs.contains("TitleCorrectionModeDialog(state, actions)"))
         assertTrue(dialogs.contains("AlertDialog("))
+        assertTrue(dialogs.contains("Modifier.selectable("))
+        assertTrue(dialogs.contains("RadioButton("))
         assertTrue(dialogs.contains("shape = RoundedCornerShape(32.dp)"))
         assertTrue(dialogs.contains("shape = RoundedCornerShape(36.dp)"))
         assertFalse(dialogs.contains("android.app.AlertDialog"))
