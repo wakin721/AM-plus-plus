@@ -327,4 +327,3 @@ advertised by the DAC are excluded from hardware acceptance.
 - Existing synchronous/adaptive USB Direct and AAudio fallback tests continue
   to pass.
 - Debug native build, complete unit tests, and debug APK assembly succeed.
-
