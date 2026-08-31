@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "UsbFeedbackClock.h"
 #include "UsbPcmPacking.h"
 
 namespace {
@@ -30,6 +31,9 @@ constexpr int kFormatI32 = 4;
 
 constexpr int kIsoPacketsPerUrb = 4;
 constexpr int kIsoUrbCount = 4;
+constexpr int kFeedbackUrbCount = 2;
+constexpr int kMaxInvalidFeedbackPackets = 8;
+constexpr auto kFeedbackTimeout = std::chrono::seconds(2);
 constexpr int kWriteWaitMillis = 500;
 constexpr size_t kMinRingBytes = 256 * 1024;
 constexpr size_t kMaxRingBytes = 8 * 1024 * 1024;
@@ -57,7 +61,13 @@ int inputBytesPerSample(int formatCode) {
     }
 }
 
+enum class IsoRole {
+    AudioOut,
+    FeedbackIn,
+};
+
 struct IsoSlot {
+    IsoRole role = IsoRole::AudioOut;
     std::vector<uint8_t> urbStorage;
     std::vector<uint8_t> buffer;
     usbdevfs_urb* urb = nullptr;
@@ -78,8 +88,16 @@ struct Session {
     bool usesExplicitFeedback = false;
     int targetSubslotBytes = 0;
     int targetBitResolution = 0;
-    int intervalsPerSecond = 1000;
     size_t targetFrameBytes = 0;
+    bool highOrSuperSpeed = false;
+    int busTicksPerSecond = 1000;
+    int outputServiceTicks = 1;
+    usb_feedback::PacketScheduler packetScheduler{0};
+    bool hasValidFeedback = false;
+    int invalidFeedbackPackets = 0;
+    std::chrono::steady_clock::time_point feedbackStartedAt{};
+    std::chrono::steady_clock::time_point lastValidFeedbackAt{};
+    std::string lastFeedbackError;
 
     std::vector<uint8_t> ring;
     size_t ringRead = 0;
@@ -95,7 +113,6 @@ struct Session {
     std::atomic<bool> workerStarted{false};
     std::thread worker;
     std::vector<std::unique_ptr<IsoSlot>> slots;
-    uint64_t framePhase = 0;
 };
 
 std::mutex gSessionsMutex;
@@ -124,25 +141,17 @@ std::shared_ptr<Session> takeSession(jlong handle) {
     return session;
 }
 
-int detectIntervalsPerSecond(int fd, int interval) {
+bool isHighOrSuperSpeed(int fd) {
     int speed = -1;
 #ifdef USBDEVFS_GET_SPEED
     speed = ioctl(fd, USBDEVFS_GET_SPEED);
 #endif
-    const int exponent = std::clamp(interval - 1, 0, 12);
-    const int divisor = 1 << exponent;
     // Linux enum usb_device_speed: FULL=2, HIGH=3, SUPER=5, SUPER_PLUS=6.
-    // High/SuperSpeed isochronous bInterval is expressed in 125us microframes.
-    const bool microframes = speed == 3 || speed == 5 || speed == 6;
-    const int base = microframes ? 8000 : 1000;
-    return std::max(1, base / divisor);
+    return speed == 3 || speed == 5 || speed == 6;
 }
 
 int framesForNextInterval(Session* session) {
-    session->framePhase += static_cast<uint64_t>(session->sampleRate);
-    const int frames = static_cast<int>(session->framePhase / session->intervalsPerSecond);
-    session->framePhase %= static_cast<uint64_t>(session->intervalsPerSecond);
-    return frames;
+    return session->packetScheduler.nextFrames(session->outputServiceTicks);
 }
 
 void copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes) {
@@ -166,8 +175,11 @@ void copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes)
     session->spaceAvailable.notify_all();
 }
 
-bool fillSlot(Session* session, IsoSlot* slot) {
-    if (slot == nullptr || slot->urb == nullptr) return false;
+bool fillAudioSlot(Session* session, IsoSlot* slot) {
+    if (
+        slot == nullptr || slot->urb == nullptr ||
+        slot->role != IsoRole::AudioOut
+    ) return false;
     auto* urb = slot->urb;
     int totalBytes = 0;
     for (int packet = 0; packet < kIsoPacketsPerUrb; ++packet) {
@@ -196,8 +208,8 @@ bool fillSlot(Session* session, IsoSlot* slot) {
     return true;
 }
 
-bool submitSlot(Session* session, IsoSlot* slot) {
-    if (!fillSlot(session, slot)) return false;
+bool submitAudioSlot(Session* session, IsoSlot* slot) {
+    if (!fillAudioSlot(session, slot)) return false;
     if (ioctl(session->fd, USBDEVFS_SUBMITURB, slot->urb) < 0) {
         setError("USBDEVFS_SUBMITURB failed errno=" + std::to_string(errno));
         session->failed.store(true);
@@ -206,11 +218,104 @@ bool submitSlot(Session* session, IsoSlot* slot) {
     return true;
 }
 
+bool submitFeedbackSlot(Session* session, IsoSlot* slot) {
+    if (
+        slot == nullptr || slot->urb == nullptr ||
+        slot->role != IsoRole::FeedbackIn
+    ) return false;
+    auto* urb = slot->urb;
+    urb->buffer_length = session->feedbackMaxPacketSize;
+    urb->actual_length = 0;
+    urb->status = 0;
+    urb->error_count = 0;
+    urb->iso_frame_desc[0].length =
+        static_cast<unsigned int>(session->feedbackMaxPacketSize);
+    urb->iso_frame_desc[0].actual_length = 0;
+    urb->iso_frame_desc[0].status = 0;
+    if (ioctl(session->fd, USBDEVFS_SUBMITURB, urb) < 0) {
+        setError("USB feedback SUBMITURB failed errno=" + std::to_string(errno));
+        session->failed.store(true);
+        return false;
+    }
+    return true;
+}
+
+bool recordInvalidFeedback(Session* session, const std::string& reason) {
+    session->lastFeedbackError = reason;
+    session->invalidFeedbackPackets++;
+    if (session->invalidFeedbackPackets < kMaxInvalidFeedbackPackets) return true;
+    setError("USB Direct feedback payload invalid: " + reason);
+    session->failed.store(true);
+    return false;
+}
+
+bool consumeFeedback(Session* session, IsoSlot* slot) {
+    auto* urb = slot->urb;
+    auto& packet = urb->iso_frame_desc[0];
+    if (urb->status != 0 || urb->error_count != 0 || packet.status != 0) {
+        setError(
+            "USB feedback URB failed status=" + std::to_string(urb->status) +
+            " packetStatus=" + std::to_string(packet.status)
+        );
+        session->failed.store(true);
+        return false;
+    }
+    uint32_t feedbackQ16 = 0;
+    const size_t length = static_cast<size_t>(packet.actual_length);
+    if (!usb_feedback::decodeFeedbackQ16(slot->buffer.data(), length, &feedbackQ16)) {
+        return recordInvalidFeedback(session, "length=" + std::to_string(length));
+    }
+    if (!usb_feedback::feedbackMatchesRate(
+            feedbackQ16,
+            session->busTicksPerSecond,
+            session->sampleRate
+        )) {
+        return recordInvalidFeedback(session, "rate outside 75%-125% window");
+    }
+    if (!usb_feedback::feedbackFitsPacket(
+            feedbackQ16,
+            session->outputServiceTicks,
+            static_cast<int>(session->targetFrameBytes),
+            session->maxPacketSize
+        )) {
+        return recordInvalidFeedback(session, "packet exceeds wMaxPacketSize");
+    }
+    session->packetScheduler.updateFeedback(feedbackQ16);
+    session->hasValidFeedback = true;
+    session->invalidFeedbackPackets = 0;
+    session->lastFeedbackError.clear();
+    session->lastValidFeedbackAt = std::chrono::steady_clock::now();
+    return true;
+}
+
+bool feedbackTimedOut(Session* session) {
+    if (!session->usesExplicitFeedback) return false;
+    const auto now = std::chrono::steady_clock::now();
+    const auto reference = session->hasValidFeedback
+        ? session->lastValidFeedbackAt
+        : session->feedbackStartedAt;
+    if (now - reference <= kFeedbackTimeout) return false;
+    setError("USB Direct feedback timeout");
+    session->failed.store(true);
+    return true;
+}
+
 void directWorker(Session* session) {
+    session->feedbackStartedAt = std::chrono::steady_clock::now();
     for (const auto& slot : session->slots) {
-        if (!session->running.load() || !submitSlot(session, slot.get())) {
+        if (slot->role != IsoRole::FeedbackIn) continue;
+        if (!session->running.load() || !submitFeedbackSlot(session, slot.get())) {
             session->running.store(false);
             break;
+        }
+    }
+    if (session->running.load()) {
+        for (const auto& slot : session->slots) {
+            if (slot->role != IsoRole::AudioOut) continue;
+            if (!submitAudioSlot(session, slot.get())) {
+                session->running.store(false);
+                break;
+            }
         }
     }
 
@@ -228,16 +333,26 @@ void directWorker(Session* session) {
         auto* urb = static_cast<usbdevfs_urb*>(completed);
         if (urb == nullptr) continue;
         auto* slot = static_cast<IsoSlot*>(urb->usercontext);
-        if (urb->status != 0 || urb->error_count != 0) {
-            setError(
-                "USB isochronous URB failed status=" + std::to_string(urb->status) +
-                " packetErrors=" + std::to_string(urb->error_count)
-            );
-            session->failed.store(true);
-            session->running.store(false);
-            break;
+        if (slot == nullptr) continue;
+
+        bool resubmitted = false;
+        if (slot->role == IsoRole::FeedbackIn) {
+            if (consumeFeedback(session, slot) && session->running.load()) {
+                resubmitted = submitFeedbackSlot(session, slot);
+            }
+        } else {
+            if (urb->status != 0 || urb->error_count != 0) {
+                setError(
+                    "USB isochronous URB failed status=" + std::to_string(urb->status) +
+                    " packetErrors=" + std::to_string(urb->error_count)
+                );
+                session->failed.store(true);
+            } else if (session->running.load()) {
+                resubmitted = submitAudioSlot(session, slot);
+            }
         }
-        if (session->running.load() && !submitSlot(session, slot)) {
+
+        if (feedbackTimedOut(session) || session->failed.load() || !resubmitted) {
             session->running.store(false);
             break;
         }
@@ -552,7 +667,15 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     session->targetSubslotBytes = targetSubslotBytes;
     session->targetBitResolution = targetBitResolution;
     session->targetFrameBytes = static_cast<size_t>(channels) * targetSubslotBytes;
-    session->intervalsPerSecond = detectIntervalsPerSecond(duplicatedFd, session->interval);
+    session->highOrSuperSpeed = isHighOrSuperSpeed(duplicatedFd);
+    session->busTicksPerSecond = session->highOrSuperSpeed ? 8000 : 1000;
+    session->outputServiceTicks = usb_feedback::serviceTicks(
+        session->highOrSuperSpeed,
+        session->interval
+    );
+    session->packetScheduler.updateFeedback(
+        usb_feedback::nominalFeedbackQ16(sampleRate, session->busTicksPerSecond)
+    );
 
     const size_t halfSecondBytes = static_cast<size_t>(sampleRate) *
         session->targetFrameBytes / 2;
@@ -561,8 +684,29 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         std::max(session->targetFrameBytes, ringBytes - (ringBytes % session->targetFrameBytes))
     );
 
+    if (session->usesExplicitFeedback) {
+        for (int index = 0; index < kFeedbackUrbCount; ++index) {
+            auto slot = std::make_unique<IsoSlot>();
+            slot->role = IsoRole::FeedbackIn;
+            slot->urbStorage.resize(
+                sizeof(usbdevfs_urb) + sizeof(usbdevfs_iso_packet_desc)
+            );
+            std::memset(slot->urbStorage.data(), 0, slot->urbStorage.size());
+            slot->buffer.resize(static_cast<size_t>(feedbackMaxPacketSize));
+            slot->urb = reinterpret_cast<usbdevfs_urb*>(slot->urbStorage.data());
+            slot->urb->type = USBDEVFS_URB_TYPE_ISO;
+            slot->urb->endpoint = static_cast<unsigned char>(feedbackEndpointAddress);
+            slot->urb->flags = USBDEVFS_URB_ISO_ASAP;
+            slot->urb->buffer = slot->buffer.data();
+            slot->urb->number_of_packets = 1;
+            slot->urb->usercontext = slot.get();
+            session->slots.push_back(std::move(slot));
+        }
+    }
+
     for (int index = 0; index < kIsoUrbCount; ++index) {
         auto slot = std::make_unique<IsoSlot>();
+        slot->role = IsoRole::AudioOut;
         slot->urbStorage.resize(
             sizeof(usbdevfs_urb) + kIsoPacketsPerUrb * sizeof(usbdevfs_iso_packet_desc)
         );

@@ -291,11 +291,9 @@ internal object UsbAudioDescriptorParser {
     ): StreamingAlt? = alternatives
         .asSequence()
         .filter { it.matchesFormat(sampleRate, channels) }
-        // Phase 1 intentionally refuses asynchronous endpoints. Their DAC clock
-        // must be paced from a feedback endpoint; sending nominal-rate packets
-        // without feedback eventually drifts and is not acceptable for a direct
-        // audio path.
-        .filterNot(StreamingAlt::requiresExplicitFeedback)
+        .filter { alternative ->
+            !alternative.requiresExplicitFeedback || alternative.hasExplicitFeedback
+        }
         .sortedWith(
             compareByDescending<StreamingAlt> {
                 // Prefer formats nearest the source precision, then the higher resolution.
