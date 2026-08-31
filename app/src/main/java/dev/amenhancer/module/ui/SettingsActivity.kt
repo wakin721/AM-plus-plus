@@ -162,7 +162,11 @@ class SettingsActivity : ComponentActivity() {
                             store.saveSettings(updated)
                             render()
                         },
-                        showTitleCorrectionMode = ::showTitleCorrectionModePicker,
+                        showTitleCorrectionMode = {
+                            expressiveDialog = ExpressiveSettingsDialog.TitleCorrectionMode(
+                                expressiveSettings.titleCorrectionMode,
+                            )
+                        },
                         openCustomLyrics = { showPage(SettingsPage.CUSTOM_LYRICS) },
                         chooseFont = ::chooseFont,
                         restoreFont = ::restoreFont,
@@ -190,6 +194,7 @@ class SettingsActivity : ComponentActivity() {
                     dialogState = expressiveDialog,
                     dialogActions = ExpressiveSettingsDialogActions(
                         dismiss = ::dismissExpressiveDialog,
+                        selectTitleCorrectionMode = ::selectTitleCorrectionModeExpressive,
                         cancelProgress = ::cancelExpressiveProgress,
                         restoreLyrics = ::restoreLyricsExpressive,
                         deleteLyrics = ::deleteLyricsExpressive,
@@ -1024,6 +1029,11 @@ class SettingsActivity : ComponentActivity() {
         )
         toast("歌曲名修正模式已设为${mode.displayName}；重开 Apple Music 后生效")
         render()
+    }
+
+    private fun selectTitleCorrectionModeExpressive(mode: TitleCorrectionMode) {
+        expressiveDialog = null
+        saveTitleCorrectionMode(mode)
     }
 
     private fun customLyricsNavigationRow(manifest: CustomLyricsManifest): View =

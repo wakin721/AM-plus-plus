@@ -2,6 +2,8 @@ package dev.amenhancer.module.ui
 
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -39,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.amenhancer.module.lyrics.CustomLyricsRestorePolicy
+import dev.amenhancer.module.config.TitleCorrectionMode as CorrectionMode
 import dev.amenhancer.module.model.CustomLyricsSources
 import dev.amenhancer.module.translation.DeepSeekModel
 
@@ -51,6 +55,10 @@ internal data class LyricsEditorDraft(
 
 internal sealed interface ExpressiveSettingsDialog {
     data object Help : ExpressiveSettingsDialog
+
+    data class TitleCorrectionMode(
+        val selectedMode: CorrectionMode,
+    ) : ExpressiveSettingsDialog
 
     data class Progress(
         val operation: Operation,
@@ -99,6 +107,7 @@ internal sealed interface ExpressiveSettingsDialog {
 
 internal class ExpressiveSettingsDialogActions(
     val dismiss: () -> Unit,
+    val selectTitleCorrectionMode: (CorrectionMode) -> Unit,
     val cancelProgress: () -> Unit,
     val restoreLyrics: (CustomLyricsRestorePolicy) -> Unit,
     val deleteLyrics: () -> Unit,
@@ -122,6 +131,7 @@ internal fun ExpressiveSettingsDialogHost(
     when (state) {
         null -> Unit
         ExpressiveSettingsDialog.Help -> HelpDialog(actions)
+        is ExpressiveSettingsDialog.TitleCorrectionMode -> TitleCorrectionModeDialog(state, actions)
         is ExpressiveSettingsDialog.Progress -> ProgressDialog(state, actions)
         is ExpressiveSettingsDialog.RestoreLyrics -> RestoreLyricsDialog(actions)
         is ExpressiveSettingsDialog.DeleteLyrics -> DeleteLyricsDialog(state, actions)
@@ -129,6 +139,50 @@ internal fun ExpressiveSettingsDialogHost(
         is ExpressiveSettingsDialog.DeepSeek -> DeepSeekDialog(state, actions)
         is ExpressiveSettingsDialog.DeepSeekProgress -> DeepSeekProgressDialog(state)
     }
+}
+
+@Composable
+private fun TitleCorrectionModeDialog(
+    state: ExpressiveSettingsDialog.TitleCorrectionMode,
+    actions: ExpressiveSettingsDialogActions,
+) {
+    AlertDialog(
+        onDismissRequest = actions.dismiss,
+        shape = RoundedCornerShape(32.dp),
+        title = { DialogTitle("歌曲名修正模式") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                CorrectionMode.values().forEach { mode ->
+                    val selected = mode == state.selectedMode
+                    Row(
+                        modifier = Modifier.selectable(
+                            selected = selected,
+                            role = Role.RadioButton,
+                            onClick = { actions.selectTitleCorrectionMode(mode) },
+                        )
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        RadioButton(selected = selected, onClick = null)
+                        Text(
+                            text = mode.displayName,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = actions.dismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable
