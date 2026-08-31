@@ -26,3 +26,23 @@ internal object UsbExclusiveVolumePolicy {
     fun effectiveGain(streamGain: Float, trackGain: Float): Float =
         (streamGain.coerceIn(0f, 1f) * trackGain.coerceIn(0f, 1f)).coerceIn(0f, 1f)
 }
+
+/**
+ * Thread-safe gain cache shared by the control path and the PCM write path.
+ * Android volume queries happen only when [refresh] is called; [effectiveGain]
+ * is deliberately a local, allocation-free hot-path read.
+ */
+internal class UsbExclusiveVolumeCache(initialStreamGain: Float) {
+    @Volatile
+    private var streamGain = sanitize(initialStreamGain)
+
+    fun refresh(query: () -> Float) {
+        streamGain = sanitize(query())
+    }
+
+    fun effectiveGain(trackGain: Float): Float =
+        UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain)
+
+    private fun sanitize(gain: Float): Float =
+        gain.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+}

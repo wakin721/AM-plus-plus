@@ -14,6 +14,7 @@ import android.media.AudioMixerAttributes
 import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.ResultReceiver
 import dev.amenhancer.module.ModuleConstants
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
@@ -185,7 +186,9 @@ internal object UsbExclusiveSystemVolumeObserver {
     private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
     private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
     private const val EXTRA_VOLUME_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
+    private const val VOLUME_POLL_INTERVAL_MILLIS = 2_000L
     private val registered = AtomicBoolean(false)
+    private val polling = AtomicBoolean(false)
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -198,20 +201,46 @@ internal object UsbExclusiveSystemVolumeObserver {
     }
 
     fun register(application: Application) {
-        if (!registered.compareAndSet(false, true)) return
-        val result = runCatching {
-            val filter = IntentFilter(VOLUME_CHANGED_ACTION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                application.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                application.registerReceiver(receiver, filter)
+        if (registered.compareAndSet(false, true)) {
+            val result = runCatching {
+                val filter = IntentFilter(VOLUME_CHANGED_ACTION)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    application.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    @Suppress("DEPRECATION")
+                    application.registerReceiver(receiver, filter)
+                }
+            }
+            if (result.isFailure) {
+                registered.set(false)
+                ModernXposedRuntime.log(
+                    "usb_exclusive: system media volume observer unavailable",
+                    result.exceptionOrNull(),
+                )
             }
         }
-        if (result.isFailure) {
-            registered.set(false)
-            ModernXposedRuntime.log("usb_exclusive: system media volume observer unavailable", result.exceptionOrNull())
+        scheduleVolumePolling(application)
+    }
+
+    private fun scheduleVolumePolling(application: Application) {
+        if (!polling.compareAndSet(false, true)) return
+        val manager = application.getSystemService(AudioManager::class.java) ?: run {
+            polling.set(false)
+            return
         }
+        val handler = Handler(application.mainLooper)
+        val poll = object : Runnable {
+            override fun run() {
+                runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
+                    .getOrNull()
+                    ?.let { index ->
+                        UsbDirectUacController.onSystemMediaVolumeChanged(index)
+                        UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)
+                    }
+                handler.postDelayed(this, VOLUME_POLL_INTERVAL_MILLIS)
+            }
+        }
+        handler.post(poll)
     }
 }
 

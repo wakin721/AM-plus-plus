@@ -13,7 +13,6 @@ import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Experimental AAudio takeover for Apple Music media AudioTracks.
@@ -35,7 +34,6 @@ internal object UsbExclusiveAaudioController {
     private var failedTrack: WeakReference<AudioTrack>? = null
     private var lastFailure: String? = null
     private val trackVolumes = WeakHashMap<AudioTrack, StereoGain>()
-    private val observedMediaVolumeIndex = AtomicInteger(UNKNOWN_VOLUME_INDEX)
 
     fun configure(isEnabled: Boolean) {
         enabled.set(isEnabled)
@@ -47,7 +45,6 @@ internal object UsbExclusiveAaudioController {
             observedTrack = null
             failedTrack = null
             lastFailure = null
-            observedMediaVolumeIndex.set(UNKNOWN_VOLUME_INDEX)
         }
     }
 
@@ -62,7 +59,13 @@ internal object UsbExclusiveAaudioController {
     /** Receives the media step selected by Android's system volume UI. */
     fun onSystemMediaVolumeChanged(volumeIndex: Int) {
         if (!enabled.get() || volumeIndex < 0) return
-        observedMediaVolumeIndex.set(volumeIndex)
+        val active = synchronized(lock) { session } ?: return
+        val streamGain = querySystemMediaGain(
+            active.audioManager,
+            active.deviceType,
+            preferredIndex = volumeIndex,
+        ) ?: return
+        active.streamGainCache.refresh { streamGain }
     }
 
     /**
@@ -73,7 +76,6 @@ internal object UsbExclusiveAaudioController {
     fun beforePlay(context: Context, track: AudioTrack): Boolean {
         if (!enabled.get() || internalTransition.get() == true) return false
         if (!track.isMediaTrack()) return false
-        context.getSystemService(AudioManager::class.java)?.let(::rememberSystemMediaVolume)
         latestTrack = WeakReference(track)
         return synchronized(lock) {
             val owner = session?.track?.get()
@@ -322,8 +324,6 @@ internal object UsbExclusiveAaudioController {
                 // Apple Music can start the next AudioTrack before releasing the old
                 // one. Release that stale exclusive owner before opening the new format.
                 closeSessionLocked()
-                rememberSystemMediaVolume(manager)
-
                 val paused = runCatching {
                     track.pause()
                     true
@@ -360,6 +360,7 @@ internal object UsbExclusiveAaudioController {
                 false
             }
             is UsbExclusiveAaudioBridge.OpenResult.Opened -> {
+                val streamGain = querySystemMediaGain(manager, device.type) ?: 0f
                 synchronized(lock) {
                     closeSessionLocked()
                     session = Session(
@@ -369,6 +370,7 @@ internal object UsbExclusiveAaudioController {
                         deviceType = device.type,
                         deviceName = device.productName?.toString()?.takeIf(String::isNotBlank),
                         audioManager = manager,
+                        streamGainCache = UsbExclusiveVolumeCache(streamGain),
                     )
                     failedTrack = null
                     lastFailure = null
@@ -444,41 +446,34 @@ internal object UsbExclusiveAaudioController {
         (args.getOrNull(3) as? Int) ?: AudioTrack.WRITE_BLOCKING
 
     private fun effectiveGains(active: Session): StereoGain {
-        val manager = active.audioManager
-        val queriedIndex = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
-            .getOrNull()
-            ?: return combineWithTrackGain(active, active.streamGain)
+        val trackGain = trackVolumes[active.track.get()] ?: StereoGain.FULL
+        return StereoGain(
+            left = active.streamGainCache.effectiveGain(trackGain.left),
+            right = active.streamGainCache.effectiveGain(trackGain.right),
+        )
+    }
+
+    private fun querySystemMediaGain(
+        manager: AudioManager,
+        deviceType: Int,
+        preferredIndex: Int? = null,
+    ): Float? {
         val maximum = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
             .getOrNull()
-            ?: return combineWithTrackGain(active, active.streamGain)
-        val observedIndex = observedMediaVolumeIndex.get()
-        val index = if (observedIndex in 0..maximum) observedIndex else queriedIndex
+            ?: return null
+        val index = preferredIndex?.takeIf { it in 0..maximum }
+            ?: runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull()
+            ?: return null
         val muted = runCatching { manager.isStreamMute(AudioManager.STREAM_MUSIC) }
             .getOrDefault(index <= 0)
         val db = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             runCatching {
-                manager.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, active.deviceType)
+                manager.getStreamVolumeDb(AudioManager.STREAM_MUSIC, index, deviceType)
             }.getOrNull()
         } else {
             null
         }
-        val streamGain = UsbExclusiveVolumePolicy.streamGain(index, maximum, muted, db)
-        active.streamGain = streamGain
-        return combineWithTrackGain(active, streamGain)
-    }
-
-    private fun rememberSystemMediaVolume(manager: AudioManager) {
-        val index = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull()
-            ?: return
-        observedMediaVolumeIndex.compareAndSet(UNKNOWN_VOLUME_INDEX, index)
-    }
-
-    private fun combineWithTrackGain(active: Session, streamGain: Float): StereoGain {
-        val trackGain = trackVolumes[active.track.get()] ?: StereoGain.FULL
-        return StereoGain(
-            left = UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain.left),
-            right = UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain.right),
-        )
+        return UsbExclusiveVolumePolicy.streamGain(index, maximum, muted, db)
     }
 
     private fun resolveVisibleUsbDevice(manager: AudioManager, track: AudioTrack): AudioDeviceInfo? {
@@ -540,7 +535,7 @@ internal object UsbExclusiveAaudioController {
         val deviceType: Int,
         val deviceName: String?,
         val audioManager: AudioManager,
-        var streamGain: Float = 1f,
+        val streamGainCache: UsbExclusiveVolumeCache,
         var hasWrittenPcm: Boolean = false,
     )
 
@@ -549,6 +544,4 @@ internal object UsbExclusiveAaudioController {
             val FULL = StereoGain(1f, 1f)
         }
     }
-
-    private const val UNKNOWN_VOLUME_INDEX = -1
 }

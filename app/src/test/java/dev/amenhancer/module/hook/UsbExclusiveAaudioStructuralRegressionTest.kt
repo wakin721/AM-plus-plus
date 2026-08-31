@@ -1,6 +1,7 @@
 package dev.amenhancer.module.hook
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,12 +64,17 @@ class UsbExclusiveAaudioStructuralRegressionTest {
         assertTrue(feature.contains("android.media.VOLUME_CHANGED_ACTION"))
         assertTrue(feature.contains("AudioManager.STREAM_MUSIC"))
         assertTrue(feature.contains("UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)"))
+        assertTrue(feature.contains("scheduleVolumePolling(application)"))
         assertTrue(controller.contains("isSupportedWrite(track, args)"))
         assertTrue(controller.contains("UsbExclusiveVolumePolicy.streamGain"))
         assertTrue(controller.contains("getStreamVolumeDb"))
-        assertTrue(controller.contains("observedMediaVolumeIndex"))
-        assertTrue(controller.contains("rememberSystemMediaVolume(manager)"))
-        assertTrue(controller.contains("let(::rememberSystemMediaVolume)"))
+        assertTrue(controller.contains("streamGainCache.refresh"))
+        assertTrue(controller.contains("streamGainCache.effectiveGain"))
+        val hotPath = controller.substringAfter("private fun effectiveGains")
+            .substringBefore("private fun")
+        assertFalse(hotPath.contains("getStreamVolume"))
+        assertFalse(hotPath.contains("getStreamMaxVolume"))
+        assertFalse(hotPath.contains("getStreamVolumeDb"))
         assertTrue(controller.contains("track.pause()"))
         assertTrue(controller.contains("track.flush()"))
         assertTrue(controller.contains("Drop the old exclusive queue before new PCM plays"))

@@ -29,4 +29,29 @@ class UsbExclusiveVolumePolicyTest {
     fun `track fade and media volume are both applied`() {
         assertEquals(0.125f, UsbExclusiveVolumePolicy.effectiveGain(0.5f, 0.25f), 0.0001f)
     }
+
+    @Test
+    fun `hot path reads cached gain without querying system volume`() {
+        var refreshes = 0
+        val cache = UsbExclusiveVolumeCache(1f)
+
+        cache.refresh {
+            refreshes += 1
+            0.4f
+        }
+
+        repeat(100) {
+            assertEquals(0.2f, cache.effectiveGain(0.5f), 0.0001f)
+        }
+        assertEquals(1, refreshes)
+    }
+
+    @Test
+    fun `volume notification replaces the cached stream gain`() {
+        val cache = UsbExclusiveVolumeCache(0.8f)
+
+        cache.refresh { 0.25f }
+
+        assertEquals(0.125f, cache.effectiveGain(0.5f), 0.0001f)
+    }
 }

@@ -16,7 +16,10 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
+
+#include "UsbPcmPacking.h"
 
 namespace {
 
@@ -80,17 +83,41 @@ struct Session {
     size_t ringCount = 0;
     std::mutex ringMutex;
     std::condition_variable spaceAvailable;
+    std::mutex lifecycleMutex;
 
     std::atomic<bool> running{false};
     std::atomic<bool> failed{false};
+    std::atomic<bool> closing{false};
     std::atomic<bool> workerStarted{false};
     std::thread worker;
     std::vector<std::unique_ptr<IsoSlot>> slots;
     uint64_t framePhase = 0;
 };
 
-Session* fromHandle(jlong handle) {
-    return reinterpret_cast<Session*>(static_cast<intptr_t>(handle));
+std::mutex gSessionsMutex;
+std::unordered_map<jlong, std::shared_ptr<Session>> gSessions;
+std::atomic<jlong> gNextSessionHandle{1};
+
+jlong registerSession(const std::shared_ptr<Session>& session) {
+    const jlong handle = gNextSessionHandle.fetch_add(1);
+    std::lock_guard<std::mutex> lock(gSessionsMutex);
+    gSessions.emplace(handle, session);
+    return handle;
+}
+
+std::shared_ptr<Session> findSession(jlong handle) {
+    std::lock_guard<std::mutex> lock(gSessionsMutex);
+    const auto found = gSessions.find(handle);
+    return found == gSessions.end() ? nullptr : found->second;
+}
+
+std::shared_ptr<Session> takeSession(jlong handle) {
+    std::lock_guard<std::mutex> lock(gSessionsMutex);
+    const auto found = gSessions.find(handle);
+    if (found == gSessions.end()) return nullptr;
+    auto session = found->second;
+    gSessions.erase(found);
+    return session;
 }
 
 int detectIntervalsPerSecond(int fd, int interval) {
@@ -218,16 +245,23 @@ void directWorker(Session* session) {
     session->spaceAvailable.notify_all();
 }
 
-void startWorkerIfNeeded(Session* session) {
+bool startWorkerIfNeeded(Session* session) {
+    std::lock_guard<std::mutex> lock(session->lifecycleMutex);
+    if (session->closing.load()) return false;
     bool expected = false;
-    if (!session->workerStarted.compare_exchange_strong(expected, true)) return;
+    if (!session->workerStarted.compare_exchange_strong(expected, true)) return true;
     session->running.store(true);
     session->worker = std::thread(directWorker, session);
+    return true;
 }
 
 void stopSession(Session* session) {
     if (session == nullptr) return;
-    session->running.store(false);
+    {
+        std::lock_guard<std::mutex> lock(session->lifecycleMutex);
+        session->closing.store(true);
+        session->running.store(false);
+    }
     for (const auto& slot : session->slots) {
         if (slot && slot->urb) ioctl(session->fd, USBDEVFS_DISCARDURB, slot->urb);
     }
@@ -284,8 +318,17 @@ int64_t attenuateIntegerSample(int64_t value, int bits, float gain) {
     );
 }
 
-void packLittleEndian(int64_t sample, int subslotBytes, uint8_t* destination) {
-    const uint64_t bits = static_cast<uint64_t>(sample);
+void packLittleEndian(
+    int64_t sample,
+    int subslotBytes,
+    int bitResolution,
+    uint8_t* destination
+) {
+    const uint64_t bits = usb_pcm::leftJustifiedSampleBits(
+        sample,
+        subslotBytes,
+        bitResolution
+    );
     for (int byte = 0; byte < subslotBytes; ++byte) {
         destination[byte] = static_cast<uint8_t>((bits >> (byte * 8)) & 0xffu);
     }
@@ -315,6 +358,7 @@ std::vector<uint8_t> convertIntegerFrames(
                 gainForSample(left, right, index, session->channels)
             ),
             session->targetSubslotBytes,
+            session->targetBitResolution,
             output.data() + static_cast<size_t>(index) * session->targetSubslotBytes
         );
     }
@@ -340,6 +384,7 @@ std::vector<uint8_t> convertFloatFrames(
                 session->targetBitResolution
             ),
             session->targetSubslotBytes,
+            session->targetBitResolution,
             output.data() + static_cast<size_t>(index) * session->targetSubslotBytes
         );
     }
@@ -401,19 +446,19 @@ std::vector<uint8_t> convertByteFrames(
 
 size_t enqueueTarget(Session* session, const uint8_t* data, size_t bytes, bool blocking) {
     if (bytes == 0) return 0;
-    if (session->failed.load()) return 0;
+    if (session->failed.load() || session->closing.load()) return 0;
     if (bytes % session->targetFrameBytes != 0) {
         setError("USB Direct target write is not frame aligned");
         session->failed.store(true);
         return 0;
     }
 
-    startWorkerIfNeeded(session);
+    if (!startWorkerIfNeeded(session)) return 0;
     const auto deadline = std::chrono::steady_clock::now() +
         std::chrono::milliseconds(kWriteWaitMillis);
     size_t written = 0;
     std::unique_lock<std::mutex> lock(session->ringMutex);
-    while (written < bytes && !session->failed.load()) {
+    while (written < bytes && !session->failed.load() && !session->closing.load()) {
         size_t space = session->ring.size() - session->ringCount;
         space -= space % session->targetFrameBytes;
         if (space == 0) {
@@ -471,7 +516,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         return 0;
     }
 
-    auto session = std::make_unique<Session>();
+    auto session = std::make_shared<Session>();
     session->fd = duplicatedFd;
     session->sampleRate = sampleRate;
     session->inputFormat = inputFormatCode;
@@ -509,7 +554,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         session->slots.push_back(std::move(slot));
     }
 
-    return static_cast<jlong>(reinterpret_cast<intptr_t>(session.release()));
+    return registerSession(session);
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -524,7 +569,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteFloats(
     jfloat gainLeft,
     jfloat gainRight
 ) {
-    auto* session = fromHandle(handle);
+    auto session = findSession(handle);
     if (session == nullptr || data == nullptr || session->inputFormat != kFormatFloat) {
         setError("USB Direct float write is incompatible with active session");
         return -1;
@@ -538,16 +583,16 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteFloats(
     env->GetFloatArrayRegion(data, offset, size, samples.data());
     if (env->ExceptionCheck()) return -1;
     auto converted = convertFloatFrames(
-        session,
+        session.get(),
         samples.data(),
         size,
         gainLeft,
         gainRight
     );
     const size_t accepted = enqueueTarget(
-        session, converted.data(), converted.size(), blocking == JNI_TRUE
+        session.get(), converted.data(), converted.size(), blocking == JNI_TRUE
     );
-    if (session->failed.load()) return -1;
+    if (session->failed.load() || session->closing.load()) return -1;
     const size_t targetBytesPerSample = static_cast<size_t>(session->targetSubslotBytes);
     return static_cast<jint>(accepted / targetBytesPerSample);
 }
@@ -564,7 +609,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteShorts(
     jfloat gainLeft,
     jfloat gainRight
 ) {
-    auto* session = fromHandle(handle);
+    auto session = findSession(handle);
     if (session == nullptr || data == nullptr || session->inputFormat != kFormatI16) {
         setError("USB Direct short write is incompatible with active session");
         return -1;
@@ -580,7 +625,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteShorts(
     std::vector<int64_t> samples(size);
     for (int index = 0; index < size; ++index) samples[index] = source[index];
     auto converted = convertIntegerFrames(
-        session,
+        session.get(),
         samples.data(),
         size,
         16,
@@ -588,9 +633,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteShorts(
         gainRight
     );
     const size_t accepted = enqueueTarget(
-        session, converted.data(), converted.size(), blocking == JNI_TRUE
+        session.get(), converted.data(), converted.size(), blocking == JNI_TRUE
     );
-    if (session->failed.load()) return -1;
+    if (session->failed.load() || session->closing.load()) return -1;
     return static_cast<jint>(accepted / session->targetSubslotBytes);
 }
 
@@ -606,7 +651,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
     jfloat gainLeft,
     jfloat gainRight
 ) {
-    auto* session = fromHandle(handle);
+    auto session = findSession(handle);
     if (session == nullptr || data == nullptr) {
         setError("USB Direct byte write has no active session");
         return -1;
@@ -630,16 +675,16 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
     if (env->ExceptionCheck()) return -1;
     const int sampleCount = size / session->inputBytesPerSample;
     auto converted = convertByteFrames(
-        session,
+        session.get(),
         source.data(),
         sampleCount,
         gainLeft,
         gainRight
     );
     const size_t accepted = enqueueTarget(
-        session, converted.data(), converted.size(), blocking == JNI_TRUE
+        session.get(), converted.data(), converted.size(), blocking == JNI_TRUE
     );
-    if (session->failed.load()) return -1;
+    if (session->failed.load() || session->closing.load()) return -1;
     const size_t acceptedSamples = accepted / session->targetSubslotBytes;
     return static_cast<jint>(acceptedSamples * session->inputBytesPerSample);
 }
@@ -650,10 +695,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeClose(
     jclass,
     jlong handle
 ) {
-    auto* session = fromHandle(handle);
+    auto session = takeSession(handle);
     if (session == nullptr) return;
-    stopSession(session);
-    delete session;
+    stopSession(session.get());
 }
 
 extern "C" JNIEXPORT jstring JNICALL
