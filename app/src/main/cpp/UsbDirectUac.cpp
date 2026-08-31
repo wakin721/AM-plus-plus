@@ -332,6 +332,7 @@ void directWorker(Session* session) {
         }
         auto* urb = static_cast<usbdevfs_urb*>(completed);
         if (urb == nullptr) continue;
+        if (!session->running.load() || session->closing.load()) break;
         auto* slot = static_cast<IsoSlot*>(urb->usercontext);
         if (slot == nullptr) continue;
 
