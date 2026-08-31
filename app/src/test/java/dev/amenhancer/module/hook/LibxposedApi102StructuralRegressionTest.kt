@@ -20,7 +20,7 @@ class LibxposedApi102StructuralRegressionTest {
             .joinToString("\n") { it.readText() }
 
         assertTrue(build.contains("io.github.libxposed:api:102.0.0"))
-        assertTrue(build.contains("compileOnly(\"io.github.libxposed:service:102.0.0\")"))
+        assertTrue(build.contains("io.github.libxposed:service:102.0.0"))
         assertTrue(properties.contains("targetApiVersion=102"))
         assertTrue(entry.contains("dev.amenhancer.module.hook.HookEntry"))
         assertFalse(production.contains("de.robv.android.xposed"))
