@@ -168,4 +168,37 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(ui.contains("AudioFormat.ENCODING_PCM_24BIT_PACKED -> \"PCM 24-bit\""))
         assertTrue(ui.contains("\$mixerFormat · USB DIRECT · usbfs ISO PCM"))
     }
+
+    @Test
+    fun `explicit feedback endpoint survives broker IPC lease and JNI boundary`() {
+        val ipc = projectFile(
+            "app/src/main/java/dev/amenhancer/module/UsbDirectIpc.kt",
+        )
+        val broker = projectFile(
+            "app/src/main/java/dev/amenhancer/module/usb/UsbDirectDeviceBrokerService.kt",
+        )
+        val client = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectDeviceClient.kt",
+        )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        assertTrue(ipc.contains("KEY_FEEDBACK_ENDPOINT_ADDRESS"))
+        assertTrue(ipc.contains("KEY_FEEDBACK_MAX_PACKET_SIZE"))
+        assertTrue(ipc.contains("KEY_FEEDBACK_INTERVAL"))
+        assertTrue(broker.contains("alternative.feedbackEndpointAddress"))
+        assertTrue(broker.contains("alternative.feedbackMaxPacketSize"))
+        assertTrue(broker.contains("alternative.feedbackInterval"))
+        assertTrue(client.contains("val feedbackEndpointAddress: Int"))
+        assertTrue(client.contains("val feedbackMaxPacketSize: Int"))
+        assertTrue(client.contains("val feedbackInterval: Int"))
+        assertTrue(bridge.contains("lease.feedbackEndpointAddress"))
+        assertTrue(bridge.contains("lease.feedbackMaxPacketSize"))
+        assertTrue(bridge.contains("lease.feedbackInterval"))
+        assertTrue(native.contains("jint feedbackEndpointAddress"))
+        assertTrue(native.contains("jint feedbackMaxPacketSize"))
+        assertTrue(native.contains("jint feedbackInterval"))
+    }
 }
