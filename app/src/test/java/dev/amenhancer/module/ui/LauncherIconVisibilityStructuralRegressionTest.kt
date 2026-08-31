@@ -13,18 +13,15 @@ class LauncherIconVisibilityStructuralRegressionTest {
         ?: error("$relativePath was not found from the unit-test working directory")
 
     @Test
-    fun `launcher icon uses a disableable alias while settings activity stays available`() {
+    fun `standalone controls coexist with the embedded settings host`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
 
         assertTrue(manifest.contains("<activity-alias"))
         assertTrue(manifest.contains("android:name=\".LauncherAlias\""))
         assertTrue(manifest.contains("android:targetActivity=\".ui.SettingsActivity\""))
-        assertTrue(manifest.contains("android.intent.action.APPLICATION_PREFERENCES"))
-        assertTrue(manifest.indexOf("<activity-alias") < manifest.indexOf("android.intent.category.LAUNCHER"))
-        val settingsDeclaration = manifest.substringBefore("<activity-alias")
-        assertTrue(settingsDeclaration.contains("android.intent.action.MAIN"))
-        assertTrue(settingsDeclaration.contains("android.intent.category.INFO"))
-        assertFalse(settingsDeclaration.contains("android.intent.category.LAUNCHER"))
+        val host = projectFile("app/src/main/java/dev/amenhancer/module/ui/EmbeddedSettingsHost.kt")
+        assertTrue(host.contains("Application.ActivityLifecycleCallbacks"))
+        assertTrue(host.contains("FLOATING_BUTTON_TAG"))
     }
 
     @Test

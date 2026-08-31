@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -35,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -47,22 +45,12 @@ import dev.amenhancer.module.translation.DeepSeekModel
 internal data class LyricsEditorDraft(
     val appleMusicIds: String = "",
     val displayName: String = "",
-    val neteaseId: String = "",
     val ttml: String = "",
     val source: String = CustomLyricsSources.MANUAL,
 )
 
 internal sealed interface ExpressiveSettingsDialog {
     data object Help : ExpressiveSettingsDialog
-
-    data class TargetLanguage(
-        val current: String,
-    ) : ExpressiveSettingsDialog
-
-    data class CustomLanguage(
-        val value: String,
-        val error: String? = null,
-    ) : ExpressiveSettingsDialog
 
     data class Progress(
         val operation: Operation,
@@ -71,8 +59,7 @@ internal sealed interface ExpressiveSettingsDialog {
         val cancelLabel: String? = null,
     ) : ExpressiveSettingsDialog {
         enum class Operation {
-            LIBRARY_REFRESH,
-            GITHUB_SYNC,
+            LYRICS_UPDATE,
         }
     }
 
@@ -91,7 +78,6 @@ internal sealed interface ExpressiveSettingsDialog {
         val title: String,
         val busyMessage: String? = null,
         val appleMusicIdError: String? = null,
-        val neteaseIdError: String? = null,
         val ttmlError: String? = null,
     ) : ExpressiveSettingsDialog
 
@@ -113,10 +99,6 @@ internal sealed interface ExpressiveSettingsDialog {
 
 internal class ExpressiveSettingsDialogActions(
     val dismiss: () -> Unit,
-    val selectTargetLanguage: (String) -> Unit,
-    val openCustomLanguage: () -> Unit,
-    val updateCustomLanguage: (String) -> Unit,
-    val saveCustomLanguage: () -> Unit,
     val cancelProgress: () -> Unit,
     val restoreLyrics: (CustomLyricsRestorePolicy) -> Unit,
     val deleteLyrics: () -> Unit,
@@ -124,7 +106,7 @@ internal class ExpressiveSettingsDialogActions(
     val chooseTtml: () -> Unit,
     val requestCurrentSong: () -> Unit,
     val importAmll: () -> Unit,
-    val importNetease: () -> Unit,
+    val importLunabeat: () -> Unit,
     val importAmLyrics: () -> Unit,
     val openDeepSeek: () -> Unit,
     val saveLyrics: () -> Unit,
@@ -140,8 +122,6 @@ internal fun ExpressiveSettingsDialogHost(
     when (state) {
         null -> Unit
         ExpressiveSettingsDialog.Help -> HelpDialog(actions)
-        is ExpressiveSettingsDialog.TargetLanguage -> TargetLanguageDialog(state, actions)
-        is ExpressiveSettingsDialog.CustomLanguage -> CustomLanguageDialog(state, actions)
         is ExpressiveSettingsDialog.Progress -> ProgressDialog(state, actions)
         is ExpressiveSettingsDialog.RestoreLyrics -> RestoreLyricsDialog(actions)
         is ExpressiveSettingsDialog.DeleteLyrics -> DeleteLyricsDialog(state, actions)
@@ -164,84 +144,6 @@ private fun HelpDialog(actions: ExpressiveSettingsDialogActions) {
             )
         },
         confirmButton = { TextButton(onClick = actions.dismiss) { Text("知道了") } },
-    )
-}
-
-@Composable
-private fun TargetLanguageDialog(
-    state: ExpressiveSettingsDialog.TargetLanguage,
-    actions: ExpressiveSettingsDialogActions,
-) {
-    val tags = listOf("zh-CN", "zh-TW", "ja-JP", "en-US", "tr-TR")
-    AlertDialog(
-        onDismissRequest = actions.dismiss,
-        shape = RoundedCornerShape(32.dp),
-        title = { DialogTitle("目标语言") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                tags.forEach { tag ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { actions.selectTargetLanguage(tag) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = tag == state.current,
-                            onClick = { actions.selectTargetLanguage(tag) },
-                        )
-                        Text(
-                            modifier = Modifier.padding(start = 10.dp),
-                            text = dev.amenhancer.module.config.CatalogLanguagePolicy.displayName(tag),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = actions.openCustomLanguage) { Text("自定义") }
-        },
-        dismissButton = {
-            TextButton(onClick = actions.dismiss) { Text("取消") }
-        },
-    )
-}
-
-@Composable
-private fun CustomLanguageDialog(
-    state: ExpressiveSettingsDialog.CustomLanguage,
-    actions: ExpressiveSettingsDialogActions,
-) {
-    AlertDialog(
-        onDismissRequest = actions.dismiss,
-        shape = RoundedCornerShape(32.dp),
-        title = { DialogTitle("自定义目标语言") },
-        text = {
-            Column {
-                Text(
-                    text = "请输入 BCP-47 语言标签，例如 zh-CN。",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                    value = state.value,
-                    onValueChange = actions.updateCustomLanguage,
-                    singleLine = true,
-                    label = { Text("语言标签") },
-                    isError = state.error != null,
-                    supportingText = state.error?.let { error -> ({ Text(error) }) },
-                    shape = RoundedCornerShape(20.dp),
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = actions.saveCustomLanguage) { Text("保存") }
-        },
-        dismissButton = {
-            TextButton(onClick = actions.dismiss) { Text("取消") }
-        },
     )
 }
 
@@ -375,20 +277,6 @@ private fun LyricsEditorDialog(
                         singleLine = true,
                         shape = RoundedCornerShape(20.dp),
                     )
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = state.draft.neteaseId,
-                        enabled = enabled,
-                        onValueChange = {
-                            actions.updateLyricsDraft(state.draft.copy(neteaseId = it))
-                        },
-                        label = { Text("网易云歌曲 ID") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = state.neteaseIdError != null,
-                        supportingText = state.neteaseIdError?.let { error -> ({ Text(error) }) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(20.dp),
-                    )
                     Text(
                         text = "当前来源：${lyricsSourceName(state.draft.source)}",
                         style = MaterialTheme.typography.labelLarge,
@@ -406,8 +294,8 @@ private fun LyricsEditorDialog(
                         FilledTonalButton(
                             modifier = Modifier.weight(1f),
                             enabled = enabled,
-                            onClick = actions.importNetease,
-                        ) { Text("网易云") }
+                            onClick = actions.importLunabeat,
+                        ) { Text("Lunabeat") }
                         FilledTonalButton(
                             modifier = Modifier.weight(1f),
                             enabled = enabled,
@@ -558,7 +446,7 @@ private fun DialogTitle(text: String) {
 
 private fun lyricsSourceName(source: String): String = when (source) {
     CustomLyricsSources.AMLL -> "AMLL"
-    CustomLyricsSources.NETEASE -> "网易云 YRC"
+    CustomLyricsSources.LUNABEAT -> "Lunabeat"
     CustomLyricsSources.AM_LYRICS -> "AM-Lyrics 仓库"
     else -> "手动 TTML"
 }

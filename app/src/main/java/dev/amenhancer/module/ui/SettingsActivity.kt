@@ -19,6 +19,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -36,18 +37,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.amenhancer.module.ModuleApplication
-import dev.amenhancer.module.LibraryRefreshProtocol
 import dev.amenhancer.module.R
 import dev.amenhancer.module.XposedServiceSnapshot
 import dev.amenhancer.module.config.ConfigStore
-import dev.amenhancer.module.config.CatalogLanguagePolicy
+import dev.amenhancer.module.config.TitleCorrectionMode
 import dev.amenhancer.module.font.FontImportResult
 import dev.amenhancer.module.font.SafFontImporter
 import dev.amenhancer.module.hook.AmLyricsClient
-import dev.amenhancer.module.hook.AmLyricsIndexEntry
 import dev.amenhancer.module.hook.AmllTtmlClient
+import dev.amenhancer.module.hook.FileLunabeatCatalogCache
 import dev.amenhancer.module.hook.HttpLyricTransport
-import dev.amenhancer.module.hook.NeteaseLyricClient
+import dev.amenhancer.module.hook.LunabeatClient
 import dev.amenhancer.module.lyrics.CustomLyricsBatchSaveResult
 import dev.amenhancer.module.lyrics.CustomLyricsBackupResult
 import dev.amenhancer.module.lyrics.CustomLyricsFilePolicy
@@ -60,9 +60,8 @@ import dev.amenhancer.module.lyrics.CustomLyricsOnlineImportResult
 import dev.amenhancer.module.lyrics.CustomLyricsOnlineImporter
 import dev.amenhancer.module.lyrics.CustomLyricsRestoreResult
 import dev.amenhancer.module.lyrics.CustomLyricsRestorePolicy
-import dev.amenhancer.module.lyrics.CustomLyricsSyncLoadResult
-import dev.amenhancer.module.lyrics.CustomLyricsSyncPlanEntry
-import dev.amenhancer.module.lyrics.CustomLyricsSyncResult
+import dev.amenhancer.module.lyrics.CustomLyricsUpdateResult
+import dev.amenhancer.module.lyrics.CustomLyricsUpdateSources
 import dev.amenhancer.module.model.CustomLyricsEntry
 import dev.amenhancer.module.model.CustomLyricsManifest
 import dev.amenhancer.module.model.CustomLyricsSources
@@ -97,8 +96,6 @@ class SettingsActivity : ComponentActivity() {
     private lateinit var settingsScroll: ScrollView
     private lateinit var palette: Palette
     private lateinit var currentSongIdentityRequester: CurrentSongIdentityRequester
-    private lateinit var libraryRefreshRequester: LibraryRefreshRequester
-    private var libraryRefreshDialog: AlertDialog? = null
     private lateinit var topBarTitle: TextView
     private lateinit var topBarBackButton: ImageView
     private val backgroundExecutor: ExecutorService get() = settingsExecutor
@@ -114,7 +111,7 @@ class SettingsActivity : ComponentActivity() {
     private var expressiveLauncherHidden by mutableStateOf(false)
     private var expressiveSearchQuery by mutableStateOf("")
     private var expressiveDialog by mutableStateOf<ExpressiveSettingsDialog?>(null)
-    private var expressiveSyncCancellation: AtomicBoolean? = null
+    private var expressiveLyricsUpdateCancellation: AtomicBoolean? = null
     private lateinit var appearancePreferences: AppearancePreferences
     private var activeAppearance = AppAppearanceSettings()
 
@@ -133,7 +130,6 @@ class SettingsActivity : ComponentActivity() {
         store = ConfigStore(this)
         launcherIconController = LauncherIconController(this)
         currentSongIdentityRequester = CurrentSongIdentityRequester(this)
-        libraryRefreshRequester = LibraryRefreshRequester(this)
         palette = Palette.resolve(this)
         awaitingCustomTtmlPickerResult = savedInstanceState?.getBoolean(
             STATE_AWAITING_CUSTOM_TTML_PICKER,
@@ -166,8 +162,7 @@ class SettingsActivity : ComponentActivity() {
                             store.saveSettings(updated)
                             render()
                         },
-                        showTargetLanguage = ::showTargetLanguagePickerExpressive,
-                        refreshLibrary = ::requestLibraryRefreshExpressive,
+                        showTitleCorrectionMode = ::showTitleCorrectionModePicker,
                         openCustomLyrics = { showPage(SettingsPage.CUSTOM_LYRICS) },
                         chooseFont = ::chooseFont,
                         restoreFont = ::restoreFont,
@@ -183,7 +178,7 @@ class SettingsActivity : ComponentActivity() {
                         backToMain = { showPage(SettingsPage.MAIN) },
                         setCustomLyricsQuery = { query -> expressiveSearchQuery = query },
                         addCustomLyrics = { showCustomLyricsEditorExpressive() },
-                        syncCustomLyrics = ::syncCustomLyricsFromGitHubExpressive,
+                        updateCustomLyrics = ::updateCustomLyricsExpressive,
                         backupCustomLyrics = ::chooseCustomLyricsBackupDestination,
                         restoreCustomLyrics = ::chooseCustomLyricsBackupRestore,
                         setCustomLyricsEnabled = ::setCustomLyricsEnabled,
@@ -195,10 +190,6 @@ class SettingsActivity : ComponentActivity() {
                     dialogState = expressiveDialog,
                     dialogActions = ExpressiveSettingsDialogActions(
                         dismiss = ::dismissExpressiveDialog,
-                        selectTargetLanguage = ::selectTargetLanguageExpressive,
-                        openCustomLanguage = ::openCustomLanguageExpressive,
-                        updateCustomLanguage = ::updateCustomLanguageExpressive,
-                        saveCustomLanguage = ::saveCustomLanguageExpressive,
                         cancelProgress = ::cancelExpressiveProgress,
                         restoreLyrics = ::restoreLyricsExpressive,
                         deleteLyrics = ::deleteLyricsExpressive,
@@ -206,7 +197,7 @@ class SettingsActivity : ComponentActivity() {
                         chooseTtml = ::chooseTtmlExpressive,
                         requestCurrentSong = ::requestCurrentSongExpressive,
                         importAmll = { importOnlineLyricsExpressive(CustomLyricsSources.AMLL) },
-                        importNetease = { importOnlineLyricsExpressive(CustomLyricsSources.NETEASE) },
+                        importLunabeat = { importOnlineLyricsExpressive(CustomLyricsSources.LUNABEAT) },
                         importAmLyrics = {
                             importOnlineLyricsExpressive(CustomLyricsSources.AM_LYRICS)
                         },
@@ -237,7 +228,6 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::currentSongIdentityRequester.isInitialized) currentSongIdentityRequester.cancel()
-        if (::libraryRefreshRequester.isInitialized) libraryRefreshRequester.cancel()
         super.onDestroy()
     }
 
@@ -455,80 +445,12 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    private fun showTargetLanguagePickerExpressive() {
-        expressiveDialog = ExpressiveSettingsDialog.TargetLanguage(
-            CatalogLanguagePolicy.normalize(store.settings().titleCorrectionTargetLanguage),
-        )
-    }
-
-    private fun selectTargetLanguageExpressive(language: String) {
-        expressiveDialog = null
-        saveTargetLanguage(language)
-    }
-
-    private fun openCustomLanguageExpressive() {
-        val current = (expressiveDialog as? ExpressiveSettingsDialog.TargetLanguage)?.current
-            ?: CatalogLanguagePolicy.normalize(store.settings().titleCorrectionTargetLanguage)
-        expressiveDialog = ExpressiveSettingsDialog.CustomLanguage(current)
-    }
-
-    private fun updateCustomLanguageExpressive(value: String) {
-        expressiveDialog = (expressiveDialog as? ExpressiveSettingsDialog.CustomLanguage)
-            ?.copy(value = value, error = null)
-    }
-
-    private fun saveCustomLanguageExpressive() {
-        val dialog = expressiveDialog as? ExpressiveSettingsDialog.CustomLanguage ?: return
-        if (!CatalogLanguagePolicy.isValid(dialog.value)) {
-            expressiveDialog = dialog.copy(error = "请输入有效的 BCP-47 标签，例如 tr-TR")
-            return
-        }
-        expressiveDialog = null
-        saveTargetLanguage(dialog.value)
-    }
-
-    private fun requestLibraryRefreshExpressive() {
-        if (!libraryRefreshRequester.request { result ->
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
-                    if (current?.operation == ExpressiveSettingsDialog.Progress.Operation.LIBRARY_REFRESH) {
-                        expressiveDialog = null
-                    }
-                    when (result.resultCode) {
-                        LibraryRefreshProtocol.RESULT_COMPLETED -> toast(
-                            result.message ?: "资料库刷新完成",
-                        )
-                        LibraryRefreshProtocol.RESULT_CANCELLED -> toast(
-                            result.message ?: "已停止刷新资料库",
-                        )
-                        else -> toast(result.message ?: "资料库刷新失败")
-                    }
-                }
-            }
-        ) {
-            toast("刷新资料库请求正在进行")
-            return
-        }
-        expressiveDialog = ExpressiveSettingsDialog.Progress(
-            operation = ExpressiveSettingsDialog.Progress.Operation.LIBRARY_REFRESH,
-            title = "刷新资料库",
-            message = "正在刷新资料库，请稍候…",
-            cancelLabel = "停止",
-        )
-    }
-
     private fun cancelExpressiveProgress() {
         val dialog = expressiveDialog as? ExpressiveSettingsDialog.Progress ?: return
         when (dialog.operation) {
-            ExpressiveSettingsDialog.Progress.Operation.LIBRARY_REFRESH -> {
-                libraryRefreshRequester.cancel()
-                expressiveDialog = null
-                toast("已停止刷新资料库")
-            }
-            ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC -> {
-                expressiveSyncCancellation?.set(true)
-                expressiveDialog = dialog.copy(message = "正在取消同步…", cancelLabel = null)
+            ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE -> {
+                expressiveLyricsUpdateCancellation?.set(true)
+                expressiveDialog = dialog.copy(message = "正在取消更新…", cancelLabel = null)
             }
         }
     }
@@ -583,7 +505,6 @@ class SettingsActivity : ComponentActivity() {
         expressiveDialog = editor.copy(
             draft = draft,
             appleMusicIdError = null,
-            neteaseIdError = null,
             ttmlError = null,
         )
     }
@@ -638,29 +559,19 @@ class SettingsActivity : ComponentActivity() {
     private fun importOnlineLyricsExpressive(source: String) {
         val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
         val appleMusicId = CustomLyricsIdParser.parsePrimary(editor.draft.appleMusicIds)
-        val neteaseId = parsePositiveId(editor.draft.neteaseId)
-        when {
-            source != CustomLyricsSources.NETEASE && appleMusicId == null -> {
-                expressiveDialog = editor.copy(
-                    appleMusicIdError = "请输入一个或多个正整数 Apple Music ID（用逗号分隔）",
-                )
-                return
-            }
-            source == CustomLyricsSources.NETEASE && neteaseId == null -> {
-                expressiveDialog = editor.copy(neteaseIdError = "请输入正整数网易云歌曲 ID")
-                return
-            }
+        if (appleMusicId == null) {
+            expressiveDialog = editor.copy(
+                appleMusicIdError = "请输入一个或多个正整数 Apple Music ID（用逗号分隔）",
+            )
+            return
         }
         expressiveDialog = editor.copy(busyMessage = "正在导入 ${customLyricsSourceName(source)} 歌词…")
         backgroundExecutor.execute {
             val importer = onlineLyricsImporter()
             val result = when (source) {
-                CustomLyricsSources.AMLL -> importer.importAmll(requireNotNull(appleMusicId))
-                CustomLyricsSources.NETEASE -> importer.importNetease(
-                    requireNotNull(neteaseId),
-                    editor.draft.displayName,
-                )
-                else -> importer.importAmLyrics(requireNotNull(appleMusicId))
+                CustomLyricsSources.AMLL -> importer.importAmll(appleMusicId)
+                CustomLyricsSources.LUNABEAT -> importer.importLunabeat(appleMusicId)
+                else -> importer.importAmLyrics(appleMusicId)
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -863,87 +774,75 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    private fun syncCustomLyricsFromGitHubExpressive() {
+    private fun updateCustomLyricsExpressive() {
         if (!ModuleApplication.serviceSnapshot.isRemoteFileAvailable) {
             toast("libxposed remote file 服务不可用")
             return
         }
         val cancelled = AtomicBoolean(false)
-        expressiveSyncCancellation = cancelled
+        expressiveLyricsUpdateCancellation = cancelled
         expressiveDialog = ExpressiveSettingsDialog.Progress(
-            operation = ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC,
-            title = "同步 GitHub 源",
-            message = "正在读取 GitHub 索引…",
+            operation = ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE,
+            title = "更新歌词",
+            message = "正在检查远程来源…",
             cancelLabel = "取消",
         )
         backgroundExecutor.execute {
             val result = runCatching {
-                val client = AmLyricsClient(HttpLyricTransport())
-                val index = client.fetchIndex()
-                    ?: return@runCatching CustomLyricsSyncResult.Failed(
-                        "GitHub 索引无效或读取失败",
-                    )
-                val enabledEntries = index.entries.filter(AmLyricsIndexEntry::enabled)
-                val plan = enabledEntries.map { entry ->
-                    CustomLyricsSyncPlanEntry(
-                        key = entry.path,
-                        appleMusicIds = entry.allAppleMusicIds,
-                        displayName = entry.displayName,
-                    )
-                }
-                val entriesByPath = enabledEntries.associateBy(AmLyricsIndexEntry::path)
-                CustomLyricsManager(ModuleApplication.serviceSnapshot, store).syncFromGitHub(
-                    plan = plan,
-                    loadTtml = { source ->
-                        if (cancelled.get()) {
-                            CustomLyricsSyncLoadResult.Cancelled
-                        } else {
-                            val entry = entriesByPath[source.key]
-                            if (entry == null) {
-                                CustomLyricsSyncLoadResult.Failed("GitHub 索引条目已变化")
-                            } else {
-                                client.fetchTtml(entry)?.let(CustomLyricsSyncLoadResult::Loaded)
-                                    ?: CustomLyricsSyncLoadResult.Failed(
-                                        "下载 GitHub 歌词失败：${source.displayName}",
-                                    )
-                            }
-                        }
-                    },
+                val amll = AmllTtmlClient(HttpLyricTransport())
+                val amLyrics = AmLyricsClient(HttpLyricTransport())
+                val lunabeat = LunabeatClient(
+                    indexTransport = HttpLyricTransport(
+                        maxResponseBytes = LunabeatClient.INDEX_MAX_BYTES,
+                    ),
+                    lyricsTransport = HttpLyricTransport(),
+                    cache = FileLunabeatCatalogCache(
+                        java.io.File(filesDir, "ampp-lunabeat-cache"),
+                    ),
+                )
+                CustomLyricsManager(ModuleApplication.serviceSnapshot, store).updateLyrics(
+                    sources = CustomLyricsUpdateSources(
+                        fetchAmll = amll::fetch,
+                        loadAmLyricsIndex = amLyrics::fetchIndex,
+                        fetchAmLyricsTtml = amLyrics::fetchTtml,
+                        loadLunabeatCatalog = lunabeat::loadCatalog,
+                        fetchLunabeatTtml = lunabeat::fetch,
+                    ),
                     isCancelled = cancelled::get,
                     onProgress = { update ->
                         runOnUiThread {
                             val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
                             if (!isFinishing && !isDestroyed && !cancelled.get() &&
-                                current?.operation == ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC
+                                current?.operation == ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE
                             ) {
                                 expressiveDialog = current.copy(
-                                    message = "正在同步 ${update.processedEntries} / " +
-                                        "${update.totalEntries} 首（已映射 " +
-                                        "${update.importedIds + update.overwrittenIds} 个 ID）",
+                                    message = "已检查 ${update.checkedEntries} / " +
+                                        "${update.totalEntries} 首（更新 ${update.updatedEntries}，" +
+                                        "失败 ${update.failedEntries}）",
                                 )
                             }
                         }
                     },
                 )
             }.getOrElse { error ->
-                CustomLyricsSyncResult.Failed("同步 GitHub 源失败：${error.message.orEmpty()}")
+                CustomLyricsUpdateResult.Failed("歌词更新失败：${error.message.orEmpty()}")
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                expressiveSyncCancellation = null
+                expressiveLyricsUpdateCancellation = null
                 val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
-                if (current?.operation == ExpressiveSettingsDialog.Progress.Operation.GITHUB_SYNC) {
+                if (current?.operation == ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE) {
                     expressiveDialog = null
                 }
                 when (result) {
-                    is CustomLyricsSyncResult.Synced -> toast(
-                        "GitHub 同步完成：新增 ${result.importedIds} 个 ID，覆盖 " +
-                            "${result.overwrittenIds} 个 ID，保留 ${result.preservedIds} 个本地 ID",
+                    is CustomLyricsUpdateResult.Updated -> toast(
+                        "歌词更新完成：更新 ${result.updated}，未变 ${result.unchanged}，" +
+                            "跳过 ${result.skipped}，失败 ${result.failed}",
                     )
-                    CustomLyricsSyncResult.Cancelled -> toast("GitHub 同步已取消")
-                    is CustomLyricsSyncResult.Failed -> toast(result.message)
+                    CustomLyricsUpdateResult.Cancelled -> toast("歌词更新已取消")
+                    is CustomLyricsUpdateResult.Failed -> toast(result.message)
                 }
-                if (result is CustomLyricsSyncResult.Synced) render()
+                if (result is CustomLyricsUpdateResult.Updated) render()
             }
         }
     }
@@ -991,7 +890,7 @@ class SettingsActivity : ComponentActivity() {
             })
             addView(settingRow(
                 title = "平板双栏播放器",
-                summary = "仅在 Apple Music 判定为平板且横屏时启用",
+                summary = "平板横屏启用双栏，同时停用 Editorial Video",
                 checked = settings.dualPaneEnabled,
                 enabled = writable,
             ) { enabled ->
@@ -1008,20 +907,14 @@ class SettingsActivity : ComponentActivity() {
             })
             addView(insetDivider())
             addView(settingRow(
-                title = "平板禁用动态视频",
-                summary = "平板横屏时禁用 Editorial Video；普通音乐视频不受影响",
-                checked = settings.disableEditorialVideoOnTablet,
-                enabled = writable,
-            ) {
-                store.saveSettings(store.settings().copy(disableEditorialVideoOnTablet = it))
-            })
-            addView(insetDivider())
-            addView(settingRow(
                 title = "手机液态玻璃底栏",
                 summary = "仅手机启用 · 更改后需强制停止并重开 Apple Music",
                 checked = settings.phoneLiquidGlassEnabled,
                 enabled = writable,
                 badge = "WIP",
+                onEnableConfirmation = { onConfirmed ->
+                    showLiquidGlassConfirmation(onConfirmed)
+                },
             ) {
                 store.saveSettings(store.settings().copy(phoneLiquidGlassEnabled = it))
             })
@@ -1035,6 +928,15 @@ class SettingsActivity : ComponentActivity() {
                 store.saveSettings(store.settings().copy(futureBlurEnabled = enabled))
             })
             addView(insetDivider())
+            addView(settingRow(
+                title = "CJK 长尾歌词动画",
+                summary = "CJK 歌词启用原生 rush-gradient 动画 · 修改后重开 Apple Music",
+                checked = settings.cjkKaraokeAnimationEnabled,
+                enabled = writable,
+            ) { enabled ->
+                store.saveSettings(store.settings().copy(cjkKaraokeAnimationEnabled = enabled))
+            })
+            addView(insetDivider())
             addView(blurRadiusOffsetRow(
                 offsetPx = settings.lyricBlurRadiusOffsetPx,
                 enabled = writable,
@@ -1044,7 +946,11 @@ class SettingsActivity : ComponentActivity() {
             addView(insetDivider())
             addView(settingRow(
                 title = "歌曲名显示修正",
-                summary = "将部分 Catalog 请求改为目标语言并回填标题 · 修改后重开 Apple Music",
+                summary = if (settings.titleCorrectionEnabled) {
+                    "${settings.titleCorrectionMode.displayName} · 修改后重开 Apple Music"
+                } else {
+                    "关闭时跟随 Apple Music 账号 · 开启后选择修正地区"
+                },
                 checked = settings.titleCorrectionEnabled,
                 enabled = writable,
             ) { enabled ->
@@ -1052,16 +958,10 @@ class SettingsActivity : ComponentActivity() {
             })
             addView(insetDivider())
             addView(actionRow(
-                title = "目标语言",
-                summary = CatalogLanguagePolicy.displayName(settings.titleCorrectionTargetLanguage),
+                title = "歌曲名修正模式",
+                summary = settings.titleCorrectionMode.displayName,
                 enabled = writable,
-            ) { showTargetLanguagePicker() })
-            addView(insetDivider())
-            addView(actionRow(
-                title = "刷新资料库",
-                summary = "同步 Apple Music 资料库并刷新歌曲、专辑和歌手信息",
-                enabled = writable,
-            ) { requestLibraryRefresh() })
+            ) { showTitleCorrectionModePicker() })
             addView(insetDivider())
             addView(customLyricsNavigationRow(settings.customLyricsManifest))
         }
@@ -1104,108 +1004,25 @@ class SettingsActivity : ComponentActivity() {
         setOnClickListener { if (enabled) onClick() }
     }
 
-    private fun requestLibraryRefresh() {
-        if (!libraryRefreshRequester.request { result ->
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    libraryRefreshDialog?.takeIf { it.isShowing }?.dismiss()
-                    libraryRefreshDialog = null
-                    when (result.resultCode) {
-                        LibraryRefreshProtocol.RESULT_COMPLETED -> toast(
-                            result.message ?: "资料库刷新完成",
-                        )
-                        LibraryRefreshProtocol.RESULT_CANCELLED -> toast(
-                            result.message ?: "已停止刷新资料库",
-                        )
-                        else -> toast(result.message ?: "资料库刷新失败")
-                    }
-                }
-            }
-        ) {
-            toast("刷新资料库请求正在进行")
-            return
-        }
-        showLibraryRefreshProgress()
-    }
-
-    /** AMTool-style cancellable progress dialog while the target refreshes. */
-    private fun showLibraryRefreshProgress() {
-        val progress = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(12))
-            addView(ProgressBar(this@SettingsActivity), LinearLayout.LayoutParams(dp(28), dp(28)))
-            addView(TextView(this@SettingsActivity).apply {
-                text = "正在刷新资料库，请稍候…"
-                textSize = 15f
-                setTextColor(palette.onSurface)
-                setPadding(dp(16), 0, 0, 0)
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("刷新资料库")
-            .setView(progress)
-            .setNegativeButton("停止") { _, _ -> stopLibraryRefresh() }
-            .create()
-        dialog.setOnCancelListener { stopLibraryRefresh() }
-        dialog.setCanceledOnTouchOutside(false)
-        libraryRefreshDialog = dialog
-        dialog.show()
-    }
-
-    private fun stopLibraryRefresh() {
-        libraryRefreshDialog?.takeIf { it.isShowing }?.dismiss()
-        libraryRefreshDialog = null
-        libraryRefreshRequester.cancel()
-        toast("已停止刷新资料库")
-    }
-
-    private fun showTargetLanguagePicker() {
-        val current = CatalogLanguagePolicy.normalize(store.settings().titleCorrectionTargetLanguage)
-        // AMTool 1.2 presets, verified from AMTool_1.2.apk; a stored custom tag
-        // leaves the list unchecked (selected = -1) and is kept as-is.
-        val tags = listOf("zh-CN", "zh-TW", "ja-JP", "en-US", "tr-TR")
-        val labels = tags.map { CatalogLanguagePolicy.displayName(it) }.toTypedArray()
-        val selected = tags.indexOf(current)
+    private fun showTitleCorrectionModePicker() {
+        val modes = TitleCorrectionMode.values()
+        val current = store.settings().titleCorrectionMode
+        val labels = modes.map(TitleCorrectionMode::displayName).toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("目标语言")
-            .setSingleChoiceItems(labels, selected) { dialog, which ->
-                saveTargetLanguage(tags[which])
+            .setTitle("歌曲名修正模式")
+            .setSingleChoiceItems(labels, modes.indexOf(current)) { dialog, which ->
+                modes.getOrNull(which)?.let(::saveTitleCorrectionMode)
                 dialog.dismiss()
             }
-            .setNeutralButton("自定义") { _, _ -> showTargetLanguageEditor(current) }
             .setNegativeButton("取消", null)
             .show()
     }
 
-    private fun showTargetLanguageEditor(current: String) {
-        val input = EditText(this).apply {
-            hint = "例如 tr-TR"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(current)
-            setSelectAllOnFocus(true)
-            setPadding(dp(24), dp(8), dp(24), 0)
-        }
-        AlertDialog.Builder(this)
-            .setTitle("自定义目标语言")
-            .setMessage("请输入 BCP-47 语言标签（例如 zh-CN）；空值或非法值无法保存")
-            .setView(input)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("保存") { _, _ ->
-                val raw = input.text?.toString().orEmpty()
-                if (!CatalogLanguagePolicy.isValid(raw)) {
-                    toast("目标语言格式无效，例如 tr-TR")
-                } else {
-                    saveTargetLanguage(raw)
-                }
-            }
-            .show()
-    }
-
-    private fun saveTargetLanguage(raw: String) {
-        val normalized = CatalogLanguagePolicy.normalize(raw)
-        store.saveSettings(store.settings().copy(titleCorrectionTargetLanguage = normalized))
-        toast("目标语言已设为 ${CatalogLanguagePolicy.displayName(normalized)}；重启 Apple Music 后刷新资料库")
+    private fun saveTitleCorrectionMode(mode: TitleCorrectionMode) {
+        store.saveSettings(
+            store.settings().copy(titleCorrectionMode = mode),
+        )
+        toast("歌曲名修正模式已设为${mode.displayName}；重开 Apple Music 后生效")
         render()
     }
 
@@ -1259,6 +1076,18 @@ class SettingsActivity : ComponentActivity() {
                 enabled = writable,
             ) { enabled ->
                 store.saveSettings(store.settings().copy(customLyricsEnabled = enabled))
+                // Rebuild this card so the dependent automatic-lyrics switch
+                // immediately follows the parent custom-lyrics toggle.
+                content.post { render() }
+            })
+            addView(insetDivider())
+            addView(settingRow(
+                title = "自动实时补全",
+                summary = "非逐字歌词自动查找 AMLL、Lunabeat 和我的仓库 · 关闭后仅使用已配置歌词",
+                checked = settings.automaticLyricsEnabled,
+                enabled = writable && settings.customLyricsEnabled,
+            ) { enabled ->
+                store.saveSettings(store.settings().copy(automaticLyricsEnabled = enabled))
             })
         }
 
@@ -1415,16 +1244,6 @@ class SettingsActivity : ComponentActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(12), 0, dp(12), dp(12))
                 addView(
-                    fontActionButton("同步 GitHub 源", writable) {
-                        syncCustomLyricsFromGitHub()
-                    },
-                    LinearLayout.LayoutParams(0, dp(48), 1f),
-                )
-            })
-            addView(LinearLayout(this@SettingsActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(dp(12), 0, dp(12), dp(12))
-                addView(
                     fontActionButton("备份歌词", writable) { chooseCustomLyricsBackupDestination() },
                     LinearLayout.LayoutParams(0, dp(48), 1f),
                 )
@@ -1454,6 +1273,9 @@ class SettingsActivity : ComponentActivity() {
         EditText(this).apply {
             hint = "搜索名称或 Apple Music ID"
             textSize = 14f
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            showSoftInputOnFocus = true
             setTextColor(palette.onSurface)
             setHintTextColor(palette.onSurfaceVariant)
             isSingleLine = true
@@ -1699,7 +1521,6 @@ class SettingsActivity : ComponentActivity() {
             hint = "显示名称（可选）",
             initial = existing?.primary?.displayName.orEmpty(),
         )
-        val neteaseId = lyricEditorInput(hint = "网易云歌曲 ID（仅网易云导入时需要）", numeric = true)
         val ttml = lyricEditorInput(
             hint = "TTML 内容",
             initial = initialTtml,
@@ -1716,7 +1537,6 @@ class SettingsActivity : ComponentActivity() {
         updateSourceLabel()
         form.addView(appleMusicId)
         form.addView(displayName)
-        form.addView(neteaseId)
         form.addView(sourceLabel)
         form.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1731,8 +1551,8 @@ class SettingsActivity : ComponentActivity() {
             )
             addView(spacer(8), LinearLayout.LayoutParams(dp(8), dp(1)))
             addView(
-                fontActionButton("从网易云导入", true) {
-                    importFromNetease(neteaseId, displayName, ttml) { importedSource ->
+                fontActionButton("从 Lunabeat 导入", true) {
+                    importFromLunabeat(appleMusicId, ttml) { importedSource ->
                         source = importedSource
                         updateSourceLabel()
                     }
@@ -1866,91 +1686,14 @@ class SettingsActivity : ComponentActivity() {
     private fun onlineLyricsImporter(): CustomLyricsOnlineImporter = CustomLyricsOnlineImporter(
         fetchAmll = AmllTtmlClient(HttpLyricTransport())::fetch,
         fetchAmLyrics = AmLyricsClient(HttpLyricTransport())::fetch,
-        fetchNeteaseYrc = NeteaseLyricClient(HttpLyricTransport())::fetchYrc,
+        fetchLunabeat = LunabeatClient(
+            indexTransport = HttpLyricTransport(maxResponseBytes = LunabeatClient.INDEX_MAX_BYTES),
+            lyricsTransport = HttpLyricTransport(),
+            cache = FileLunabeatCatalogCache(
+                java.io.File(filesDir, "ampp-lunabeat-cache"),
+            ),
+        )::fetch,
     )
-
-    private fun syncCustomLyricsFromGitHub() {
-        if (!ModuleApplication.serviceSnapshot.isRemoteFileAvailable) {
-            toast("libxposed remote file 服务不可用")
-            return
-        }
-        val cancelled = AtomicBoolean(false)
-        val progress = TextView(this).apply {
-            text = "正在读取 GitHub 索引…"
-            textSize = 15f
-            setTextColor(palette.onSurface)
-            setPadding(dp(24), dp(8), dp(24), dp(8))
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("同步 GitHub 源")
-            .setView(progress)
-            .setNegativeButton("取消") { _, _ -> cancelled.set(true) }
-            .create()
-        dialog.setOnCancelListener { cancelled.set(true) }
-        dialog.setCanceledOnTouchOutside(false)
-        dialog.show()
-
-        backgroundExecutor.execute {
-            val result = runCatching {
-                val client = AmLyricsClient(HttpLyricTransport())
-                val index = client.fetchIndex()
-                    ?: return@runCatching CustomLyricsSyncResult.Failed(
-                        "GitHub 索引无效或读取失败",
-                    )
-                val enabledEntries = index.entries.filter(AmLyricsIndexEntry::enabled)
-                val plan = enabledEntries.map { entry ->
-                    CustomLyricsSyncPlanEntry(
-                        key = entry.path,
-                        appleMusicIds = entry.allAppleMusicIds,
-                        displayName = entry.displayName,
-                    )
-                }
-                val entriesByPath = enabledEntries.associateBy(AmLyricsIndexEntry::path)
-                CustomLyricsManager(ModuleApplication.serviceSnapshot, store).syncFromGitHub(
-                    plan = plan,
-                    loadTtml = { source ->
-                        if (cancelled.get()) {
-                            CustomLyricsSyncLoadResult.Cancelled
-                        } else {
-                            val entry = entriesByPath[source.key]
-                            if (entry == null) {
-                                CustomLyricsSyncLoadResult.Failed("GitHub 索引条目已变化")
-                            } else {
-                                client.fetchTtml(entry)?.let(CustomLyricsSyncLoadResult::Loaded)
-                                    ?: CustomLyricsSyncLoadResult.Failed(
-                                        "下载 GitHub 歌词失败：${source.displayName}",
-                                    )
-                            }
-                        }
-                    },
-                    isCancelled = cancelled::get,
-                    onProgress = { update ->
-                        runOnUiThread {
-                            if (!isFinishing && !isDestroyed && !cancelled.get()) {
-                                progress.text = "正在同步 ${update.processedEntries} / " +
-                                    "${update.totalEntries} 首（已映射 ${update.importedIds + update.overwrittenIds} 个 ID）"
-                            }
-                        }
-                    },
-                )
-            }.getOrElse { error ->
-                CustomLyricsSyncResult.Failed("同步 GitHub 源失败：${error.message.orEmpty()}")
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (dialog.isShowing) dialog.dismiss()
-                when (result) {
-                    is CustomLyricsSyncResult.Synced -> toast(
-                        "GitHub 同步完成：新增 ${result.importedIds} 个 ID，覆盖 " +
-                            "${result.overwrittenIds} 个 ID，保留 ${result.preservedIds} 个本地 ID",
-                    )
-                    CustomLyricsSyncResult.Cancelled -> toast("GitHub 同步已取消")
-                    is CustomLyricsSyncResult.Failed -> toast(result.message)
-                }
-                if (result is CustomLyricsSyncResult.Synced) render()
-            }
-        }
-    }
 
     private fun importFromAmll(
         appleMusicIdInput: EditText,
@@ -1984,23 +1727,18 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    private fun importFromNetease(
-        neteaseIdInput: EditText,
-        displayNameInput: EditText,
+    private fun importFromLunabeat(
+        appleMusicIdInput: EditText,
         ttmlInput: EditText,
         onImported: (String) -> Unit,
     ) {
-        val neteaseSongId = parsePositiveId(neteaseIdInput.text.toString())
-        if (neteaseSongId == null) {
-            neteaseIdInput.error = "请输入正整数网易云歌曲 ID"
+        val appleMusicId = CustomLyricsIdParser.parsePrimary(appleMusicIdInput.text.toString())
+        if (appleMusicId == null) {
+            appleMusicIdInput.error = "请输入一个或多个正整数 Apple Music ID（用逗号分隔）"
             return
         }
-        val displayName = displayNameInput.text.toString()
         backgroundExecutor.execute {
-            val result = onlineLyricsImporter().importNetease(
-                neteaseSongId,
-                displayName,
-            )
+            val result = onlineLyricsImporter().importLunabeat(appleMusicId)
             showOnlineImportResult(result, ttmlInput, onImported)
         }
     }
@@ -2159,12 +1897,11 @@ class SettingsActivity : ComponentActivity() {
             .show()
     }
 
-    private fun parsePositiveId(value: String): Long? = value.trim().toLongOrNull()?.takeIf { it > 0L }
-
     private fun customLyricsSourceName(source: String): String = when (source) {
+        CustomLyricsSources.AUTO_CACHE -> "自动缓存"
         CustomLyricsSources.AMLL -> "AMLL"
-        CustomLyricsSources.NETEASE -> "网易云 YRC"
         CustomLyricsSources.AM_LYRICS -> "AM-Lyrics 仓库"
+        CustomLyricsSources.LUNABEAT -> "Lunabeat"
         else -> "手动 TTML"
     }
 
@@ -2205,6 +1942,7 @@ class SettingsActivity : ComponentActivity() {
         checked: Boolean,
         enabled: Boolean,
         badge: String? = null,
+        onEnableConfirmation: ((onConfirmed: () -> Unit) -> Unit)? = null,
         onChanged: (Boolean) -> Unit,
     ): View {
         val switch = Switch(this).apply {
@@ -2214,7 +1952,26 @@ class SettingsActivity : ComponentActivity() {
             contentDescription = title
             thumbTintList = switchThumbColors()
             trackTintList = switchTrackColors()
-            setOnCheckedChangeListener { _, value -> onChanged(value) }
+        }
+        var suppressSwitchCallback = false
+        var committedSwitchValue = checked
+        switch.setOnCheckedChangeListener { _, value ->
+            if (suppressSwitchCallback) return@setOnCheckedChangeListener
+            if (value && !committedSwitchValue && onEnableConfirmation != null) {
+                suppressSwitchCallback = true
+                switch.isChecked = false
+                suppressSwitchCallback = false
+                onEnableConfirmation.invoke {
+                    suppressSwitchCallback = true
+                    switch.isChecked = true
+                    suppressSwitchCallback = false
+                    committedSwitchValue = true
+                    onChanged(true)
+                }
+            } else {
+                committedSwitchValue = value
+                onChanged(value)
+            }
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -2250,6 +2007,15 @@ class SettingsActivity : ComponentActivity() {
             addView(switch, LinearLayout.LayoutParams(dp(64), dp(48)))
             setOnClickListener { switch.isChecked = !switch.isChecked }
         }
+    }
+
+    private fun showLiquidGlassConfirmation(onConfirmed: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle("手机液态玻璃底栏")
+            .setMessage("这是半成品功能，不接受反馈。\n开启后需要强制停止并重新打开 Apple Music。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("继续开启") { _, _ -> onConfirmed() }
+            .show()
     }
 
     private fun blurRadiusOffsetRow(

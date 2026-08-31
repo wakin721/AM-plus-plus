@@ -6,6 +6,9 @@ import dev.amenhancer.module.model.LyricsFontManifest
 import dev.amenhancer.module.model.ModuleSettings
 
 internal object ModuleSettingsSchema {
+    /** Keys removed by the profile migration. */
+    internal val obsoleteKeys: Set<String> = setOf(KEY_TITLE_CORRECTION_TARGET_LANGUAGE)
+
     fun decode(values: Map<String, *>): ModuleSettings = ModuleSettings(
         dualPaneEnabled = values.boolean(KEY_DUAL_PANE, default = true),
         disableEditorialVideoOnTablet = values.boolean(
@@ -17,6 +20,10 @@ internal object ModuleSettingsSchema {
             default = false,
         ),
         futureBlurEnabled = values.boolean(KEY_FUTURE_BLUR, default = true),
+        cjkKaraokeAnimationEnabled = values.boolean(
+            KEY_CJK_KARAOKE_ANIMATION_ENABLED,
+            default = true,
+        ),
         navigationCompensationEnabled = values.boolean(
             KEY_NAVIGATION_COMPENSATION,
             default = false,
@@ -33,15 +40,12 @@ internal object ModuleSettingsSchema {
             KEY_TITLE_CORRECTION_ENABLED,
             default = false,
         ),
-        titleCorrectionTargetLanguage = if (values.containsKey(KEY_TITLE_CORRECTION_TARGET_LANGUAGE)) {
-            CatalogLanguagePolicy.normalize(values.string(KEY_TITLE_CORRECTION_TARGET_LANGUAGE))
-        } else {
-            CatalogLanguagePolicy.DEFAULT_TARGET_LANGUAGE
-        },
+        titleCorrectionMode = values.titleCorrectionMode(),
         customLyricsEnabled = values.boolean(
             KEY_CUSTOM_LYRICS_ENABLED,
             default = values.boolean(KEY_LEGACY_ONLINE_LYRIC_REPLACEMENT, default = false),
         ),
+        automaticLyricsEnabled = values.boolean(KEY_AUTOMATIC_LYRICS_ENABLED, default = true),
         fontManifest = values.fontManifest(),
         customLyricsManifest = values.customLyricsManifest(),
         schemaVersion = values.number(KEY_SCHEMA_VERSION)
@@ -65,6 +69,7 @@ internal object ModuleSettingsSchema {
             KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET to settings.disableEditorialVideoOnTablet,
             KEY_PHONE_LIQUID_GLASS to settings.phoneLiquidGlassEnabled,
             KEY_FUTURE_BLUR to settings.futureBlurEnabled,
+            KEY_CJK_KARAOKE_ANIMATION_ENABLED to settings.cjkKaraokeAnimationEnabled,
             KEY_NAVIGATION_COMPENSATION to settings.navigationCompensationEnabled,
             KEY_LYRIC_BLUR_RADIUS_OFFSET to settings.lyricBlurRadiusOffsetPx.coerceIn(
                 ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX,
@@ -74,10 +79,9 @@ internal object ModuleSettingsSchema {
             KEY_USB_EXCLUSIVE_AAUDIO to settings.usbExclusiveAaudioEnabled,
             KEY_USB_DIRECT_UAC to settings.usbDirectUacEnabled,
             KEY_TITLE_CORRECTION_ENABLED to settings.titleCorrectionEnabled,
-            KEY_TITLE_CORRECTION_TARGET_LANGUAGE to CatalogLanguagePolicy.normalize(
-                settings.titleCorrectionTargetLanguage,
-            ),
+            KEY_TITLE_CORRECTION_MODE to settings.titleCorrectionMode.storageValue,
             KEY_CUSTOM_LYRICS_ENABLED to settings.customLyricsEnabled,
+            KEY_AUTOMATIC_LYRICS_ENABLED to settings.automaticLyricsEnabled,
         )
         values[KEY_SCHEMA_VERSION] = ModuleConstants.CONFIG_SCHEMA_VERSION
         return values
@@ -124,6 +128,11 @@ internal object ModuleSettingsSchema {
 
     fun hasIndexPointerValues(values: Map<String, *>): Boolean = indexPointerKeys.any(values::containsKey)
 
+    /** Avoid turning an unrelated/empty remote group into a completed migration. */
+    fun hasMigratableValues(values: Map<String, *>): Boolean =
+        values.keys.any { it in settingKeys || it in obsoleteKeys || it in indexPointerKeys }
+
+    /** Legacy v1 preference-string manifest, kept for pre-migration reads. */
     fun decodeLegacyCustomLyricsManifest(values: Map<String, *>): CustomLyricsManifest =
         CustomLyricsManifestCodec.decode(values.string(KEY_CUSTOM_LYRICS_MANIFEST))
 
@@ -142,6 +151,35 @@ internal object ModuleSettingsSchema {
 
     private fun Map<String, *>.customLyricsManifest(): CustomLyricsManifest =
         decodeLegacyCustomLyricsManifest(this)
+
+    private fun Map<String, *>.titleCorrectionMode(): TitleCorrectionMode {
+        val storedMode = string(KEY_TITLE_CORRECTION_MODE)
+        if (storedMode.isNotBlank()) return TitleCorrectionMode.decode(storedMode)
+        if (!boolean(KEY_TITLE_CORRECTION_ENABLED, default = false)) {
+            return TitleCorrectionMode.ORIGINAL_HYPER
+        }
+        return TitleCorrectionMode.fromLegacyTargetLanguage(
+            string(KEY_TITLE_CORRECTION_TARGET_LANGUAGE),
+        )
+    }
+
+    /**
+     * Returns the host-local values required before removing the v11 target
+     * language key.  This is intentionally independent of the schema version:
+     * an already-initialized embedded store skips remote migration, so it must
+     * still be able to upgrade its own legacy value in place.
+     */
+    internal fun legacyTitleCorrectionMigrationValues(values: Map<String, *>): Map<String, Any> {
+        if (!values.containsKey(KEY_TITLE_CORRECTION_TARGET_LANGUAGE) ||
+            values.string(KEY_TITLE_CORRECTION_MODE).isNotBlank()
+        ) {
+            return emptyMap()
+        }
+        return linkedMapOf(
+            KEY_TITLE_CORRECTION_MODE to values.titleCorrectionMode().storageValue,
+            KEY_SCHEMA_VERSION to ModuleConstants.CONFIG_SCHEMA_VERSION,
+        )
+    }
 
     private fun Map<String, *>.string(key: String): String = this[key] as? String ?: ""
 
@@ -172,14 +210,17 @@ internal object ModuleSettingsSchema {
         KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET,
         KEY_PHONE_LIQUID_GLASS,
         KEY_FUTURE_BLUR,
+        KEY_CJK_KARAOKE_ANIMATION_ENABLED,
         KEY_NAVIGATION_COMPENSATION,
         KEY_LYRIC_BLUR_RADIUS_OFFSET,
         KEY_USB_BIT_PERFECT,
         KEY_USB_EXCLUSIVE_AAUDIO,
         KEY_USB_DIRECT_UAC,
         KEY_TITLE_CORRECTION_ENABLED,
+        KEY_TITLE_CORRECTION_MODE,
         KEY_TITLE_CORRECTION_TARGET_LANGUAGE,
         KEY_CUSTOM_LYRICS_ENABLED,
+        KEY_AUTOMATIC_LYRICS_ENABLED,
         KEY_LEGACY_ONLINE_LYRIC_REPLACEMENT,
         KEY_FONT_ENABLED,
         KEY_FONT_FILE_ID,
@@ -200,14 +241,17 @@ internal object ModuleSettingsSchema {
     private const val KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET = "disable_editorial_video_on_tablet"
     private const val KEY_PHONE_LIQUID_GLASS = "phone_liquid_glass_enabled"
     private const val KEY_FUTURE_BLUR = "future_blur_enabled"
+    private const val KEY_CJK_KARAOKE_ANIMATION_ENABLED = "cjk_karaoke_animation_enabled"
     private const val KEY_NAVIGATION_COMPENSATION = "navigation_compensation_enabled"
     private const val KEY_LYRIC_BLUR_RADIUS_OFFSET = "lyric_blur_radius_offset_px"
     private const val KEY_USB_BIT_PERFECT = "usb_bit_perfect_enabled"
     private const val KEY_USB_EXCLUSIVE_AAUDIO = "usb_exclusive_aaudio_enabled"
     private const val KEY_USB_DIRECT_UAC = "usb_direct_uac_enabled"
     private const val KEY_TITLE_CORRECTION_ENABLED = "title_correction_enabled"
+    private const val KEY_TITLE_CORRECTION_MODE = "title_correction_mode"
     private const val KEY_TITLE_CORRECTION_TARGET_LANGUAGE = "title_correction_target_language"
     private const val KEY_CUSTOM_LYRICS_ENABLED = "custom_lyrics_enabled"
+    private const val KEY_AUTOMATIC_LYRICS_ENABLED = "automatic_lyrics_enabled"
     private const val KEY_LEGACY_ONLINE_LYRIC_REPLACEMENT = "online_lyric_replacement_enabled"
     private const val KEY_FONT_ENABLED = "lyrics_font_enabled"
     private const val KEY_FONT_FILE_ID = "lyrics_font_file_id"

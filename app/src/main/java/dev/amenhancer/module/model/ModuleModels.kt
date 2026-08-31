@@ -1,13 +1,16 @@
 package dev.amenhancer.module.model
 
 import dev.amenhancer.module.ModuleConstants
-import dev.amenhancer.module.config.CatalogLanguagePolicy
+import dev.amenhancer.module.config.TitleCorrectionMode
 
 data class ModuleSettings(
     val dualPaneEnabled: Boolean = true,
+    /** Legacy storage key; Editorial Video suppression now follows dualPaneEnabled. */
     val disableEditorialVideoOnTablet: Boolean = true,
     val phoneLiquidGlassEnabled: Boolean = false,
     val futureBlurEnabled: Boolean = true,
+    /** Enables the native rush-gradient adaptation for CJK karaoke lyrics. */
+    val cjkKaraokeAnimationEnabled: Boolean = true,
     val navigationCompensationEnabled: Boolean = false,
     val lyricBlurRadiusOffsetPx: Int = 0,
     val usbBitPerfectEnabled: Boolean = false,
@@ -16,9 +19,11 @@ data class ModuleSettings(
     /** Experimental USB Host / UAC direct path. Disabled by default. */
     val usbDirectUacEnabled: Boolean = false,
     val titleCorrectionEnabled: Boolean = false,
-    /** BCP-47 language used for Apple Music Catalog title lookups; AMTool defaults to Turkish. */
-    val titleCorrectionTargetLanguage: String = CatalogLanguagePolicy.DEFAULT_TARGET_LANGUAGE,
+    /** Selected metadata profile; ignored while [titleCorrectionEnabled] is false. */
+    val titleCorrectionMode: TitleCorrectionMode = TitleCorrectionMode.ORIGINAL_HYPER,
     val customLyricsEnabled: Boolean = false,
+    /** Enables background AMLL/Lunabeat/user-repository lyric completion. */
+    val automaticLyricsEnabled: Boolean = true,
     val fontManifest: LyricsFontManifest = LyricsFontManifest.disabled(),
     val customLyricsManifest: CustomLyricsManifest = CustomLyricsManifest.empty(),
     val schemaVersion: Int = ModuleConstants.CONFIG_SCHEMA_VERSION,
@@ -63,9 +68,10 @@ data class CustomLyricsManifest(
 
 object CustomLyricsSources {
     const val MANUAL = "manual"
+    const val AUTO_CACHE = "auto-cache"
     const val AMLL = "amll-ttml-db"
-    const val NETEASE = "netease-yrc"
     const val AM_LYRICS = "am-lyrics"
+    const val LUNABEAT = "lunabeat-ttml-hub"
 }
 
 enum class FeatureState {

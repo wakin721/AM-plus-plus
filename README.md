@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/Zennmn/AM-plus-plus/actions/workflows/build.yml"><img src="https://github.com/Zennmn/AM-plus-plus/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/Zennmn/AM-plus-plus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Zennmn/AM-plus-plus" alt="MIT License"></a>
+  <a href="https://github.com/Zennmn/AM-plus-plus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Zennmn/AM-plus-plus" alt="GNU GPL v3.0"></a>
   <img src="https://img.shields.io/badge/Android-API%2026%2B-3DDC84?logo=android&logoColor=white" alt="Android API 26+">
   <img src="https://img.shields.io/badge/libxposed-API%20102-7F52FF" alt="libxposed API 102">
 </p>
@@ -32,7 +32,6 @@
    - [自定义歌词](#自定义歌词)
    - [歌词字体](#歌词字体)
    - [手机液态玻璃](#手机液态玻璃)
-   - [隐藏启动器图标](#隐藏启动器图标)
 4. [构建技术](#构建技术)
 5. [从源码构建](#从源码构建)
    - [环境](#环境)
@@ -50,7 +49,7 @@
 
 AM++ 是一个通过 libxposed API 102 注入 Apple Music 的增强模块，目标包名为 `com.apple.android.music`。它不替换播放器本身，而是在保留 Apple Music 原有播放流程的基础上，补充平板双栏播放器、双向歌词模糊、自定义歌词注入、歌词字体替换和手机液态玻璃等体验增强。
 
-模块同时提供独立的设置页。设置由 Xposed 框架的 remote preferences 管理；字体和自定义歌词正文使用 remote file 保存，并由 Apple Music 注入进程读取。
+模块把设置页嵌入 Apple Music 自己的设置界面，在 Apple Music 的设置列表中提供“AM++ 模块设置”入口。当前主分支不声明独立的桌面 Activity；首次启动时会从 libxposed remote preferences/remote file 迁移旧配置，之后由 Apple Music 宿主私有目录保存设置和文件。
 
 ## 功能
 
@@ -60,11 +59,10 @@ AM++ 是一个通过 libxposed API 102 注入 Apple Music 的增强模块，目�
 | 平板禁用动态视频 | 开启 | 仅抑制平板横屏下的 Editorial Video，静态预览和普通 Music Video 不受影响。 |
 | 双向歌词模糊 | 开启 | 当前高亮歌词保持清晰，历史歌词和后续歌词按距离逐渐模糊；手动滚动停止约 1 秒后恢复。 |
 | 歌词模糊半径调节 | `0px` | 可在设置中对模糊半径增加或减少 `-10..10px`。 |
-| 自定义歌词注入 | 关闭 | 按 Apple Music ID 替换 TTML，支持手动 TTML、AMLL 和网易云逐字歌词导入。 |
+| 自定义歌词注入 | 关闭 | 按 Apple Music ID 替换 TTML，支持手动 TTML、AMLL、AM-Lyrics 和 Lunabeat 导入。 |
 | 歌词字体替换 | 关闭 | 导入 TTF/OTF 后应用到播放器歌词布局，可恢复原字体；示例使用 MiSans。 |
 | 手机液态玻璃 | 关闭 | 手机底栏和 mini-player 的实时模糊、半透明材质与选中胶囊，目前为 WIP。 |
 | 平板底栏补偿 | 关闭 | 平板底栏显示异常时使用的兼容性选项。 |
-| 隐藏启动器图标 | 显示 | 隐藏后可从 LSPosed 的模块详情重新打开设置页。 |
 
 双向歌词模糊的核心逻辑移植并适配自 [a23bc/amlyricblur](https://github.com/a23bc/amlyricblur)。
 
@@ -72,7 +70,7 @@ AM++ 是一个通过 libxposed API 102 注入 Apple Music 的增强模块，目�
 
 ### 自定义歌词注入
 
-自定义歌词按 Apple Music ID 与歌曲绑定。播放过程中不会自动联网识歌；网络导入只会在设置页中由用户主动点击触发。
+自定义歌词按 Apple Music ID 与歌曲绑定。开启“自动实时补全”后，播放过程中检测到原生歌词缺失、不是逐字时间轴或外语逐字歌词缺少翻译、且没有可用手动歌词时，模块可能请求候选歌词；关闭该开关则不会在播放过程中请求歌词服务。设置页中的手动导入仍由用户主动触发。
 
 <p align="center">
   <img src="docs/images/bf32d15a3519cef0051d8a208b58ab42.jpg" alt="自定义歌词注入示例一" width="48%">
@@ -108,7 +106,7 @@ AM++ 是一个通过 libxposed API 102 注入 Apple Music 的增强模块，目�
 | --- | --- |
 | Android | Android 8.0（API 26）及以上 |
 | Xposed 框架 | 支持 libxposed API 102、remote preferences 和 remote file 的实现 |
-| Apple Music | `6.5.0 (1580)`、`6.5.1 (1583)` |
+| Apple Music | `6.5.0 (1580)`、`6.5.1 (1583)`、`6.5.2 (1586)` |
 | 双向歌词模糊 | Android 12（API 31）及以上 |
 
 - Apple Music 的内部类、方法和资源会随版本混淆或调整，未列出的版本不保证兼容。
@@ -131,9 +129,9 @@ AM++ 是一个通过 libxposed API 102 注入 Apple Music 的增强模块，目�
 2. 在 LSPosed 或兼容的 Xposed 管理器中启用 **AM++**。
 3. 仅将 Apple Music（`com.apple.android.music`）加入作用域。
 4. 强制停止并重新打开 Apple Music。
-5. 打开 AM++ 设置页，确认状态显示已连接 libxposed API 102 后再修改需要 remote preferences 或 remote file 的设置。
+5. 打开 Apple Music → 设置，在原生设置列表中找到“AM++ 模块设置”；确认页面状态显示已连接 libxposed API 102 后再修改设置。
 
-Apple Music 功能修改后都需要重新打开目标应用。隐藏启动器图标只影响 AM++ 的桌面入口，不影响 Apple Music Hook。
+Apple Music 功能修改后都需要强制停止并重新打开目标应用。设置入口属于 Apple Music 页面，不会出现在独立的 AM++ 桌面图标中。
 
 ## 使用
 
@@ -147,7 +145,7 @@ Apple Music 功能修改后都需要重新打开目标应用。隐藏启动器�
 
 1. 进入设置页的“自定义歌词”。
 2. 点击“获取 ID”，从当前正在 Apple Music 播放的歌曲读取 Apple Music ID、标题和艺术家；也可以手动填写 ID。
-3. 选择一种歌词来源：粘贴或导入本地 TTML、按 Apple Music ID 从 AMLL 导入，或输入网易云歌曲 ID 导入逐字 YRC 歌词。
+3. 选择一种歌词来源：粘贴或导入本地 TTML，或按 Apple Music ID 从 AMLL、AM-Lyrics、Lunabeat 导入。
 4. 保存映射并启用对应歌曲。
 5. 强制停止并重新打开 Apple Music，使替换生效。
 
@@ -157,7 +155,9 @@ Apple Music 功能修改后都需要重新打开目标应用。隐藏启动器�
 
 从 AMLL 导入时，如果取回的 TTML 是 AMLL 格式，模块会先自动转换为 Apple Music 格式再填入编辑框。
 
-AMLL 和网易云导入属于用户主动操作，可能需要网络连接；模块不会在播放过程中自动请求歌词服务。
+AMLL、AM-Lyrics 和 Lunabeat 的手动导入属于用户主动操作，可能需要网络连接；自动实时补全开启后，符合上述条件的播放歌曲也可能请求这些歌词服务。
+
+Lunabeat 会缓存 manifest 和歌曲索引，优先使用本地索引；仅当远端 revision 发生变化时重新下载歌曲索引。索引更新失败时继续使用旧缓存。
 
 ### 歌词字体
 
@@ -171,10 +171,6 @@ AMLL 和网易云导入属于用户主动操作，可能需要网络连接；模
 ### 手机液态玻璃
 
 在设置页开启“手机液态玻璃底栏”后重新打开 Apple Music。该功能只在手机路径启用，会修改底部导航栏和 mini-player 的背景材质与选中状态动画，目前仍可能出现视觉闪烁。
-
-### 隐藏启动器图标
-
-在设置页开启“隐藏启动器图标”即可移除桌面入口。隐藏后，从 LSPosed 的 AM++ 模块详情进入设置页。
 
 ## 构建技术
 
@@ -221,7 +217,7 @@ app/src/main/resources/  libxposed 模块元数据
 app/src/test/             JVM 单元测试与结构回归测试
 docs/images/             项目演示图
 docs/adr/                 架构决策记录
-docs/apple-music-target-adaptation.md  Apple Music 版本适配手册
+docs/apple-music-target-adaptation.md  Apple Music 新版本适配手册
 scripts/                  可选的真机回归与录屏分析脚本
 ```
 
@@ -252,10 +248,10 @@ assembleRelease
 
 ## 隐私与权限
 
-- 模块声明了 `INTERNET` 权限，仅用于设置页中用户主动触发的 AMLL 或网易云歌词导入。
-- 模块不会在播放过程中自动联网识别歌曲或请求歌词。
+- 模块声明了 `INTERNET` 权限，用于设置页中用户主动触发的 AMLL、AM-Lyrics 或 Lunabeat 歌词导入，以及用户开启自动实时补全后符合条件的播放期歌词请求。
+- 关闭“自动实时补全”时，模块不会在播放过程中自动请求歌词服务；开启后仅对检测到的原生歌词缺失、非逐字或外语无翻译原生歌词、且没有可用手动歌词的歌曲执行候选查询。
 - 模块不申请存储或通知运行时权限；本地文件通过 Android 文件选择器读取。
-- Apple Music 功能设置保存在 Xposed 框架管理的 remote preferences 中，歌词和字体文件保存在框架提供的 remote file 中。
+- 首次迁移前的配置来源于 Xposed 框架 remote preferences/remote file；嵌入设置启用后，普通设置、歌词索引和字体文件保存在 Apple Music 宿主私有目录中。
 - 模块不包含分析服务。启动器图标状态由 Android PackageManager 本地保存。
 
 ## 联系方式
@@ -265,7 +261,7 @@ assembleRelease
 
 ## 许可证
 
-本项目以 [MIT License](LICENSE) 开源。第三方代码与依赖仍分别遵循其原始许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本项目以 [GNU General Public License v3.0](LICENSE) 开源。第三方代码与依赖仍分别遵循其原始许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 致谢
 

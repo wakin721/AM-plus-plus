@@ -36,8 +36,8 @@ android {
         applicationId = "dev.amenhancer.module"
         minSdk = 26
         targetSdk = 37
-        versionCode = 102
-        versionName = "1.5.1"
+        versionCode = 103
+        versionName = "1.5.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -95,10 +95,10 @@ android {
 
 dependencies {
     compileOnly("io.github.libxposed:api:102.0.0")
-    implementation("io.github.libxposed:service:102.0.0")
+    compileOnly("io.github.libxposed:service:102.0.0")
+    testCompileOnly("io.github.libxposed:service:102.0.0")
     implementation("com.github.Dimezis:BlurView:version-3.2.0")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
-
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -109,6 +109,13 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.5.0-alpha25")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
+    // HLE's exact Apple Music profile resolver uses DexKit only as a
+    // compatibility fallback when a profiled class/member is absent.
+    implementation("org.luckypray:dexkit:2.2.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     testImplementation("junit:junit:4.13.2")
     // org.json is part of the Android runtime but not of the local JVM; the
     // test-only copy keeps the NetEase response parsing unit-testable.

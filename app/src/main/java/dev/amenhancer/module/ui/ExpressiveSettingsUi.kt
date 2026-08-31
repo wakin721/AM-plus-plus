@@ -56,13 +56,11 @@ import dev.amenhancer.module.R
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import dev.amenhancer.module.XposedServiceSnapshot
-import dev.amenhancer.module.config.CatalogLanguagePolicy
 import dev.amenhancer.module.model.ModuleSettings
 
 internal class AmppSettingsActions(
     val saveSettings: (ModuleSettings) -> Unit,
-    val showTargetLanguage: () -> Unit,
-    val refreshLibrary: () -> Unit,
+    val showTitleCorrectionMode: () -> Unit,
     val openCustomLyrics: () -> Unit,
     val chooseFont: () -> Unit,
     val restoreFont: () -> Unit,
@@ -73,7 +71,7 @@ internal class AmppSettingsActions(
     val backToMain: () -> Unit,
     val setCustomLyricsQuery: (String) -> Unit,
     val addCustomLyrics: () -> Unit,
-    val syncCustomLyrics: () -> Unit,
+    val updateCustomLyrics: () -> Unit,
     val backupCustomLyrics: () -> Unit,
     val restoreCustomLyrics: () -> Unit,
     val setCustomLyricsEnabled: (List<Long>, Boolean) -> Unit,
@@ -209,17 +207,10 @@ private fun MainSettingsPage(
                 ) { actions.saveSettings(settings.copy(titleCorrectionEnabled = it)) }
                 GroupDivider()
                 ExpressiveActionRow(
-                    title = "目标语言",
-                    summary = CatalogLanguagePolicy.displayName(settings.titleCorrectionTargetLanguage),
+                    title = "歌曲名修正模式",
+                    summary = settings.titleCorrectionMode.displayName,
                     enabled = writable,
-                    onClick = actions.showTargetLanguage,
-                )
-                GroupDivider()
-                ExpressiveActionRow(
-                    title = "刷新资料库",
-                    summary = "同步歌曲、专辑和歌手信息",
-                    enabled = writable,
-                    onClick = actions.refreshLibrary,
+                    onClick = actions.showTitleCorrectionMode,
                 )
                 GroupDivider()
                 ExpressiveActionRow(
@@ -580,8 +571,8 @@ private fun CustomLyricsPage(
                         FilledTonalButton(
                             modifier = Modifier.weight(1f),
                             enabled = fileWritable,
-                            onClick = actions.syncCustomLyrics,
-                        ) { Text("同步 GitHub") }
+                            onClick = actions.updateCustomLyrics,
+                        ) { Text("更新全部") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         TextButton(

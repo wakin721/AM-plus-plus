@@ -56,11 +56,11 @@ object AppleTtmlTranslationEditor {
 
         val track = buildString {
             append("<translations><translation type=\"subtitle\" xml:lang=\"")
-            append(WordTtmlSerializer.escape(language.trim()))
+            append(escapeXml(language.trim()))
             append("\">")
             allKeys.forEach { key ->
-                append("<text for=\"").append(WordTtmlSerializer.escape(key)).append("\">")
-                append(WordTtmlSerializer.escape(translations[key]?.takeIf { it.isNotBlank() } ?: ABSENT_TEXT))
+                append("<text for=\"").append(escapeXml(key)).append("\">")
+                append(escapeXml(translations[key]?.takeIf { it.isNotBlank() } ?: ABSENT_TEXT))
                 append("</text>")
             }
             append("</translation></translations>")
@@ -79,6 +79,19 @@ object AppleTtmlTranslationEditor {
             ttml.replaceRange(closing.range.first, closing.range.first, container)
         }
         return result.takeIf(TtmlInputPolicy::isAcceptable)
+    }
+
+    private fun escapeXml(value: String): String = buildString(value.length) {
+        value.forEach { character ->
+            when (character) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&apos;")
+                else -> append(character)
+            }
+        }
     }
 
     private fun decodeXml(value: String): String = ENTITY.replace(value) { match ->

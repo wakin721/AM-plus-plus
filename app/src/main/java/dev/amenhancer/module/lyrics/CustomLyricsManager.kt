@@ -169,32 +169,38 @@ internal class CustomLyricsManager(
     }
 
     /**
-     * Synchronizes an enabled GitHub snapshot into the local index. The
-     * transaction owns merge/rollback semantics; this facade only binds it to
-     * the existing remote-file pointer and mutation lock.
+     * Checks remote-backed entries without holding the storage mutation lock,
+     * then publishes only if the index still matches the captured baseline.
      */
-    fun syncFromGitHub(
-        plan: List<CustomLyricsSyncPlanEntry>,
-        loadTtml: (CustomLyricsSyncPlanEntry) -> CustomLyricsSyncLoadResult,
+    fun updateLyrics(
+        sources: CustomLyricsUpdateSources,
         isCancelled: () -> Boolean = { false },
-        onProgress: (CustomLyricsSyncProgress) -> Unit = {},
-    ): CustomLyricsSyncResult = synchronized(mutationLock) {
-        if (!isWritable()) return CustomLyricsSyncResult.Failed("libxposed remote file 服务不可用")
-        val state = configStore.indexState(snapshot)
-        if (!state.canCommit) {
-            return CustomLyricsSyncResult.Failed("歌词索引文件不可读，无法同步")
+        onProgress: (CustomLyricsUpdateProgress) -> Unit = {},
+    ): CustomLyricsUpdateResult {
+        if (!isWritable()) return CustomLyricsUpdateResult.Failed("libxposed remote file 服务不可用")
+        val baseline = synchronized(mutationLock) { configStore.indexState(snapshot) }
+        if (!baseline.canCommit) {
+            return CustomLyricsUpdateResult.Failed("歌词索引文件不可读，无法更新")
         }
-        CustomLyricsSyncTransaction(
+        return CustomLyricsUpdateCoordinator(sources).update(
+            oldManifest = baseline.manifest,
             fileIdFactory = ::newFileId,
             writeRemoteFile = ::writeRemoteFile,
-            publishManifest = { manifest -> commitIndex(state, manifest) },
+            publishManifest = { next ->
+                publishCustomLyricsManifestIfUnchanged(
+                    lock = mutationLock,
+                    expected = baseline,
+                    readCurrent = { configStore.indexState(snapshot) },
+                    publish = { current -> commitIndex(current, next) },
+                )
+            },
             deleteRemoteFile = { fileId ->
                 if (ModuleApplication.isCurrentSnapshot(snapshot)) snapshot.deleteRemoteFile(fileId)
             },
-        ).sync(
-            oldManifest = state.manifest,
-            plan = plan,
-            loadTtml = loadTtml,
+            isBaselineCurrent = {
+                ModuleApplication.isCurrentSnapshot(snapshot) &&
+                    configStore.indexState(snapshot) == baseline
+            },
             isCancelled = isCancelled,
             onProgress = onProgress,
         )

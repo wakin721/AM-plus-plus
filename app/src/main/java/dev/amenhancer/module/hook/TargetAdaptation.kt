@@ -2,7 +2,7 @@ package dev.amenhancer.module.hook
 
 import android.app.Application
 import dev.amenhancer.module.config.TargetConfigClient
-import java.util.concurrent.atomic.AtomicReference
+import dev.amenhancer.module.model.CustomLyricsEntry
 
 /**
  * The complete target-specific seam used by feature hooks.
@@ -12,9 +12,13 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal data class TargetAdaptation(
     val identity: String,
+    val currentSong: CurrentSongIdentityCache = CurrentSongIdentityCache(),
     val dualPane: DualPaneTarget,
     val editorialVideo: EditorialVideoTarget,
     val bidirectionalLyricBlur: BidirectionalLyricBlurTarget,
+    val cjkKaraokeAnimation: CjkKaraokeAnimationTarget = CjkKaraokeAnimationTarget {
+        TargetCapabilityInstall.Degraded("CJK karaoke animation target was not configured")
+    },
     val lyricsTypeface: LyricsTypefaceTarget = LyricsTypefaceTarget {
         TargetCapabilityInstall.Degraded("Lyrics typeface target was not configured")
     },
@@ -24,14 +28,12 @@ internal data class TargetAdaptation(
     val currentSongIdentity: CurrentSongIdentityTarget = CurrentSongIdentityTarget {
         TargetCapabilityInstall.Degraded("Current song identity target was not configured")
     },
-    val titleCorrection: TitleCorrectionTarget = TitleCorrectionTarget {
-        TargetCapabilityInstall.Degraded("Title correction target was not configured")
-    },
+    /** Retained only for compatibility; the former global target is never installed. */
     val catalogLanguage: CatalogLanguageTarget = CatalogLanguageTarget {
-        TargetCapabilityInstall.Degraded("Catalog language target was not configured")
+        TargetCapabilityInstall.Degraded("Catalog language target is intentionally disabled")
     },
-    val libraryRefresh: LibraryRefreshTarget = LibraryRefreshTarget {
-        TargetCapabilityInstall.Degraded("Library refresh target was not configured")
+    val hleMetadata: HleMetadataTarget = HleMetadataTarget {
+        TargetCapabilityInstall.Degraded("HLE metadata target was not configured")
     },
     val usbBitPerfect: UsbBitPerfectTarget = UsbBitPerfectTarget {
         TargetCapabilityInstall.Degraded("USB Bit-Perfect target was not configured")
@@ -42,73 +44,73 @@ internal data class TargetAdaptation(
             config: TargetConfigClient,
             application: Application,
             classLoader: ClassLoader,
-            lyricsTypefaceSession: LyricsTypefaceSession? = null,
+            lyricsTypefaceSession: LyricsTypefaceSession,
+            currentSong: CurrentSongIdentityCache = CurrentSongIdentityCache(),
+            registerCurrentSongResponder: Boolean = true,
         ): TargetAdaptation {
             val build = targetBuild(application)
             val resolver = IndexedTargetSymbolResolver(
                 build = build,
                 source = ApkTargetClassSource(application, classLoader),
             )
-            val currentSong = CurrentSongIdentityCache()
             val settings = config.settings()
-            val catalogLookup = settings.titleCorrectionEnabled
-                .takeIf { it }
-                ?.let { AppleMusicCatalogEntityLookup(resolver, classLoader) }
-            val missCoordinator = AtomicReference<CatalogMissBackfillCoordinator?>()
-            val titleCacheProvider = settings.titleCorrectionEnabled
+            val autoLyricsRuntime = (settings.customLyricsEnabled && settings.automaticLyricsEnabled)
                 .takeIf { it }
                 ?.let {
-                    CatalogTitleCacheProvider {
-                        CatalogTitleCache(
-                            application,
-                            settings.titleCorrectionTargetLanguage,
-                            CatalogTitleMissListener { id -> missCoordinator.get()?.enqueue(id) },
-                            observationScheduler = DefaultCatalogObservationScheduler,
-                        )
-                    }
+                    val suppressedAutoIds = runCatching {
+                        config.customLyricsManifest().entries
+                            .filterNot { entry -> entry.enabled }
+                            .mapTo(mutableSetOf(), CustomLyricsEntry::appleMusicId)
+                    }.getOrDefault(emptySet())
+                    createAutoLyricsRuntime(application, suppressedAutoIds)
                 }
-            if (titleCacheProvider != null && catalogLookup != null) {
-                missCoordinator.set(CatalogMissBackfillCoordinator(
-                    cacheProvider = titleCacheProvider::get,
-                    lookup = CatalogSongLookup { ids -> catalogLookup.lookup("songs", ids) },
-                    logger = ModernXposedRuntime::log,
-                ))
-                missCoordinator.get()?.prewarm()
-            }
             return TargetAdaptation(
                 identity = build.displayName,
-                dualPane = AppleMusicDualPaneTarget(resolver),
+                currentSong = currentSong,
+                dualPane = AppleMusicDualPaneTarget(resolver, build),
                 editorialVideo = AppleMusicEditorialVideoTarget(application, resolver),
                 bidirectionalLyricBlur = AppleMusicBidirectionalLyricBlurTarget(resolver),
+                cjkKaraokeAnimation = AppleMusicCjkKaraokeAnimationTarget(resolver),
                 lyricsTypeface = AppleMusicLyricsTypefaceTarget(
                     symbols = resolver,
-                    session = lyricsTypefaceSession ?: LyricsTypefaceSession(),
+                    session = lyricsTypefaceSession,
                 ),
-                customLyrics = AppleMusicCustomLyricsTarget(config, resolver, currentSong),
+                customLyrics = AppleMusicCustomLyricsTarget(
+                    config = config,
+                    symbols = resolver,
+                    currentSong = currentSong,
+                    autoLyricsRuntime = autoLyricsRuntime,
+                ),
                 currentSongIdentity = AppleMusicCurrentSongIdentityTarget(
                     application,
                     resolver,
                     currentSong,
-                ),
-                titleCorrection = AppleMusicTitleCorrectionTarget(
-                    application,
-                    resolver,
-                    settings.titleCorrectionTargetLanguage,
-                    cacheProvider = titleCacheProvider,
+                    registerCurrentSongResponder,
                 ),
                 catalogLanguage = AppleMusicCatalogLanguageTarget(
-                    resolver,
-                    settings.titleCorrectionTargetLanguage,
-                ),
-                libraryRefresh = AppleMusicLibraryRefreshTarget(
-                    application,
-                    resolver,
-                    classLoader,
-                    settings.titleCorrectionTargetLanguage.takeIf { settings.titleCorrectionEnabled }.orEmpty(),
-                    titleCacheProvider = titleCacheProvider,
-                    catalogLookup = catalogLookup,
+                    symbols = resolver,
+                    rawTargetLanguage = settings.titleCorrectionMode.catalogLanguage.orEmpty(),
                 ),
                 usbBitPerfect = AppleMusicUsbBitPerfectTarget(application),
+                hleMetadata = HleMetadataTarget {
+                    val activeModule = ModernXposedRuntime.activeModule()
+                        ?: return@HleMetadataTarget TargetCapabilityInstall.Degraded(
+                            "Modern Xposed module was not attached",
+                        )
+                    runCatching {
+                        HleMetadataRuntime(
+                            module = activeModule,
+                            application = application,
+                            classLoader = classLoader,
+                            mode = settings.titleCorrectionMode,
+                        ).install()
+                    }.getOrElse { error ->
+                        ModernXposedRuntime.log("HLE metadata runtime install failed", error)
+                        TargetCapabilityInstall.Degraded(
+                            "HLE metadata runtime failed: ${error.message ?: error.javaClass.simpleName}",
+                        )
+                    }
+                },
             )
         }
     }
@@ -126,6 +128,10 @@ internal fun interface BidirectionalLyricBlurTarget {
     fun install(): TargetCapabilityInstall
 }
 
+internal fun interface CjkKaraokeAnimationTarget {
+    fun install(): TargetCapabilityInstall
+}
+
 internal fun interface LyricsTypefaceTarget {
     fun install(): TargetCapabilityInstall
 }
@@ -135,6 +141,10 @@ internal fun interface CustomLyricsTarget {
 }
 
 internal fun interface CurrentSongIdentityTarget {
+    fun install(): TargetCapabilityInstall
+}
+
+internal fun interface HleMetadataTarget {
     fun install(): TargetCapabilityInstall
 }
 

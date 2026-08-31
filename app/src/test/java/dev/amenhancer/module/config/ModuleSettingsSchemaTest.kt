@@ -17,6 +17,7 @@ class ModuleSettingsSchemaTest {
                 disableEditorialVideoOnTablet = true,
                 phoneLiquidGlassEnabled = false,
                 futureBlurEnabled = true,
+                cjkKaraokeAnimationEnabled = true,
                 navigationCompensationEnabled = false,
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
@@ -48,14 +49,16 @@ class ModuleSettingsSchemaTest {
                 "disable_editorial_video_on_tablet" to false,
                 "phone_liquid_glass_enabled" to true,
                 "future_blur_enabled" to false,
+                "cjk_karaoke_animation_enabled" to true,
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 6,
                 "usb_bit_perfect_enabled" to false,
                 "usb_exclusive_aaudio_enabled" to false,
                 "usb_direct_uac_enabled" to false,
                 "title_correction_enabled" to false,
-                "title_correction_target_language" to "tr-TR",
+                "title_correction_mode" to "original_hyper",
                 "custom_lyrics_enabled" to false,
+                "automatic_lyrics_enabled" to true,
                 "lyrics_font_enabled" to false,
                 "lyrics_font_file_id" to "",
                 "lyrics_font_display_name" to "",
@@ -84,14 +87,16 @@ class ModuleSettingsSchemaTest {
                 "disable_editorial_video_on_tablet" to true,
                 "phone_liquid_glass_enabled" to true,
                 "future_blur_enabled" to true,
+                "cjk_karaoke_animation_enabled" to true,
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 0,
                 "usb_bit_perfect_enabled" to false,
                 "usb_exclusive_aaudio_enabled" to false,
                 "usb_direct_uac_enabled" to false,
                 "title_correction_enabled" to false,
-                "title_correction_target_language" to "tr-TR",
+                "title_correction_mode" to "original_hyper",
                 "custom_lyrics_enabled" to false,
+                "automatic_lyrics_enabled" to true,
                 "lyrics_font_enabled" to false,
                 "lyrics_font_file_id" to "",
                 "lyrics_font_display_name" to "",
@@ -144,6 +149,7 @@ class ModuleSettingsSchemaTest {
                 disableEditorialVideoOnTablet = false,
                 phoneLiquidGlassEnabled = false,
                 futureBlurEnabled = false,
+                cjkKaraokeAnimationEnabled = true,
                 navigationCompensationEnabled = false,
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
@@ -218,6 +224,22 @@ class ModuleSettingsSchemaTest {
     }
 
     @Test
+    fun `automatic lyrics defaults to enabled and round trips`() {
+        assertEquals(
+            true,
+            ModuleSettingsSchema.decode(emptyMap<String, Any?>()).automaticLyricsEnabled,
+        )
+        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
+            ModuleSettings(automaticLyricsEnabled = false),
+        )
+        assertEquals(false, encoded["automatic_lyrics_enabled"])
+        assertEquals(
+            false,
+            ModuleSettingsSchema.decode(encoded).automaticLyricsEnabled,
+        )
+    }
+
+    @Test
     fun `title correction defaults off and round trips`() {
         assertEquals(false, ModuleSettingsSchema.decode(emptyMap<String, Any?>()).titleCorrectionEnabled)
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings(titleCorrectionEnabled = true))
@@ -226,14 +248,51 @@ class ModuleSettingsSchemaTest {
     }
 
     @Test
-    fun `target language normalizes and invalid values fall back to automatic`() {
-        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings(titleCorrectionTargetLanguage = "tr_TR"))
-        assertEquals("tr-TR", encoded["title_correction_target_language"])
-        assertEquals("tr-TR", ModuleSettingsSchema.decode(encoded).titleCorrectionTargetLanguage)
+    fun `title correction mode defaults to original and round trips`() {
         assertEquals(
-            "",
-            ModuleSettingsSchema.decode(mapOf("title_correction_target_language" to "not a language")).titleCorrectionTargetLanguage,
+            TitleCorrectionMode.ORIGINAL_HYPER,
+            ModuleSettingsSchema.decode(emptyMap<String, Any?>()).titleCorrectionMode,
         )
+
+        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
+            ModuleSettings(titleCorrectionMode = TitleCorrectionMode.JAPAN),
+        )
+        assertEquals("japan", encoded["title_correction_mode"])
+        assertEquals(TitleCorrectionMode.JAPAN, ModuleSettingsSchema.decode(encoded).titleCorrectionMode)
+    }
+
+    @Test
+    fun `schema v11 target language migrates to the selected profile`() {
+        val upgraded = ModuleSettingsSchema.upgrade(
+            storedValues = mapOf(
+                "schema_version" to 11,
+                "title_correction_enabled" to true,
+                "title_correction_target_language" to "ja_jp",
+            ),
+            legacyValues = emptyMap<String, Any?>(),
+        )
+
+        assertEquals("japan", upgraded?.get("title_correction_mode"))
+        assertFalse(upgraded?.containsKey("title_correction_target_language") == true)
+        assertEquals(ModuleConstants.CONFIG_SCHEMA_VERSION, upgraded?.get("schema_version"))
+    }
+
+    @Test
+    fun `legacy mainland target maps to mainland profile and unsupported target maps to original`() {
+        val mainland = ModuleSettingsSchema.decode(
+            mapOf(
+                "title_correction_enabled" to true,
+                "title_correction_target_language" to "zh-CN",
+            ),
+        )
+        val unsupported = ModuleSettingsSchema.decode(
+            mapOf(
+                "title_correction_enabled" to true,
+                "title_correction_target_language" to "ko-KR",
+            ),
+        )
+        assertEquals(TitleCorrectionMode.MAINLAND_CHINA, mainland.titleCorrectionMode)
+        assertEquals(TitleCorrectionMode.ORIGINAL_HYPER, unsupported.titleCorrectionMode)
     }
 
     @Test
@@ -242,6 +301,29 @@ class ModuleSettingsSchemaTest {
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings(navigationCompensationEnabled = true))
         assertEquals(true, encoded["navigation_compensation_enabled"])
         assertEquals(true, ModuleSettingsSchema.decode(encoded).navigationCompensationEnabled)
+    }
+
+    @Test
+    fun `cjk karaoke animation defaults on and round trips`() {
+        assertEquals(
+            true,
+            ModuleSettingsSchema.decode(emptyMap<String, Any?>()).cjkKaraokeAnimationEnabled,
+        )
+        assertEquals(
+            true,
+            ModuleSettingsSchema.decode(
+                mapOf("cjk_karaoke_animation_enabled" to "not-a-boolean"),
+            ).cjkKaraokeAnimationEnabled,
+        )
+
+        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
+            ModuleSettings(cjkKaraokeAnimationEnabled = false),
+        )
+        assertEquals(false, encoded["cjk_karaoke_animation_enabled"])
+        assertEquals(
+            false,
+            ModuleSettingsSchema.decode(encoded).cjkKaraokeAnimationEnabled,
+        )
     }
 
     @Test
@@ -300,17 +382,19 @@ class ModuleSettingsSchemaTest {
         val decoded = ModuleSettingsSchema.decode(
             mapOf("modify_locale" to true, "modify_locale_target_tag" to "zh-CN"),
         )
-        assertEquals(false, decoded.titleCorrectionEnabled)
-        assertEquals("tr-TR", decoded.titleCorrectionTargetLanguage)
+        assertFalse(decoded.titleCorrectionEnabled)
+
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(decoded)
         assertFalse(encoded.containsKey("modify_locale"))
         assertFalse(encoded.containsKey("modify_locale_target_tag"))
+        assertEquals("original_hyper", encoded["title_correction_mode"])
+
         val upgraded = ModuleSettingsSchema.upgrade(
             storedValues = mapOf("modify_locale" to true, "modify_locale_target_tag" to "zh-CN"),
             legacyValues = emptyMap<String, Any?>(),
         )
         assertFalse(upgraded!!.containsKey("modify_locale"))
         assertFalse(upgraded.containsKey("modify_locale_target_tag"))
-        assertEquals("tr-TR", upgraded["title_correction_target_language"])
+        assertEquals("original_hyper", upgraded["title_correction_mode"])
     }
 }
