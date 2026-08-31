@@ -162,4 +162,33 @@ class UsbAudioDescriptorParserTest {
             ),
         )
     }
+
+    @Test
+    fun `explains missing explicit feedback separately from format mismatch`() {
+        val asyncWithoutFeedback = UsbAudioDescriptorParser.parse(
+            bytes(
+                9, 0x04, 1, 1, 1, 0x01, 0x02, 0x00, 0,
+                7, 0x24, 0x01, 1, 1, 0x01, 0x00,
+                11, 0x24, 0x02, 0x01, 2, 3, 24, 1, 0x80, 0xbb, 0x00,
+                9, 0x05, 0x01, 0x05, 0x20, 0x01, 1, 0, 0,
+            ),
+        )
+
+        assertEquals(
+            "Asynchronous UAC output has no standard explicit feedback endpoint",
+            UsbAudioDescriptorParser.selectionFailureReason(
+                asyncWithoutFeedback,
+                sampleRate = 48_000,
+                channels = 2,
+            ),
+        )
+        assertEquals(
+            "No UAC1/UAC2 isochronous OUT alternate setting matches 96000Hz/2ch",
+            UsbAudioDescriptorParser.selectionFailureReason(
+                asyncWithoutFeedback,
+                sampleRate = 96_000,
+                channels = 2,
+            ),
+        )
+    }
 }

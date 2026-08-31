@@ -57,4 +57,15 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
         assertTrue(manifest.contains(".usb.UsbDirectPermissionActivity"))
         assertTrue(manifest.contains("android.hardware.usb.action.USB_DEVICE_ATTACHED"))
     }
+
+    @Test
+    fun `USB Direct copy advertises explicit feedback and preserves implicit fallback`() {
+        val activity = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
+        )
+
+        assertTrue(activity.contains("支持 UAC1/UAC2 标准显式 feedback"))
+        assertTrue(activity.contains("隐式 feedback/厂商私有格式仍会回退"))
+        assertFalse(activity.contains("第一版暂不支持异步 feedback DAC"))
+    }
 }
