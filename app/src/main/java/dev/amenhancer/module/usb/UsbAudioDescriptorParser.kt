@@ -19,6 +19,12 @@ internal object UsbAudioDescriptorParser {
     private const val AC_INPUT_TERMINAL = 0x02
     private const val AC_OUTPUT_TERMINAL = 0x03
 
+    private const val ENDPOINT_TRANSFER_MASK = 0x03
+    private const val ENDPOINT_ISOCHRONOUS = 0x01
+    private const val ENDPOINT_USAGE_MASK = 0x30
+    private const val ENDPOINT_USAGE_DATA = 0x00
+    private const val ENDPOINT_USAGE_FEEDBACK = 0x10
+
     const val SYNC_NONE = 0
     const val SYNC_ASYNCHRONOUS = 1
     const val SYNC_ADAPTIVE = 2
@@ -38,11 +44,18 @@ internal object UsbAudioDescriptorParser {
         val maxPacketSize: Int,
         val interval: Int,
         val synchronizationType: Int,
+        val feedbackEndpointAddress: Int,
+        val feedbackMaxPacketSize: Int,
+        val feedbackInterval: Int,
         val audioControlInterface: Int,
         val clockSourceId: Int,
     ) {
         val isUac2: Boolean get() = protocol >= 0x20
         val requiresExplicitFeedback: Boolean get() = synchronizationType == SYNC_ASYNCHRONOUS
+        val hasExplicitFeedback: Boolean
+            get() = feedbackEndpointAddress and 0x80 != 0 &&
+                feedbackMaxPacketSize in 3..4 &&
+                feedbackInterval > 0
 
         fun supportsSampleRate(sampleRate: Int): Boolean {
             if (isUac2) return true
@@ -58,6 +71,20 @@ internal object UsbAudioDescriptorParser {
                 supportsSampleRate(sampleRate)
     }
 
+    private data class EndpointDescriptor(
+        val address: Int,
+        val attributes: Int,
+        val maxPacketSize: Int,
+        val interval: Int,
+        val synchAddress: Int,
+    ) {
+        val isIsochronous: Boolean
+            get() = attributes and ENDPOINT_TRANSFER_MASK == ENDPOINT_ISOCHRONOUS
+        val isIn: Boolean get() = address and 0x80 != 0
+        val usage: Int get() = attributes and ENDPOINT_USAGE_MASK
+        val synchronizationType: Int get() = (attributes ushr 2) and 0x03
+    }
+
     private data class AltBuilder(
         val interfaceNumber: Int,
         val alternateSetting: Int,
@@ -69,10 +96,7 @@ internal object UsbAudioDescriptorParser {
         val sampleRates: MutableSet<Int> = linkedSetOf(),
         var minSampleRate: Int? = null,
         var maxSampleRate: Int? = null,
-        var endpointAddress: Int = 0,
-        var maxPacketSize: Int = 0,
-        var interval: Int = 0,
-        var synchronizationType: Int = SYNC_NONE,
+        val endpoints: MutableList<EndpointDescriptor> = mutableListOf(),
     )
 
     fun parse(raw: ByteArray): List<StreamingAlt> {
@@ -178,19 +202,16 @@ internal object UsbAudioDescriptorParser {
                 DESC_ENDPOINT -> {
                     val builder = currentBuilder
                     if (builder != null && length >= 7) {
-                        val address = raw.u8(offset + 2)
-                        val attributes = raw.u8(offset + 3)
-                        val transferType = attributes and 0x03
-                        val isOut = address and 0x80 == 0
-                        if (transferType == 0x01 && isOut) {
-                            val rawMaxPacket = raw.u16le(offset + 4)
-                            val basePacket = rawMaxPacket and 0x07ff
-                            val transactions = 1 + ((rawMaxPacket ushr 11) and 0x03)
-                            builder.endpointAddress = address
-                            builder.maxPacketSize = basePacket * transactions
-                            builder.interval = raw.u8(offset + 6).coerceAtLeast(1)
-                            builder.synchronizationType = (attributes ushr 2) and 0x03
-                        }
+                        val rawMaxPacket = raw.u16le(offset + 4)
+                        val basePacket = rawMaxPacket and 0x07ff
+                        val transactions = 1 + ((rawMaxPacket ushr 11) and 0x03)
+                        builder.endpoints += EndpointDescriptor(
+                            address = raw.u8(offset + 2),
+                            attributes = raw.u8(offset + 3),
+                            maxPacketSize = basePacket * transactions,
+                            interval = raw.u8(offset + 6).coerceAtLeast(1),
+                            synchAddress = if (length >= 9) raw.u8(offset + 8) else 0,
+                        )
                     }
                 }
             }
@@ -198,9 +219,41 @@ internal object UsbAudioDescriptorParser {
         }
 
         return builders.values.mapNotNull { builder ->
+            val dataEndpoint = builder.endpoints
+                .filter { endpoint ->
+                    endpoint.isIsochronous &&
+                        !endpoint.isIn &&
+                        endpoint.usage == ENDPOINT_USAGE_DATA
+                }
+                .singleOrNull()
+                ?: return@mapNotNull null
+
+            val feedbackEndpoint = if (dataEndpoint.synchronizationType == SYNC_ASYNCHRONOUS) {
+                if (builder.protocol >= 0x20) {
+                    builder.endpoints
+                        .filter { endpoint ->
+                            endpoint.isIsochronous &&
+                                endpoint.isIn &&
+                                endpoint.usage == ENDPOINT_USAGE_FEEDBACK
+                        }
+                        .singleOrNull()
+                } else {
+                    builder.endpoints
+                        .filter { endpoint ->
+                            endpoint.isIsochronous &&
+                                endpoint.isIn &&
+                                dataEndpoint.synchAddress != 0 &&
+                                endpoint.address == dataEndpoint.synchAddress
+                        }
+                        .singleOrNull()
+                }
+            } else {
+                null
+            }
+
             if (
-                builder.endpointAddress == 0 ||
-                builder.maxPacketSize <= 0 ||
+                dataEndpoint.address == 0 ||
+                dataEndpoint.maxPacketSize <= 0 ||
                 builder.subslotBytes !in 2..4 ||
                 builder.bitResolution !in 8..32
             ) {
@@ -217,10 +270,13 @@ internal object UsbAudioDescriptorParser {
                 sampleRates = builder.sampleRates.toSet(),
                 minSampleRate = builder.minSampleRate,
                 maxSampleRate = builder.maxSampleRate,
-                endpointAddress = builder.endpointAddress,
-                maxPacketSize = builder.maxPacketSize,
-                interval = builder.interval,
-                synchronizationType = builder.synchronizationType,
+                endpointAddress = dataEndpoint.address,
+                maxPacketSize = dataEndpoint.maxPacketSize,
+                interval = dataEndpoint.interval,
+                synchronizationType = dataEndpoint.synchronizationType,
+                feedbackEndpointAddress = feedbackEndpoint?.address ?: 0,
+                feedbackMaxPacketSize = feedbackEndpoint?.maxPacketSize ?: 0,
+                feedbackInterval = feedbackEndpoint?.interval ?: 0,
                 audioControlInterface = clock?.first ?: -1,
                 clockSourceId = clock?.second ?: 0,
             )
