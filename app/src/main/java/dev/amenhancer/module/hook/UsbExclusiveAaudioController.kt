@@ -46,6 +46,7 @@ internal object UsbExclusiveAaudioController {
             failedTrack = null
             lastFailure = null
         }
+        UsbExclusiveSystemVolumeObserver.syncPolling()
     }
 
     fun isEnabled(): Boolean = enabled.get()

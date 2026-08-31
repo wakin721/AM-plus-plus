@@ -52,6 +52,7 @@ internal object UsbDirectUacController {
             lastFailure = null
             applicationContext = null
         }
+        UsbExclusiveSystemVolumeObserver.syncPolling()
     }
 
     fun isEnabled(): Boolean = enabled.get()
@@ -94,12 +95,12 @@ internal object UsbDirectUacController {
         val written = when (val data = args.firstOrNull()) {
             is FloatArray -> {
                 if (track.format.encoding != AudioFormat.ENCODING_PCM_FLOAT) {
-                    return failWrite(track, "FloatArray write 与 AudioTrack encoding 不一致")
+                    return failWrite(track, active, "FloatArray write 与 AudioTrack encoding 不一致")
                 }
                 val offset = args.getOrNull(1) as? Int
-                    ?: return failWrite(track, "FloatArray write 缺少 offset")
+                    ?: return failWrite(track, active, "FloatArray write 缺少 offset")
                 val size = args.getOrNull(2) as? Int
-                    ?: return failWrite(track, "FloatArray write 缺少 size")
+                    ?: return failWrite(track, active, "FloatArray write 缺少 size")
                 UsbDirectUacBridge.writeFloats(
                     active.handle,
                     data,
@@ -113,12 +114,12 @@ internal object UsbDirectUacController {
 
             is ShortArray -> {
                 if (track.format.encoding != AudioFormat.ENCODING_PCM_16BIT) {
-                    return failWrite(track, "ShortArray write 与 AudioTrack encoding 不一致")
+                    return failWrite(track, active, "ShortArray write 与 AudioTrack encoding 不一致")
                 }
                 val offset = args.getOrNull(1) as? Int
-                    ?: return failWrite(track, "ShortArray write 缺少 offset")
+                    ?: return failWrite(track, active, "ShortArray write 缺少 offset")
                 val size = args.getOrNull(2) as? Int
-                    ?: return failWrite(track, "ShortArray write 缺少 size")
+                    ?: return failWrite(track, active, "ShortArray write 缺少 size")
                 UsbDirectUacBridge.writeShorts(
                     active.handle,
                     data,
@@ -132,9 +133,9 @@ internal object UsbDirectUacController {
 
             is ByteArray -> {
                 val offset = args.getOrNull(1) as? Int
-                    ?: return failWrite(track, "ByteArray write 缺少 offset")
+                    ?: return failWrite(track, active, "ByteArray write 缺少 offset")
                 val size = args.getOrNull(2) as? Int
-                    ?: return failWrite(track, "ByteArray write 缺少 size")
+                    ?: return failWrite(track, active, "ByteArray write 缺少 size")
                 UsbDirectUacBridge.writeBytes(
                     active.handle,
                     data,
@@ -149,12 +150,17 @@ internal object UsbDirectUacController {
             is ByteBuffer -> writeByteBuffer(active, track, data, args, gains)
             else -> return failWrite(
                 track,
+                active,
                 "Apple Music 切换到当前 USB Direct 原型无法接管的 AudioTrack.write 重载",
             )
         }
 
         if (written < 0) {
-            return failWrite(track, UsbDirectUacBridge.lastError("USB isochronous PCM 写入失败"))
+            return failWrite(
+                track,
+                active,
+                UsbDirectUacBridge.lastError("USB isochronous PCM 写入失败"),
+            )
         }
         if (written > 0) {
             synchronized(lock) {
@@ -267,13 +273,13 @@ internal object UsbDirectUacController {
     fun onTransportControl(context: Context, track: AudioTrack, operation: String) {
         if (isInternalTransition()) return
         val ownsTrack = synchronized(lock) {
-            session?.track?.get() === track || pendingTrack?.get() === track
+            val ownsSession = session?.track?.get() === track
+            val ownsPending = pendingTrack?.get() === track
+            if (ownsSession) closeSessionLocked()
+            if (ownsPending) pendingTrack = null
+            ownsSession || ownsPending
         }
-        if (ownsTrack) {
-            synchronized(lock) { closeSessionLocked() }
-            UsbDirectDeviceClient.release(context)
-            pendingTrack = null
-        }
+        if (ownsTrack) UsbDirectDeviceClient.release(context)
         if (operation == "pause" || operation == "stop" || operation == "flush") {
             if (failedTrack?.get() === track) {
                 failedTrack = null
@@ -429,14 +435,19 @@ internal object UsbDirectUacController {
     }
 
     /** Return null after restoring AudioTrack so the current write can fail-open. */
-    private fun failWrite(track: AudioTrack, reason: String): Int? {
+    private fun failWrite(track: AudioTrack, expectedSession: Session, reason: String): Int? {
         val context = synchronized(lock) {
-            val active = session?.takeIf { it.track.get() === track }
-            val savedContext = active?.context ?: applicationContext
+            val active = session?.takeIf {
+                it === expectedSession && it.track.get() === track
+            }
+            val savedContext = active?.context
             if (active != null) closeSessionLocked()
             savedContext
         }
-        if (context != null) UsbDirectDeviceClient.release(context)
+        val closedOwnedSession = context != null
+        if (!UsbDirectWriteFailurePolicy.shouldResumeOriginalTrack(closedOwnedSession)) return null
+        val recoveryContext = context ?: return null
+        UsbDirectDeviceClient.release(recoveryContext)
         markFailure(track, reason, classifyFailure(reason))
         internalTransition.set(true)
         try {

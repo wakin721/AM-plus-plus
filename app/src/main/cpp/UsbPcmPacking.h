@@ -14,4 +14,15 @@ constexpr uint64_t leftJustifiedSampleBits(
     return (static_cast<uint64_t>(sample) & sampleMask) << paddingBits;
 }
 
+constexpr uint8_t littleEndianSampleByte(
+    int64_t sample,
+    int subslotBytes,
+    int bitResolution,
+    int byteIndex
+) {
+    return static_cast<uint8_t>(
+        (leftJustifiedSampleBits(sample, subslotBytes, bitResolution) >> (byteIndex * 8)) & 0xffu
+    );
+}
+
 }  // namespace usb_pcm

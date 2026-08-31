@@ -138,6 +138,8 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(controller.contains("UsbExclusiveVolumePolicy.streamGain"))
         assertTrue(controller.contains("streamGainCache.refresh"))
         assertTrue(controller.contains("streamGainCache.effectiveGain"))
+        assertTrue(controller.contains("it === expectedSession"))
+        assertTrue(controller.contains("shouldResumeOriginalTrack(closedOwnedSession)"))
         val hotPath = controller.substringAfter("private fun effectiveGains")
             .substringBefore("private fun")
         assertFalse(hotPath.contains("getStreamVolume"))

@@ -189,6 +189,9 @@ internal object UsbExclusiveSystemVolumeObserver {
     private const val VOLUME_POLL_INTERVAL_MILLIS = 2_000L
     private val registered = AtomicBoolean(false)
     private val polling = AtomicBoolean(false)
+    @Volatile private var pollingApplication: Application? = null
+    @Volatile private var pollHandler: Handler? = null
+    @Volatile private var pollTask: Runnable? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -219,7 +222,18 @@ internal object UsbExclusiveSystemVolumeObserver {
                 )
             }
         }
-        scheduleVolumePolling(application)
+        syncPolling(application)
+    }
+
+    fun syncPolling(application: Application? = null) {
+        if (application != null) pollingApplication = application
+        val shouldPoll = UsbDirectUacController.isEnabled() ||
+            UsbExclusiveAaudioController.isEnabled()
+        if (!shouldPoll) {
+            stopVolumePolling()
+            return
+        }
+        pollingApplication?.let(::scheduleVolumePolling)
     }
 
     private fun scheduleVolumePolling(application: Application) {
@@ -231,16 +245,28 @@ internal object UsbExclusiveSystemVolumeObserver {
         val handler = Handler(application.mainLooper)
         val poll = object : Runnable {
             override fun run() {
+                if (!polling.get()) return
                 runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
                     .getOrNull()
                     ?.let { index ->
                         UsbDirectUacController.onSystemMediaVolumeChanged(index)
                         UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)
                     }
-                handler.postDelayed(this, VOLUME_POLL_INTERVAL_MILLIS)
+                if (polling.get()) handler.postDelayed(this, VOLUME_POLL_INTERVAL_MILLIS)
             }
         }
+        pollHandler = handler
+        pollTask = poll
         handler.post(poll)
+    }
+
+    private fun stopVolumePolling() {
+        polling.set(false)
+        val handler = pollHandler
+        val task = pollTask
+        if (handler != null && task != null) handler.removeCallbacks(task)
+        pollHandler = null
+        pollTask = null
     }
 }
 

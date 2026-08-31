@@ -324,13 +324,13 @@ void packLittleEndian(
     int bitResolution,
     uint8_t* destination
 ) {
-    const uint64_t bits = usb_pcm::leftJustifiedSampleBits(
-        sample,
-        subslotBytes,
-        bitResolution
-    );
     for (int byte = 0; byte < subslotBytes; ++byte) {
-        destination[byte] = static_cast<uint8_t>((bits >> (byte * 8)) & 0xffu);
+        destination[byte] = usb_pcm::littleEndianSampleByte(
+            sample,
+            subslotBytes,
+            bitResolution,
+            byte
+        );
     }
 }
 
