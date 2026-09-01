@@ -21,6 +21,9 @@ class UsbDirectUacStructuralRegressionTest {
         val broker = projectFile(
             "app/src/main/java/dev/amenhancer/module/usb/UsbDirectDeviceBrokerService.kt",
         )
+        val sampleRateControl = projectFile(
+            "app/src/main/java/dev/amenhancer/module/usb/UsbUacSampleRateControl.kt",
+        )
 
         assertTrue(manifest.contains("android.hardware.usb.host"))
         assertTrue(manifest.contains("android.hardware.usb.action.USB_DEVICE_ATTACHED"))
@@ -36,11 +39,13 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(broker.contains("connection.claimInterface(usbInterface, true)"))
         assertTrue(broker.contains("connection.setInterface(usbInterface)"))
         assertTrue(broker.contains("ParcelFileDescriptor.fromFd(connection.fileDescriptor)"))
-        assertTrue(broker.contains("USB_RECIPIENT_INTERFACE = 0x01"))
+        assertTrue(sampleRateControl.contains("USB_RECIPIENT_INTERFACE = 0x01"))
         assertTrue(broker.contains("USB_RECIPIENT_ENDPOINT = 0x02"))
-        assertTrue(broker.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE"))
+        assertTrue(broker.contains("UsbUacSampleRateControl.configureUac2"))
+        assertTrue(sampleRateControl.contains("UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE"))
+        assertTrue(sampleRateControl.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE"))
         assertTrue(broker.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_ENDPOINT"))
-        assertFalse(broker.contains("UsbConstants.USB_RECIP_INTERFACE"))
+        assertFalse(sampleRateControl.contains("UsbConstants.USB_RECIP_INTERFACE"))
         assertFalse(broker.contains("UsbConstants.USB_RECIP_ENDPOINT"))
     }
 

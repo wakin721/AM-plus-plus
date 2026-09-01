@@ -186,22 +186,12 @@ class UsbDirectDeviceBrokerService : Service() {
         sampleRate: Int,
     ): Boolean {
         return if (alternative.isUac2) {
-            if (alternative.clockSourceId <= 0 || alternative.audioControlInterface < 0) return false
-            val payload = byteArrayOf(
-                (sampleRate and 0xff).toByte(),
-                ((sampleRate ushr 8) and 0xff).toByte(),
-                ((sampleRate ushr 16) and 0xff).toByte(),
-                ((sampleRate ushr 24) and 0xff).toByte(),
+            UsbUacSampleRateControl.configureUac2(
+                sampleRate = sampleRate,
+                clockSourceId = alternative.clockSourceId,
+                audioControlInterface = alternative.audioControlInterface,
+                controlTransfer = UsbControlTransfer(connection::controlTransfer),
             )
-            connection.controlTransfer(
-                UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE,
-                UAC_CUR,
-                SAMPLING_FREQ_CONTROL shl 8,
-                (alternative.clockSourceId shl 8) or (alternative.audioControlInterface and 0xff),
-                payload,
-                payload.size,
-                CONTROL_TIMEOUT_MS,
-            ) == payload.size
         } else {
             val payload = byteArrayOf(
                 (sampleRate and 0xff).toByte(),
@@ -284,7 +274,6 @@ class UsbDirectDeviceBrokerService : Service() {
         private const val CONTROL_TIMEOUT_MS = 1000
         private const val UAC_CUR = 0x01
         private const val SAMPLING_FREQ_CONTROL = 0x01
-        private const val USB_RECIPIENT_INTERFACE = 0x01
         private const val USB_RECIPIENT_ENDPOINT = 0x02
     }
 }
