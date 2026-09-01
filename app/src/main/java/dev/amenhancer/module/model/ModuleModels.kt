@@ -14,8 +14,6 @@ data class ModuleSettings(
     val navigationCompensationEnabled: Boolean = false,
     val lyricBlurRadiusOffsetPx: Int = 0,
     val usbBitPerfectEnabled: Boolean = false,
-    /** Experimental AAudio takeover layered on top of the USB audio feature. */
-    val usbExclusiveAaudioEnabled: Boolean = false,
     /** Experimental USB Host / UAC direct path. Disabled by default. */
     val usbDirectUacEnabled: Boolean = false,
     val titleCorrectionEnabled: Boolean = false,

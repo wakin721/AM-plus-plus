@@ -256,13 +256,31 @@ class HookEntry : XposedModule() {
     private fun migrateRemoteConfiguration(
         storage: HostPrivateEmbeddedStorage,
     ): EmbeddedConfigurationMigrationResult? {
-        if (EmbeddedConfigurationMigration.destinationAlreadyInitialized(storage)) return null
         if (frameworkProperties.and(XposedService.PROP_CAP_REMOTE) == 0L) return null
+        val destinationInitialized =
+            EmbeddedConfigurationMigration.destinationAlreadyInitialized(storage)
         val remotePreferences = runCatching {
             getRemotePreferences(ModuleConstants.REMOTE_PREFERENCES_GROUP)
         }.getOrElse { error ->
-            ModernXposedRuntime.log("embedded remote configuration unavailable; migration deferred", error)
+            if (destinationInitialized) {
+                ModernXposedRuntime.log(
+                    "embedded USB Direct settings sync unavailable; keeping host settings",
+                    error,
+                )
+                return null
+            }
+            ModernXposedRuntime.log(
+                "embedded remote configuration unavailable; migration deferred",
+                error,
+            )
             return EmbeddedConfigurationMigrationResult.Failed("无法读取远程配置")
+        }
+
+        if (destinationInitialized) {
+            if (!EmbeddedConfigurationMigration.syncUsbDirectSettings(remotePreferences, storage)) {
+                ModernXposedRuntime.log("embedded USB Direct settings sync failed open")
+            }
+            return null
         }
 
         val result = runCatching {

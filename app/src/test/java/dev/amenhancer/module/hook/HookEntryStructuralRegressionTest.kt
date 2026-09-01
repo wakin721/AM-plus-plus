@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,6 +69,23 @@ class HookEntryStructuralRegressionTest {
         assertTrue(afterHook.contains("val session = embeddedSession ?: return"))
         assertTrue(!afterHook.contains("bootstrap.bind(build, session)"))
         assertTrue(!afterHook.contains("TargetConfigClient(bootstrap.reader)"))
+    }
+
+    @Test
+    fun `initialized host storage still receives standalone USB Direct settings`() {
+        val source = projectFile("app/src/main/java/dev/amenhancer/module/hook/HookEntry.kt")
+        val migration = source.substringAfter("private fun migrateRemoteConfiguration")
+            .substringBefore("private fun installSettingsFragmentHook")
+
+        assertTrue(migration.contains("getRemotePreferences"))
+        assertTrue(migration.contains("val destinationInitialized"))
+        assertTrue(migration.contains("destinationAlreadyInitialized(storage)"))
+        assertTrue(migration.contains("syncUsbDirectSettings(remotePreferences, storage)"))
+        assertTrue(migration.contains("if (destinationInitialized)"))
+        assertTrue(migration.contains("keeping host settings"))
+        assertFalse(migration.contains(
+            "if (EmbeddedConfigurationMigration.destinationAlreadyInitialized(storage)) return null",
+        ))
     }
 
     @Test

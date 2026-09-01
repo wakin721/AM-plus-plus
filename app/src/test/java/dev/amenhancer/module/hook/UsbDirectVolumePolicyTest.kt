@@ -3,37 +3,37 @@ package dev.amenhancer.module.hook
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class UsbExclusiveVolumePolicyTest {
+class UsbDirectVolumePolicyTest {
     @Test
     fun `maximum media volume preserves full-scale PCM`() {
-        assertEquals(1f, UsbExclusiveVolumePolicy.streamGain(15, 15, false, 0f), 0f)
+        assertEquals(1f, UsbDirectVolumePolicy.streamGain(15, 15, false, 0f), 0f)
     }
 
     @Test
     fun `mute and zero volume silence exclusive PCM`() {
-        assertEquals(0f, UsbExclusiveVolumePolicy.streamGain(10, 15, true, -4f), 0f)
-        assertEquals(0f, UsbExclusiveVolumePolicy.streamGain(0, 15, false, Float.NEGATIVE_INFINITY), 0f)
+        assertEquals(0f, UsbDirectVolumePolicy.streamGain(10, 15, true, -4f), 0f)
+        assertEquals(0f, UsbDirectVolumePolicy.streamGain(0, 15, false, Float.NEGATIVE_INFINITY), 0f)
     }
 
     @Test
     fun `android decibel curve becomes linear PCM gain`() {
-        assertEquals(0.1f, UsbExclusiveVolumePolicy.streamGain(5, 15, false, -20f), 0.0001f)
+        assertEquals(0.1f, UsbDirectVolumePolicy.streamGain(5, 15, false, -20f), 0.0001f)
     }
 
     @Test
     fun `zero-decibel USB HAL falls back to the visible volume step`() {
-        assertEquals(0.5f, UsbExclusiveVolumePolicy.streamGain(5, 10, false, 0f), 0.0001f)
+        assertEquals(0.5f, UsbDirectVolumePolicy.streamGain(5, 10, false, 0f), 0.0001f)
     }
 
     @Test
     fun `track fade and media volume are both applied`() {
-        assertEquals(0.125f, UsbExclusiveVolumePolicy.effectiveGain(0.5f, 0.25f), 0.0001f)
+        assertEquals(0.125f, UsbDirectVolumePolicy.effectiveGain(0.5f, 0.25f), 0.0001f)
     }
 
     @Test
     fun `hot path reads cached gain without querying system volume`() {
         var refreshes = 0
-        val cache = UsbExclusiveVolumeCache(1f)
+        val cache = UsbDirectVolumeCache(1f)
 
         cache.refresh {
             refreshes += 1
@@ -48,7 +48,7 @@ class UsbExclusiveVolumePolicyTest {
 
     @Test
     fun `volume notification replaces the cached stream gain`() {
-        val cache = UsbExclusiveVolumeCache(0.8f)
+        val cache = UsbDirectVolumeCache(0.8f)
 
         cache.refresh { 0.25f }
 

@@ -27,13 +27,6 @@ internal object UsbBitPerfectStatusProtocol {
     const val STATE_NOT_ACTIVE = "not_active"
     const val STATE_UNSUPPORTED_ANDROID = "unsupported_android"
 
-    const val STATE_EXCLUSIVE_ARMED = "exclusive_armed"
-    const val STATE_EXCLUSIVE_READY = "exclusive_ready"
-    const val STATE_EXCLUSIVE_CONFIGURED = "exclusive_configured"
-    const val STATE_EXCLUSIVE_ACTIVE = "exclusive_active"
-    const val STATE_EXCLUSIVE_FALLBACK = "exclusive_fallback"
-    const val STATE_EXCLUSIVE_UNSUPPORTED_PATH = "exclusive_unsupported_path"
-
     const val STATE_DIRECT_ARMED = "direct_armed"
     const val STATE_DIRECT_PERMISSION_REQUIRED = "direct_permission_required"
     const val STATE_DIRECT_ACQUIRING = "direct_acquiring"

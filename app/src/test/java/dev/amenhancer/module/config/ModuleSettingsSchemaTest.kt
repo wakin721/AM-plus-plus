@@ -6,6 +6,7 @@ import dev.amenhancer.module.model.ModuleSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModuleSettingsSchemaTest {
@@ -21,7 +22,6 @@ class ModuleSettingsSchemaTest {
                 navigationCompensationEnabled = false,
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
-                usbExclusiveAaudioEnabled = false,
                 usbDirectUacEnabled = false,
                 titleCorrectionEnabled = false,
                 schemaVersion = ModuleConstants.CONFIG_SCHEMA_VERSION,
@@ -53,7 +53,6 @@ class ModuleSettingsSchemaTest {
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 6,
                 "usb_bit_perfect_enabled" to false,
-                "usb_exclusive_aaudio_enabled" to false,
                 "usb_direct_uac_enabled" to false,
                 "title_correction_enabled" to false,
                 "title_correction_mode" to "original_hyper",
@@ -91,7 +90,6 @@ class ModuleSettingsSchemaTest {
                 "navigation_compensation_enabled" to false,
                 "lyric_blur_radius_offset_px" to 0,
                 "usb_bit_perfect_enabled" to false,
-                "usb_exclusive_aaudio_enabled" to false,
                 "usb_direct_uac_enabled" to false,
                 "title_correction_enabled" to false,
                 "title_correction_mode" to "original_hyper",
@@ -153,7 +151,6 @@ class ModuleSettingsSchemaTest {
                 navigationCompensationEnabled = false,
                 lyricBlurRadiusOffsetPx = 0,
                 usbBitPerfectEnabled = false,
-                usbExclusiveAaudioEnabled = false,
                 usbDirectUacEnabled = false,
                 titleCorrectionEnabled = false,
                 schemaVersion = ModuleConstants.CONFIG_SCHEMA_VERSION,
@@ -192,13 +189,11 @@ class ModuleSettingsSchemaTest {
     }
 
     @Test
-    fun `experimental AAudio exclusive defaults off and round trips`() {
-        assertFalse(ModuleSettingsSchema.decode(emptyMap<String, Any?>()).usbExclusiveAaudioEnabled)
-        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
-            ModuleSettings(usbExclusiveAaudioEnabled = true),
-        )
-        assertEquals(true, encoded["usb_exclusive_aaudio_enabled"])
-        assertEquals(true, ModuleSettingsSchema.decode(encoded).usbExclusiveAaudioEnabled)
+    fun `removed AAudio exclusive setting is not persisted`() {
+        val encoded = ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings())
+
+        assertFalse(encoded.containsKey("usb_exclusive_aaudio_enabled"))
+        assertTrue("usb_exclusive_aaudio_enabled" in ModuleSettingsSchema.obsoleteKeys)
     }
 
     @Test

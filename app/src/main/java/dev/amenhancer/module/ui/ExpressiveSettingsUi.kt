@@ -231,7 +231,7 @@ private fun MainSettingsPage(
             SettingsGroup(title = "音频") {
                 ExpressiveActionRow(
                     title = "USB 音频输出",
-                    summary = "Bit-Perfect、USB Direct、AAudio 独占与实时链路",
+                    summary = "USB Direct、Bit-Perfect 与实时链路",
                     onClick = actions.openUsbAudio,
                 )
             }
@@ -680,7 +680,6 @@ internal class UsbAudioSettingsActions(
     val navigateBack: () -> Unit,
     val setEnabled: (Boolean) -> Unit,
     val setDirectEnabled: (Boolean) -> Unit,
-    val setExclusiveEnabled: (Boolean) -> Unit,
     val refresh: () -> Unit,
 )
 
@@ -737,14 +736,6 @@ internal fun UsbAudioSettingsScreen(
                         enabled = snapshot.isRemoteAvailable && settings.usbBitPerfectEnabled,
                         onChanged = actions.setDirectEnabled,
                     )
-                    GroupDivider()
-                    ExpressiveSwitchRow(
-                        title = "实验性 AAudio 独占回退",
-                        summary = "USB Direct 未建立时请求 AAudio EXCLUSIVE",
-                        checked = settings.usbExclusiveAaudioEnabled,
-                        enabled = snapshot.isRemoteAvailable && settings.usbBitPerfectEnabled,
-                        onChanged = actions.setExclusiveEnabled,
-                    )
                 }
             }
             item {
@@ -771,7 +762,7 @@ private fun UsbAudioPathCard(
             Text("音频链路", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             Text(
                 modifier = Modifier.padding(top = 4.dp),
-                text = "优先 USB Direct UAC；失败后回退 AAudio/Android mixer。",
+                text = "优先 USB Direct UAC；失败后恢复原 AudioTrack/Android mixer。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -879,12 +870,6 @@ private fun usbStatusPresentation(
         UsbBitPerfectStatusProtocol.STATE_FORMAT_UNSUPPORTED -> "格式不匹配"
         UsbBitPerfectStatusProtocol.STATE_REQUEST_FAILED -> "请求失败"
         UsbBitPerfectStatusProtocol.STATE_UNSUPPORTED_ANDROID -> "系统不支持"
-        UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ARMED -> "AAudio 独占待命"
-        UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_READY -> "已检测可接管 PCM"
-        UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_CONFIGURED -> "AAudio 独占流已建立"
-        UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE -> "AAudio 独占已激活"
-        UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_FALLBACK -> "AAudio 独占失败，已回退"
-        UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_UNSUPPORTED_PATH -> "无法安全接管"
         else -> "未激活"
     }
     val track = formatAudio(status.trackSampleRate, status.trackEncoding, status.trackChannels)
@@ -896,12 +881,8 @@ private fun usbStatusPresentation(
         status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED ->
             "${mixer ?: track} · USB DIRECT · interface 已 claim"
         status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_PERMISSION_REQUIRED -> "等待 USB Host 权限"
-        status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK -> "USB Direct 未建立 · 回退 AAudio"
-        status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE ->
-            "${mixer ?: track} · AAUDIO EXCLUSIVE · PCM 已接管"
-        status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_CONFIGURED ->
-            "${mixer ?: track} · AAUDIO EXCLUSIVE · 等待 PCM"
-        status.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_READY -> "AAudio EXCLUSIVE · PCM 可接管"
+        status.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK ->
+            "USB Direct 未建立 · 已恢复 Android 系统输出"
         status.state == UsbBitPerfectStatusProtocol.STATE_ACTIVE -> "${mixer ?: track} · BIT_PERFECT 已核验"
         status.state == UsbBitPerfectStatusProtocol.STATE_CONFIGURED -> "${mixer ?: track} · BIT_PERFECT 已配置"
         mixer != null -> "$mixer · $stateTitle"

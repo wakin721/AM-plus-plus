@@ -242,6 +242,59 @@ class EmbeddedConfigurationMigrationTest {
     }
 
     @Test
+    fun `USB Direct settings keep syncing after host storage is initialized`() {
+        val destination = MemoryStorage(
+            initialValues = ModuleSettingsSchema.encodeOrdinarySettings(
+                ModuleSettings(
+                    dualPaneEnabled = false,
+                    usbBitPerfectEnabled = false,
+                    usbDirectUacEnabled = false,
+                ),
+            ),
+        )
+
+        val synced = EmbeddedConfigurationMigration.syncUsbDirectSettings(
+            remoteValues = mapOf(
+                "usb_bit_perfect_enabled" to true,
+                "usb_direct_uac_enabled" to true,
+                "dual_pane_enabled" to true,
+            ),
+            destination = destination,
+        )
+
+        val settings = ModuleSettingsSchema.decode(destination.values())
+        assertTrue(synced)
+        assertTrue(settings.usbBitPerfectEnabled)
+        assertTrue(settings.usbDirectUacEnabled)
+        assertEquals(false, settings.dualPaneEnabled)
+    }
+
+    @Test
+    fun `USB Direct sync ignores missing and malformed remote values`() {
+        val destination = MemoryStorage(
+            initialValues = ModuleSettingsSchema.encodeOrdinarySettings(
+                ModuleSettings(
+                    usbBitPerfectEnabled = true,
+                    usbDirectUacEnabled = true,
+                ),
+            ),
+        )
+
+        val synced = EmbeddedConfigurationMigration.syncUsbDirectSettings(
+            remoteValues = mapOf(
+                "usb_bit_perfect_enabled" to "not-a-boolean",
+                "unrelated_framework_key" to false,
+            ),
+            destination = destination,
+        )
+
+        val settings = ModuleSettingsSchema.decode(destination.values())
+        assertTrue(synced)
+        assertTrue(settings.usbBitPerfectEnabled)
+        assertTrue(settings.usbDirectUacEnabled)
+    }
+
+    @Test
     fun `rejects a lyric library above the synchronous migration budget before opening payloads`() {
         val entries = (0 until 129).map { index ->
             CustomLyricsEntry(

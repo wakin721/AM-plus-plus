@@ -8,8 +8,8 @@ import java.io.InputStream
 
 /**
  * Copies the last libxposed remote configuration into the embedded host
- * storage.  This is deliberately a one-way boundary: after the host storage
- * is initialized, embedded code only reads and writes [EmbeddedConfigurationStorage].
+ * storage. The bulk migration remains one-way; after initialization, only the
+ * two standalone USB Direct toggles are mirrored into host-private storage.
  */
 internal object EmbeddedConfigurationMigration {
     /** Marker keys live outside [ModuleSettingsSchema] and are ignored by readers. */
@@ -19,6 +19,27 @@ internal object EmbeddedConfigurationMigration {
 
     /** Bounds synchronous pre-Application migration for large lyric libraries. */
     const val MAX_TOTAL_TTML_BYTES = 64L * 1024 * 1024
+
+    /**
+     * The USB settings screen still runs in the module process, while playback
+     * reads host-private preferences in Apple Music. Keep only those two
+     * settings synchronized after the one-time bulk migration has completed.
+     */
+    fun syncUsbDirectSettings(
+        remotePreferences: SharedPreferences,
+        destination: EmbeddedConfigurationStorage,
+    ): Boolean {
+        val remoteValues = runCatching { remotePreferences.all }.getOrNull() ?: return false
+        return syncUsbDirectSettings(remoteValues, destination)
+    }
+
+    fun syncUsbDirectSettings(
+        remoteValues: Map<String, *>,
+        destination: EmbeddedConfigurationStorage,
+    ): Boolean = synchronized(destination) {
+        val values = ModuleSettingsSchema.usbDirectSettingsValues(remoteValues)
+        values.isEmpty() || writeValues(destination, values)
+    }
 
     /** Existing host state must not depend on the legacy remote service. */
     fun destinationAlreadyInitialized(destination: EmbeddedConfigurationStorage): Boolean =

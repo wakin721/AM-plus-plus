@@ -3,7 +3,7 @@ package dev.amenhancer.module.hook
 import kotlin.math.pow
 
 /** Converts Android's media-volume state into a safe linear PCM gain. */
-internal object UsbExclusiveVolumePolicy {
+internal object UsbDirectVolumePolicy {
     fun streamGain(
         volumeIndex: Int,
         maxVolumeIndex: Int,
@@ -32,7 +32,7 @@ internal object UsbExclusiveVolumePolicy {
  * Android volume queries happen only when [refresh] is called; [effectiveGain]
  * is deliberately a local, allocation-free hot-path read.
  */
-internal class UsbExclusiveVolumeCache(initialStreamGain: Float) {
+internal class UsbDirectVolumeCache(initialStreamGain: Float) {
     @Volatile
     private var streamGain = sanitize(initialStreamGain)
 
@@ -41,7 +41,7 @@ internal class UsbExclusiveVolumeCache(initialStreamGain: Float) {
     }
 
     fun effectiveGain(trackGain: Float): Float =
-        UsbExclusiveVolumePolicy.effectiveGain(streamGain, trackGain)
+        UsbDirectVolumePolicy.effectiveGain(streamGain, trackGain)
 
     private fun sanitize(gain: Float): Float =
         gain.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f

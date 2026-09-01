@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * original AudioTrack until a supported Java write path has been observed and
  * the AM++ broker has successfully claimed a permission-backed UAC streaming
  * interface. Any broker/native/write failure releases the USB interface and
- * resumes the original AudioTrack so AAudio/Bit-Perfect can take over.
+ * resumes the original AudioTrack so Android's normal audio path can continue.
  */
 internal object UsbDirectUacController {
     private val enabled = AtomicBoolean(false)
@@ -52,7 +52,7 @@ internal object UsbDirectUacController {
             lastFailure = null
             applicationContext = null
         }
-        UsbExclusiveSystemVolumeObserver.syncPolling()
+        UsbDirectSystemVolumeObserver.syncPolling()
     }
 
     fun isEnabled(): Boolean = enabled.get()
@@ -266,10 +266,6 @@ internal object UsbDirectUacController {
         }
     }
 
-    /** AAudio may try only after USB Direct has explicitly failed for this track. */
-    fun allowsAaudioFallback(track: AudioTrack): Boolean =
-        !enabled.get() || failedTrack?.get() === track
-
     fun onTransportControl(context: Context, track: AudioTrack, operation: String) {
         if (isInternalTransition()) return
         val ownsTrack = synchronized(lock) {
@@ -344,7 +340,7 @@ internal object UsbDirectUacController {
                     FailureKind.OTHER -> UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK
                 },
                 track = track,
-                message = "USB Direct 未建立：${failure.reason}。已保留/恢复原 AudioTrack，可继续回退 AAudio 或系统输出。",
+                message = "USB Direct 未建立：${failure.reason}。已保留/恢复原 AudioTrack，可继续使用 Android 系统输出。",
             )
         }
         if (observedTrack?.get() === track) {
@@ -417,7 +413,7 @@ internal object UsbDirectUacController {
                             context = context.applicationContext,
                             audioManager = manager,
                             deviceType = deviceType,
-                            streamGainCache = UsbExclusiveVolumeCache(streamGain),
+                            streamGainCache = UsbDirectVolumeCache(streamGain),
                         )
                         failedTrack = null
                         lastFailure = null
@@ -527,7 +523,7 @@ internal object UsbDirectUacController {
         } else {
             null
         }
-        return UsbExclusiveVolumePolicy.streamGain(index, maximum, muted, db)
+        return UsbDirectVolumePolicy.streamGain(index, maximum, muted, db)
     }
 
     private fun markFailure(track: AudioTrack, reason: String, kind: FailureKind) {
@@ -587,7 +583,7 @@ internal object UsbDirectUacController {
         val context: Context,
         val audioManager: AudioManager,
         val deviceType: Int,
-        val streamGainCache: UsbExclusiveVolumeCache,
+        val streamGainCache: UsbDirectVolumeCache,
         var hasWrittenPcm: Boolean = false,
     )
 

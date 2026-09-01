@@ -30,11 +30,9 @@ internal class UsbBitPerfectFeature : FeatureHook {
         val settings = context.config.settings()
         if (!settings.usbBitPerfectEnabled) {
             UsbDirectUacController.configure(false)
-            UsbExclusiveAaudioController.configure(false)
             return FeatureInstallResult.disabled()
         }
         UsbDirectUacController.configure(settings.usbDirectUacEnabled)
-        UsbExclusiveAaudioController.configure(settings.usbExclusiveAaudioEnabled)
         return context.target.usbBitPerfect.install().toFeatureInstallResult()
     }
 }
@@ -55,17 +53,13 @@ internal class AppleMusicUsbBitPerfectTarget(
                 "USB Bit-Perfect status request receiver could not be registered",
             )
         }
-        UsbExclusiveSystemVolumeObserver.register(application)
+        UsbDirectSystemVolumeObserver.register(application)
 
         val play = AudioTrack::class.java.getDeclaredMethod("play")
         ModernXposedRuntime.hookMethod(play, object : ModernMethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 val track = param.thisObject as? AudioTrack ?: return
                 if (UsbDirectUacController.beforePlay(application, track)) {
-                    param.result = null
-                    return
-                }
-                if (UsbExclusiveAaudioController.beforePlay(application, track)) {
                     param.result = null
                     return
                 }
@@ -76,7 +70,6 @@ internal class AppleMusicUsbBitPerfectTarget(
                 if (param.throwable != null) return
                 val track = param.thisObject as? AudioTrack ?: return
                 if (UsbDirectUacController.isActive(track)) return
-                if (UsbExclusiveAaudioController.isActive(track)) return
                 UsbBitPerfectController.tryApply(application, track, afterStart = true)
             }
         })
@@ -89,14 +82,6 @@ internal class AppleMusicUsbBitPerfectTarget(
                     val track = param.thisObject as? AudioTrack ?: return
                     UsbDirectUacController.interceptWrite(track, param.args)?.let { written ->
                         param.result = written
-                        return
-                    }
-                    UsbExclusiveAaudioController.interceptWrite(
-                        application,
-                        track,
-                        param.args,
-                    )?.let { written ->
-                        param.result = written
                     }
                 }
 
@@ -104,21 +89,12 @@ internal class AppleMusicUsbBitPerfectTarget(
                     if (param.throwable != null) return
                     val track = param.thisObject as? AudioTrack ?: return
                     if (UsbDirectUacController.isActive(track)) return
-                    if (UsbExclusiveAaudioController.isActive(track)) return
                     UsbDirectUacController.afterOriginalWrite(
                         application,
                         track,
                         param.args,
                         param.result,
                     )
-                    if (UsbDirectUacController.isActive(track)) return
-                    if (UsbDirectUacController.allowsAaudioFallback(track)) {
-                        UsbExclusiveAaudioController.afterOriginalWrite(
-                            track,
-                            param.args,
-                            param.result,
-                        )
-                    }
                 }
             },
         )
@@ -137,12 +113,6 @@ internal class AppleMusicUsbBitPerfectTarget(
                             param.args,
                             param.result,
                         )
-                        UsbExclusiveAaudioController.afterVolumeChange(
-                            track,
-                            operation,
-                            param.args,
-                            param.result,
-                        )
                     }
                 },
             )
@@ -156,7 +126,6 @@ internal class AppleMusicUsbBitPerfectTarget(
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val track = param.thisObject as? AudioTrack ?: return
                         UsbDirectUacController.onTransportControl(application, track, operation)
-                        UsbExclusiveAaudioController.onTransportControl(track, operation)
                     }
                 },
             )
@@ -168,21 +137,17 @@ internal class AppleMusicUsbBitPerfectTarget(
                 if (UsbDirectUacController.isEnabled()) {
                     append(" plus experimental USB Host/UAC usbfs direct takeover")
                 }
-                if (UsbExclusiveAaudioController.isEnabled()) {
-                    append(" plus experimental AAudio EXCLUSIVE fallback")
-                }
             },
         )
     }
 }
 
 /**
- * AAudio EXCLUSIVE does not pass through AudioFlinger's software volume stage.
- * Mirror the media step selected by the system volume UI into the PCM gain used
- * by [UsbExclusiveAaudioController]. The receiver is process-local and only
- * accepts the framework media-stream broadcast.
+ * USB Direct does not pass through AudioFlinger's software volume stage. Mirror
+ * the media step selected by the system volume UI into the native PCM gain. The
+ * receiver is process-local and only accepts the framework media-stream broadcast.
  */
-internal object UsbExclusiveSystemVolumeObserver {
+internal object UsbDirectSystemVolumeObserver {
     private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
     private const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
     private const val EXTRA_VOLUME_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
@@ -199,7 +164,6 @@ internal object UsbExclusiveSystemVolumeObserver {
             if (intent.getIntExtra(EXTRA_VOLUME_STREAM_TYPE, -1) != AudioManager.STREAM_MUSIC) return
             val index = intent.getIntExtra(EXTRA_VOLUME_STREAM_VALUE, -1)
             UsbDirectUacController.onSystemMediaVolumeChanged(index)
-            UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)
         }
     }
 
@@ -217,7 +181,7 @@ internal object UsbExclusiveSystemVolumeObserver {
             if (result.isFailure) {
                 registered.set(false)
                 ModernXposedRuntime.log(
-                    "usb_exclusive: system media volume observer unavailable",
+                    "usb_direct: system media volume observer unavailable",
                     result.exceptionOrNull(),
                 )
             }
@@ -227,8 +191,7 @@ internal object UsbExclusiveSystemVolumeObserver {
 
     fun syncPolling(application: Application? = null) {
         if (application != null) pollingApplication = application
-        val shouldPoll = UsbDirectUacController.isEnabled() ||
-            UsbExclusiveAaudioController.isEnabled()
+        val shouldPoll = UsbDirectUacController.isEnabled()
         if (!shouldPoll) {
             stopVolumePolling()
             return
@@ -250,7 +213,6 @@ internal object UsbExclusiveSystemVolumeObserver {
                     .getOrNull()
                     ?.let { index ->
                         UsbDirectUacController.onSystemMediaVolumeChanged(index)
-                        UsbExclusiveAaudioController.onSystemMediaVolumeChanged(index)
                     }
                 if (polling.get()) handler.postDelayed(this, VOLUME_POLL_INTERVAL_MILLIS)
             }
@@ -380,22 +342,7 @@ internal object UsbBitPerfectController {
 
     fun currentStatus(context: Context): UsbBitPerfectStatusDetails {
         val direct = UsbDirectUacController.currentStatus()
-        val exclusive = UsbExclusiveAaudioController.currentStatus(context)
-        if (direct != null) {
-            val directFailed = direct.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK ||
-                direct.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_UNSUPPORTED_DEVICE ||
-                direct.state == UsbBitPerfectStatusProtocol.STATE_DIRECT_PERMISSION_REQUIRED
-            val exclusiveActive = exclusive?.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_ACTIVE ||
-                exclusive?.state == UsbBitPerfectStatusProtocol.STATE_EXCLUSIVE_CONFIGURED
-            if (!directFailed || !exclusiveActive) return direct
-            return requireNotNull(exclusive).copy(
-                message = listOfNotNull(
-                    direct.message,
-                    exclusive.message,
-                ).joinToString("\n"),
-            )
-        }
-        exclusive?.let { return it }
+        if (direct != null) return direct
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             return UsbBitPerfectStatusDetails(
                 state = UsbBitPerfectStatusProtocol.STATE_UNSUPPORTED_ANDROID,

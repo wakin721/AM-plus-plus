@@ -120,7 +120,7 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
-    fun `direct takeover has priority but remains fail open to AAudio`() {
+    fun `direct takeover remains fail open to the original AudioTrack`() {
         val hook = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
         )
@@ -135,20 +135,21 @@ class UsbDirectUacStructuralRegressionTest {
         )
 
         val directIntercept = hook.indexOf("UsbDirectUacController.interceptWrite")
-        val aaudioIntercept = hook.indexOf("UsbExclusiveAaudioController.interceptWrite")
         assertTrue(directIntercept >= 0)
-        assertTrue(aaudioIntercept > directIntercept)
-        assertTrue(hook.contains("UsbDirectUacController.allowsAaudioFallback(track)"))
+        assertTrue(hook.contains("UsbDirectUacController.afterOriginalWrite"))
+        assertFalse(hook.contains("UsbExclusiveAaudioController"))
         assertTrue(hook.contains("UsbDirectUacController.onSystemMediaVolumeChanged(index)"))
         assertTrue(hook.contains("UsbDirectUacController.afterVolumeChange"))
         assertTrue(controller.contains("if (active.hasWrittenPcm)"))
         assertTrue(controller.contains("STATE_DIRECT_ACTIVE"))
         assertTrue(controller.contains("UsbDirectDeviceClient.release(context)"))
-        assertTrue(controller.contains("UsbExclusiveVolumePolicy.streamGain"))
+        assertTrue(controller.contains("UsbDirectVolumePolicy.streamGain"))
         assertTrue(controller.contains("streamGainCache.refresh"))
         assertTrue(controller.contains("streamGainCache.effectiveGain"))
         assertTrue(controller.contains("it === expectedSession"))
         assertTrue(controller.contains("shouldResumeOriginalTrack(closedOwnedSession)"))
+        assertTrue(controller.contains("runCatching { track.play() }"))
+        assertTrue(controller.contains("Android 系统输出"))
         val hotPath = controller.substringAfter("private fun effectiveGains")
             .substringBefore("private fun")
         assertFalse(hotPath.contains("getStreamVolume"))

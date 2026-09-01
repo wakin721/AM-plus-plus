@@ -6,8 +6,11 @@ import dev.amenhancer.module.model.LyricsFontManifest
 import dev.amenhancer.module.model.ModuleSettings
 
 internal object ModuleSettingsSchema {
-    /** Keys removed by the profile migration. */
-    internal val obsoleteKeys: Set<String> = setOf(KEY_TITLE_CORRECTION_TARGET_LANGUAGE)
+    /** Keys removed by schema migrations. */
+    internal val obsoleteKeys: Set<String> = setOf(
+        KEY_TITLE_CORRECTION_TARGET_LANGUAGE,
+        KEY_REMOVED_USB_EXCLUSIVE_AAUDIO,
+    )
 
     fun decode(values: Map<String, *>): ModuleSettings = ModuleSettings(
         dualPaneEnabled = values.boolean(KEY_DUAL_PANE, default = true),
@@ -34,7 +37,6 @@ internal object ModuleSettingsSchema {
                 ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
             ) ?: 0,
         usbBitPerfectEnabled = values.boolean(KEY_USB_BIT_PERFECT, default = false),
-        usbExclusiveAaudioEnabled = values.boolean(KEY_USB_EXCLUSIVE_AAUDIO, default = false),
         usbDirectUacEnabled = values.boolean(KEY_USB_DIRECT_UAC, default = false),
         titleCorrectionEnabled = values.boolean(
             KEY_TITLE_CORRECTION_ENABLED,
@@ -76,7 +78,6 @@ internal object ModuleSettingsSchema {
                 ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
             ),
             KEY_USB_BIT_PERFECT to settings.usbBitPerfectEnabled,
-            KEY_USB_EXCLUSIVE_AAUDIO to settings.usbExclusiveAaudioEnabled,
             KEY_USB_DIRECT_UAC to settings.usbDirectUacEnabled,
             KEY_TITLE_CORRECTION_ENABLED to settings.titleCorrectionEnabled,
             KEY_TITLE_CORRECTION_MODE to settings.titleCorrectionMode.storageValue,
@@ -86,6 +87,17 @@ internal object ModuleSettingsSchema {
         values[KEY_SCHEMA_VERSION] = ModuleConstants.CONFIG_SCHEMA_VERSION
         return values
     }
+
+    /**
+     * Extracts only the two USB Direct toggles owned by the standalone settings
+     * screen. Missing or malformed values are ignored so synchronization can
+     * never reset an initialized host setting to a default.
+     */
+    internal fun usbDirectSettingsValues(values: Map<String, *>): Map<String, Any> =
+        linkedMapOf<String, Any>().apply {
+            (values[KEY_USB_BIT_PERFECT] as? Boolean)?.let { put(KEY_USB_BIT_PERFECT, it) }
+            (values[KEY_USB_DIRECT_UAC] as? Boolean)?.let { put(KEY_USB_DIRECT_UAC, it) }
+        }
 
     fun encodeFontManifest(manifest: LyricsFontManifest): Map<String, Any> {
         val safe = FontManifestPolicy.sanitize(manifest)
@@ -214,7 +226,6 @@ internal object ModuleSettingsSchema {
         KEY_NAVIGATION_COMPENSATION,
         KEY_LYRIC_BLUR_RADIUS_OFFSET,
         KEY_USB_BIT_PERFECT,
-        KEY_USB_EXCLUSIVE_AAUDIO,
         KEY_USB_DIRECT_UAC,
         KEY_TITLE_CORRECTION_ENABLED,
         KEY_TITLE_CORRECTION_MODE,
@@ -245,7 +256,7 @@ internal object ModuleSettingsSchema {
     private const val KEY_NAVIGATION_COMPENSATION = "navigation_compensation_enabled"
     private const val KEY_LYRIC_BLUR_RADIUS_OFFSET = "lyric_blur_radius_offset_px"
     private const val KEY_USB_BIT_PERFECT = "usb_bit_perfect_enabled"
-    private const val KEY_USB_EXCLUSIVE_AAUDIO = "usb_exclusive_aaudio_enabled"
+    private const val KEY_REMOVED_USB_EXCLUSIVE_AAUDIO = "usb_exclusive_aaudio_enabled"
     private const val KEY_USB_DIRECT_UAC = "usb_direct_uac_enabled"
     private const val KEY_TITLE_CORRECTION_ENABLED = "title_correction_enabled"
     private const val KEY_TITLE_CORRECTION_MODE = "title_correction_mode"

@@ -31,7 +31,7 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
     }
 
     @Test
-    fun `detail page places USB Direct and fallback switches above the live path`() {
+    fun `detail page places the USB Direct switch above the live path`() {
         val activity = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
         )
@@ -45,8 +45,8 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
         assertTrue(activity.contains("text = \"实验性 USB 直通独占\""))
         assertTrue(activity.contains("usbDirectUacEnabled = enabled"))
         assertTrue(activity.contains("UsbDirectPermissionActivity.requestCurrentDevice"))
-        assertTrue(activity.contains("text = \"实验性 AAudio 独占回退\""))
-        assertTrue(activity.contains("usbExclusiveAaudioEnabled = enabled"))
+        assertFalse(activity.contains("usbExclusiveAaudioEnabled"))
+        assertFalse(activity.contains("AAudio"))
         assertTrue(activity.contains("text = \"音频链路\""))
         assertTrue(activity.contains("pathNode(\"Apple Music AudioTrack\""))
         assertTrue(activity.contains("pathNode(\"输出引擎\""))
@@ -59,13 +59,14 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
     }
 
     @Test
-    fun `USB Direct copy advertises explicit feedback and preserves implicit fallback`() {
+    fun `USB Direct copy advertises explicit feedback and preserves system fallback`() {
         val activity = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
         )
 
         assertTrue(activity.contains("支持 UAC1/UAC2 标准显式 feedback"))
         assertTrue(activity.contains("隐式 feedback/厂商私有格式仍会回退"))
+        assertTrue(activity.contains("恢复原 AudioTrack/Android mixer"))
         assertFalse(activity.contains("第一版暂不支持异步 feedback DAC"))
     }
 }
