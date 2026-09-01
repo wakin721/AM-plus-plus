@@ -30,20 +30,34 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Prepare release signing
+        id: release_signing
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           AMPP_RELEASE_KEYSTORE_BASE64: ${{ secrets.AMPP_RELEASE_KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$AMPP_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$AMPP_RELEASE_STORE_FILE"
+          if [[ -n "$AMPP_RELEASE_KEYSTORE_BASE64" && \
+                -n "$AMPP_RELEASE_STORE_PASSWORD" && \
+                -n "$AMPP_RELEASE_KEY_ALIAS" && \
+                -n "$AMPP_RELEASE_KEY_PASSWORD" ]]; then
+            printf '%s' "$AMPP_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$AMPP_RELEASE_STORE_FILE"
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Release signing secrets are not configured; building a debug APK instead.'
+          fi
 
       - name: Build and test release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           chmod +x gradlew
-          ./gradlew test lintVitalRelease assembleRelease --no-daemon
+          if [[ "${{ steps.release_signing.outputs.available }}" == 'true' ]]; then
+            ./gradlew test lintVitalRelease assembleRelease --no-daemon
+          else
+            ./gradlew test lintVitalRelease assembleDebug --no-daemon
+          fi
 
       - name: Verify release signature
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_signing.outputs.available == 'true'
         run: |
           verification="$($ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk)"
           printf '%s\n' "$verification"
@@ -60,7 +74,7 @@ jobs:
           ./gradlew test lintVitalRelease assembleDebug --no-daemon
 
       - name: Upload release APK
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_signing.outputs.available == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: AM-plus-plus-release
@@ -68,7 +82,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload debug APK
-        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main' || steps.release_signing.outputs.available != 'true'
         uses: actions/upload-artifact@v7
         with:
           name: AM-plus-plus-debug-${{ github.run_number }}
