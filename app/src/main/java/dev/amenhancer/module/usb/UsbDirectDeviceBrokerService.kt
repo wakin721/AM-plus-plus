@@ -16,6 +16,7 @@ import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.util.Log
 import dev.amenhancer.module.ModuleConstants
 import dev.amenhancer.module.UsbDirectIpc
 
@@ -126,20 +127,58 @@ class UsbDirectDeviceBrokerService : Service() {
             replyError(message, "Selected UAC alternate setting is missing from UsbDevice")
             return
         }
-        if (!connection.claimInterface(usbInterface, true)) {
+        val controlInterface = if (alternative.isUac2) {
+            findAudioControlInterface(device, alternative.audioControlInterface)
+        } else {
+            null
+        }
+        if (alternative.isUac2 && controlInterface == null) {
             connection.close()
-            replyError(message, "claimInterface(force=true) failed for interface ${usbInterface.id}")
+            replyError(
+                message,
+                "UAC2 AudioControl interface ${alternative.audioControlInterface} is missing from UsbDevice",
+            )
             return
         }
+        val claimResult = UsbInterfaceClaimTransaction.acquire(
+            controlInterface = controlInterface,
+            streamingInterface = usbInterface,
+            isSameInterface = { first, second -> first.id == second.id },
+            claimInterface = { usbInterface -> connection.claimInterface(usbInterface, true) },
+            releaseInterface = { claimedInterface ->
+                runCatching { connection.releaseInterface(claimedInterface) }
+            },
+        )
+        val claims = when (claimResult) {
+            is UsbInterfaceClaimResult.Acquired -> claimResult.claims
+            is UsbInterfaceClaimResult.Failed -> {
+                connection.close()
+                replyError(
+                    message,
+                    "claimInterface(force=true) failed for interface ${claimResult.failedInterface.id}",
+                )
+                return
+            }
+        }
+        Log.i(
+            TAG,
+            "Claimed UAC interfaces control=${controlInterface?.id ?: "none"} " +
+                "streaming=${usbInterface.id} alt=${usbInterface.alternateSetting}",
+        )
         if (!connection.setInterface(usbInterface)) {
-            runCatching { connection.releaseInterface(usbInterface) }
+            releaseClaims(connection, claims)
             connection.close()
             replyError(message, "setInterface alt=${usbInterface.alternateSetting} failed")
             return
         }
         val sampleRateConfigured = configureSampleRate(connection, alternative, sampleRate)
         if (!sampleRateConfigured) {
-            runCatching { connection.releaseInterface(usbInterface) }
+            Log.w(
+                TAG,
+                "UAC sample-rate control rejected ${sampleRate}Hz " +
+                    "control=${controlInterface?.id ?: "none"}",
+            )
+            releaseClaims(connection, claims)
             connection.close()
             replyError(message, "UAC sample-rate control rejected ${sampleRate}Hz")
             return
@@ -148,12 +187,12 @@ class UsbDirectDeviceBrokerService : Service() {
         val parcelFd = runCatching {
             ParcelFileDescriptor.fromFd(connection.fileDescriptor)
         }.getOrElse { error ->
-            runCatching { connection.releaseInterface(usbInterface) }
+            releaseClaims(connection, claims)
             connection.close()
             replyError(message, "USB FD duplication failed: ${error.message ?: error.javaClass.simpleName}")
             return
         }
-        session = ClaimedSession(connection, usbInterface, device)
+        session = ClaimedSession(connection, claims, device)
 
         val data = Bundle().apply {
             putInt(UsbDirectIpc.KEY_RESULT, UsbDirectIpc.RESULT_OK)
@@ -222,6 +261,18 @@ class UsbDirectDeviceBrokerService : Service() {
                 it.alternateSetting == alternative.alternateSetting
         }
 
+    private fun findAudioControlInterface(
+        device: UsbDevice,
+        interfaceNumber: Int,
+    ): UsbInterface? = (0 until device.interfaceCount)
+        .map(device::getInterface)
+        .firstOrNull {
+            it.id == interfaceNumber &&
+                it.alternateSetting == 0 &&
+                it.interfaceClass == UsbConstants.USB_CLASS_AUDIO &&
+                it.interfaceSubclass == AUDIO_CONTROL_SUBCLASS
+        }
+
     private fun isAudioDevice(device: UsbDevice): Boolean = runCatching {
         device.deviceClass == UsbConstants.USB_CLASS_AUDIO ||
             (0 until device.interfaceCount).any { index ->
@@ -260,17 +311,28 @@ class UsbDirectDeviceBrokerService : Service() {
     private fun releaseSession() {
         val active = session ?: return
         session = null
-        runCatching { active.connection.releaseInterface(active.usbInterface) }
+        releaseClaims(active.connection, active.claims)
         runCatching { active.connection.close() }
+    }
+
+    private fun releaseClaims(
+        connection: UsbDeviceConnection,
+        claims: UsbClaimedInterfaces<UsbInterface>,
+    ) {
+        claims.releaseWith { usbInterface ->
+            runCatching { connection.releaseInterface(usbInterface) }
+        }
     }
 
     private data class ClaimedSession(
         val connection: UsbDeviceConnection,
-        val usbInterface: UsbInterface,
+        val claims: UsbClaimedInterfaces<UsbInterface>,
         val device: UsbDevice,
     )
 
     companion object {
+        private const val TAG = "UsbDirectBroker"
+        private const val AUDIO_CONTROL_SUBCLASS = 0x01
         private const val CONTROL_TIMEOUT_MS = 1000
         private const val UAC_CUR = 0x01
         private const val SAMPLING_FREQ_CONTROL = 0x01
