@@ -23,20 +23,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  * interface. Any broker/native/write failure releases the USB interface and
  * resumes the original AudioTrack so Android's normal audio path can continue.
  */
-internal enum class UsbDirectTransportAction {
-    KEEP_SESSION,
-    FLUSH_PCM,
-    CLOSE_SESSION,
-}
-
-internal object UsbDirectTransportPolicy {
-    fun actionFor(operation: String): UsbDirectTransportAction = when (operation) {
-        "flush" -> UsbDirectTransportAction.FLUSH_PCM
-        "stop", "release" -> UsbDirectTransportAction.CLOSE_SESSION
-        else -> UsbDirectTransportAction.KEEP_SESSION
-    }
-}
-
 internal object UsbDirectUacController {
     private val enabled = AtomicBoolean(false)
     private val lock = Any()
@@ -83,7 +69,7 @@ internal object UsbDirectUacController {
     fun isInternalTransition(): Boolean = internalTransition.get() == true
 
     fun isActive(track: AudioTrack): Boolean = synchronized(lock) {
-        session?.track === track
+        session?.track?.get() === track
     }
 
     /** Receives the media step selected by Android's system volume UI. */
@@ -111,7 +97,7 @@ internal object UsbDirectUacController {
     fun interceptWrite(track: AudioTrack, args: Array<Any?>): Int? {
         if (!enabled.get() || isInternalTransition()) return null
         val active = synchronized(lock) {
-            session?.takeIf { it.track === track }
+            session?.takeIf { it.track.get() === track }
         } ?: return null
         val gains = effectiveGains(active)
 
@@ -187,7 +173,7 @@ internal object UsbDirectUacController {
         }
         if (written > 0) {
             synchronized(lock) {
-                session?.takeIf { it.track === track }?.hasWrittenPcm = true
+                session?.takeIf { it.track.get() === track }?.hasWrittenPcm = true
             }
         }
         return written
@@ -291,32 +277,14 @@ internal object UsbDirectUacController {
 
     fun onTransportControl(context: Context, track: AudioTrack, operation: String) {
         if (isInternalTransition()) return
-
-        when (UsbDirectTransportPolicy.actionFor(operation)) {
-            UsbDirectTransportAction.KEEP_SESSION -> Unit
-
-            UsbDirectTransportAction.FLUSH_PCM -> {
-                val active = synchronized(lock) {
-                    session?.takeIf { it.track === track }
-                }
-                if (active != null) {
-                    UsbDirectUacBridge.flush(active.handle)
-                    active.hasWrittenPcm = false
-                }
-            }
-
-            UsbDirectTransportAction.CLOSE_SESSION -> {
-                val ownsTrack = synchronized(lock) {
-                    val ownsSession = session?.track === track
-                    val ownsPending = pendingTrack?.get() === track
-                    if (ownsSession) closeSessionLocked()
-                    if (ownsPending) pendingTrack = null
-                    ownsSession || ownsPending
-                }
-                if (ownsTrack) UsbDirectDeviceClient.release(context)
-            }
+        val ownsTrack = synchronized(lock) {
+            val ownsSession = session?.track?.get() === track
+            val ownsPending = pendingTrack?.get() === track
+            if (ownsSession) closeSessionLocked()
+            if (ownsPending) pendingTrack = null
+            ownsSession || ownsPending
         }
-
+        if (ownsTrack) UsbDirectDeviceClient.release(context)
         if (operation == "pause" || operation == "stop" || operation == "flush") {
             if (failedTrack?.get() === track) {
                 failedTrack = null
@@ -338,43 +306,22 @@ internal object UsbDirectUacController {
 
         synchronized(lock) {
             val active = session
-            if (active != null) {
-                val nativeState = UsbDirectUacBridge.state(active.handle)
-                val directState = when (nativeState) {
-                    UsbDirectUacBridge.STATE_STREAMING ->
-                        UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE
-                    UsbDirectUacBridge.STATE_CLAIMED ->
-                        UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED
-                    UsbDirectUacBridge.STATE_FAILED ->
-                        UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK
-                    else ->
-                        UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK
-                }
+            val track = active?.track?.get()
+            if (active != null && track != null) {
                 return statusFor(
-                    state = directState,
-                    track = active.track,
+                    state = if (active.hasWrittenPcm) {
+                        UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE
+                    } else {
+                        UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED
+                    },
+                    track = track,
                     lease = active.lease,
                     message = buildString {
                         append("USB AudioStreaming interface ${active.lease.interfaceNumber}")
-                        append(" alt ${active.lease.alternateSetting}；")
-                        when (nativeState) {
-                            UsbDirectUacBridge.STATE_STREAMING -> {
-                                append("native session 正在持有 interface 并运行 usbfs ISO worker")
-                                if (active.hasWrittenPcm) append("，PCM 已实际进入 USB URB。")
-                            }
-                            UsbDirectUacBridge.STATE_CLAIMED ->
-                                append("native session 仍持有 interface，当前等待/暂停 PCM。")
-                            UsbDirectUacBridge.STATE_FAILED -> {
-                                val reason = UsbDirectUacBridge.lastError(
-                                    "USB Direct native worker failed"
-                                )
-                                append("native worker 已失败：")
-                                append(reason)
-                                append("。下一次 PCM 写入将走 fail-open 释放 USB 并恢复系统输出。")
-                            }
-                            else ->
-                                append("native session 已不可用；下一次 PCM 写入将走 fail-open 恢复系统输出。")
-                        }
+                        append(" alt ${active.lease.alternateSetting} 已由 AM++ 独占 claim；")
+                        append("EP 0x${active.lease.endpointAddress.toString(16)} 使用 native usbfs isochronous OUT")
+                        if (active.hasWrittenPcm) append("，PCM 已实际进入 USB URB。")
+                        else append("，等待下一批 PCM。")
                     },
                 )
             }
@@ -475,7 +422,7 @@ internal object UsbDirectUacController {
                     synchronized(lock) {
                         closeSessionLocked()
                         session = Session(
-                            track = track,
+                            track = WeakReference(track),
                             handle = opened.handle,
                             lease = lease,
                             context = context.applicationContext,
@@ -502,7 +449,7 @@ internal object UsbDirectUacController {
     private fun failWrite(track: AudioTrack, expectedSession: Session, reason: String): Int? {
         val context = synchronized(lock) {
             val active = session?.takeIf {
-                it === expectedSession && it.track === track
+                it === expectedSession && it.track.get() === track
             }
             val savedContext = active?.context
             if (active != null) closeSessionLocked()
@@ -563,7 +510,7 @@ internal object UsbDirectUacController {
 
     private fun effectiveGains(active: Session): StereoGain {
         val trackGain = synchronized(lock) {
-            trackVolumes[active.track] ?: StereoGain.FULL
+            trackVolumes[active.track.get()] ?: StereoGain.FULL
         }
         return StereoGain(
             left = active.streamGainCache.effectiveGain(trackGain.left),
@@ -645,7 +592,7 @@ internal object UsbDirectUacController {
             audioAttributes.usage == AudioAttributes.USAGE_MEDIA
 
     private data class Session(
-        val track: AudioTrack,
+        val track: WeakReference<AudioTrack>,
         val handle: Long,
         val lease: UsbDirectDeviceClient.Lease,
         val context: Context,

@@ -9,11 +9,6 @@ internal object UsbDirectUacBridge {
     private const val FORMAT_I24 = 3
     private const val FORMAT_I32 = 4
 
-    const val STATE_MISSING = 0
-    const val STATE_CLAIMED = 1
-    const val STATE_STREAMING = 2
-    const val STATE_FAILED = 3
-
     sealed interface OpenResult {
         data class Opened(val handle: Long) : OpenResult
         data class Failed(val reason: String) : OpenResult
@@ -109,17 +104,6 @@ internal object UsbDirectUacBridge {
         nativeWriteBytes(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
-    fun state(handle: Long): Int {
-        if (!loaded || handle == 0L) return STATE_MISSING
-        return runCatching { nativeState(handle) }.getOrDefault(STATE_MISSING)
-    }
-
-    fun flush(handle: Long) {
-        if (!loaded || handle == 0L) return
-        runCatching { nativeFlush(handle) }
-            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native flush failed", error) }
-    }
-
     fun close(handle: Long) {
         if (!loaded || handle == 0L) return
         runCatching { nativeClose(handle) }
@@ -202,12 +186,6 @@ internal object UsbDirectUacBridge {
         gainLeft: Float,
         gainRight: Float,
     ): Int
-
-    @JvmStatic
-    private external fun nativeState(handle: Long): Int
-
-    @JvmStatic
-    private external fun nativeFlush(handle: Long)
 
     @JvmStatic
     private external fun nativeClose(handle: Long)
