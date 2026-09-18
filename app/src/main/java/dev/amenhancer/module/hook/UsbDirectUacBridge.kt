@@ -27,7 +27,11 @@ internal object UsbDirectUacBridge {
         }.getOrDefault(false)
     }
 
-    fun open(lease: UsbDirectDeviceClient.Lease): OpenResult {
+    fun open(
+        lease: UsbDirectDeviceClient.Lease,
+        pcmBufferMs: Int,
+        transferBufferMs: Int,
+    ): OpenResult {
         val inputFormatCode = formatCode(lease.encoding)
             ?: return OpenResult.Failed("当前 AudioTrack PCM encoding 不受 USB Direct 原型支持")
         if (!loaded) return OpenResult.Failed(loadFailure ?: "native USB Direct bridge unavailable")
@@ -45,6 +49,8 @@ internal object UsbDirectUacBridge {
                 lease.feedbackInterval,
                 lease.subslotBytes,
                 lease.bitResolution,
+                pcmBufferMs,
+                transferBufferMs,
             )
         }.getOrElse { error ->
             return OpenResult.Failed(error.message ?: error.javaClass.simpleName)
@@ -132,6 +138,8 @@ internal object UsbDirectUacBridge {
         feedbackInterval: Int,
         targetSubslotBytes: Int,
         targetBitResolution: Int,
+        pcmBufferMs: Int,
+        transferBufferMs: Int,
     ): Long
 
     @JvmStatic
