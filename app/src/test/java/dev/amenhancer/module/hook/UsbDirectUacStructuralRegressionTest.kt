@@ -160,6 +160,49 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `active USB Direct session keeps strong track identity and queries native state`() {
+        val controller = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
+        )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        assertTrue(controller.contains("val track: AudioTrack"))
+        assertFalse(controller.contains("val track: WeakReference<AudioTrack>"))
+        assertTrue(controller.contains("UsbDirectUacBridge.state(active.handle)"))
+        assertTrue(bridge.contains("fun state(handle: Long): Int"))
+        assertTrue(bridge.contains("private external fun nativeState(handle: Long): Int"))
+        assertTrue(native.contains("UsbDirectUacBridge_nativeState"))
+        assertTrue(native.contains("session->workerStarted.load()"))
+        assertTrue(native.contains("session->failed.load()"))
+    }
+
+    @Test
+    fun `pause and flush preserve USB claim while stop and release tear down`() {
+        val controller = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
+        )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        assertTrue(controller.contains("UsbDirectTransportPolicy.actionFor(operation)"))
+        assertTrue(controller.contains("UsbDirectTransportAction.FLUSH_PCM"))
+        assertTrue(controller.contains("UsbDirectTransportAction.KEEP_SESSION"))
+        assertTrue(controller.contains("UsbDirectTransportAction.CLOSE_SESSION"))
+        assertTrue(controller.contains("UsbDirectUacBridge.flush(active.handle)"))
+        assertTrue(bridge.contains("fun flush(handle: Long)"))
+        assertTrue(bridge.contains("private external fun nativeFlush(handle: Long)"))
+        assertTrue(native.contains("UsbDirectUacBridge_nativeFlush"))
+        assertTrue(native.contains("session->ringRead = 0"))
+        assertTrue(native.contains("session->ringWrite = 0"))
+        assertTrue(native.contains("session->ringCount = 0"))
+    }
+
+    @Test
     fun `direct takeover remains fail open to the original AudioTrack`() {
         val hook = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
