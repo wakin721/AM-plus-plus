@@ -37,8 +37,17 @@ internal object UsbDirectUacController {
     private var applicationContext: Context? = null
     private val trackVolumes = WeakHashMap<AudioTrack, StereoGain>()
 
-    fun configure(isEnabled: Boolean) {
+    @Volatile private var pcmBufferMs: Int = 500
+    @Volatile private var transferBufferMs: Int = 0
+
+    fun configure(
+        isEnabled: Boolean,
+        pcmBufferMs: Int = 500,
+        transferBufferMs: Int = 0,
+    ) {
         enabled.set(isEnabled)
+        this.pcmBufferMs = pcmBufferMs
+        this.transferBufferMs = transferBufferMs
         if (!isEnabled) {
             val context = applicationContext
             synchronized(lock) {
@@ -394,7 +403,13 @@ internal object UsbDirectUacController {
             }
             runCatching { track.flush() }
 
-            when (val opened = UsbDirectUacBridge.open(lease)) {
+            when (
+                val opened = UsbDirectUacBridge.open(
+                    lease = lease,
+                    pcmBufferMs = pcmBufferMs,
+                    transferBufferMs = transferBufferMs,
+                )
+            ) {
                 is UsbDirectUacBridge.OpenResult.Failed -> {
                     markFailure(track, opened.reason, classifyFailure(opened.reason))
                     UsbDirectDeviceClient.release(context)
