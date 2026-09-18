@@ -32,7 +32,11 @@ internal class UsbBitPerfectFeature : FeatureHook {
             UsbDirectUacController.configure(false)
             return FeatureInstallResult.disabled()
         }
-        UsbDirectUacController.configure(settings.usbDirectUacEnabled)
+        UsbDirectUacController.configure(
+            isEnabled = settings.usbDirectUacEnabled,
+            pcmBufferMs = settings.usbDirectPcmBufferMs,
+            transferBufferMs = settings.usbDirectTransferBufferMs,
+        )
         return context.target.usbBitPerfect.install().toFeatureInstallResult()
     }
 }
