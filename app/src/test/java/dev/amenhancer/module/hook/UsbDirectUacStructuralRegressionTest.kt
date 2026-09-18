@@ -33,6 +33,7 @@ class UsbDirectUacStructuralRegressionTest {
         assertFalse(broker.contains("connection.setInterface("))
         assertFalse(broker.contains("UsbUacSampleRateControl.configureUac2"))
         assertFalse(broker.contains("connection.controlTransfer("))
+        assertFalse(broker.contains("UsbUacSampleRateControl"))
         assertFalse(broker.contains("ClaimedSession"))
         assertFalse(broker.contains("releaseClaims("))
 
@@ -109,6 +110,10 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(native.contains("USBDEVFS_SUBMITURB"))
         assertTrue(native.contains("USBDEVFS_REAPURB"))
         assertTrue(native.contains("USBDEVFS_DISCARDURB"))
+        assertTrue(native.contains("USBDEVFS_CONTROL"))
+        assertTrue(native.contains("configureUac1Rate"))
+        assertTrue(native.contains("configureUac2Rate"))
+        assertTrue(native.contains("usb_direct_uac::uac2ControlIndex"))
         assertTrue(native.contains("dup(fd)"))
         assertTrue(native.contains("attenuateIntegerSample"))
         assertTrue(native.contains("gainForSample"))
