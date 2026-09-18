@@ -1137,6 +1137,23 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeFlush(
+    JNIEnv*,
+    jclass,
+    jlong handle
+) {
+    auto session = findSession(handle);
+    if (session == nullptr || session->closing.load()) return;
+    {
+        std::lock_guard<std::mutex> lock(session->ringMutex);
+        session->ringRead = 0;
+        session->ringWrite = 0;
+        session->ringCount = 0;
+    }
+    session->spaceAvailable.notify_all();
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeClose(
     JNIEnv*,
     jclass,

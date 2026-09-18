@@ -104,6 +104,12 @@ internal object UsbDirectUacBridge {
         nativeWriteBytes(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
+    fun flush(handle: Long) {
+        if (!loaded || handle == 0L) return
+        runCatching { nativeFlush(handle) }
+            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native flush failed", error) }
+    }
+
     fun close(handle: Long) {
         if (!loaded || handle == 0L) return
         runCatching { nativeClose(handle) }
@@ -186,6 +192,9 @@ internal object UsbDirectUacBridge {
         gainLeft: Float,
         gainRight: Float,
     ): Int
+
+    @JvmStatic
+    private external fun nativeFlush(handle: Long)
 
     @JvmStatic
     private external fun nativeClose(handle: Long)

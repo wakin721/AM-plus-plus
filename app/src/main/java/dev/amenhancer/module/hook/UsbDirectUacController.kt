@@ -90,14 +90,21 @@ internal object UsbDirectUacController {
         if (!track.isMediaTrack()) return false
         applicationContext = context.applicationContext
         latestTrack = WeakReference(track)
-        return isActive(track)
+        return synchronized(lock) {
+            session?.takeIf { it.track.get() === track }?.let { active ->
+                active.suspended = false
+                true
+            } ?: false
+        }
     }
 
     /** Intercept a Java AudioTrack.write only after the direct usbfs engine owns the track. */
     fun interceptWrite(track: AudioTrack, args: Array<Any?>): Int? {
         if (!enabled.get() || isInternalTransition()) return null
         val active = synchronized(lock) {
-            session?.takeIf { it.track.get() === track }
+            session?.takeIf { it.track.get() === track }?.also {
+                it.suspended = false
+            }
         } ?: return null
         val gains = effectiveGains(active)
 
@@ -235,10 +242,27 @@ internal object UsbDirectUacController {
         observedTrack = WeakReference(track)
         if (track.playState != AudioTrack.PLAYSTATE_PLAYING) return
 
+        var handoffContext: Context? = null
         synchronized(lock) {
-            if (session != null || pendingTrack?.get() === track) return
+            val active = session
+            if (active != null) {
+                val existingTrack = active.track.get()
+                val sameTrack = existingTrack === track
+                if (!UsbDirectTrackHandoffPolicy.shouldHandoff(
+                        sameTrack = sameTrack,
+                        suspended = active.suspended,
+                        existingTrackAlive = existingTrack != null,
+                    )
+                ) {
+                    return
+                }
+                handoffContext = active.context
+                closeSessionLocked()
+            }
+            if (pendingTrack?.get() === track) return
             pendingTrack = WeakReference(track)
         }
+        handoffContext?.let { UsbDirectDeviceClient.release(it) }
         val weakTrack = WeakReference(track)
         val started = UsbDirectDeviceClient.acquire(context, track.format) { resultValue ->
             val currentTrack = weakTrack.get()
@@ -277,14 +301,42 @@ internal object UsbDirectUacController {
 
     fun onTransportControl(context: Context, track: AudioTrack, operation: String) {
         if (isInternalTransition()) return
-        val ownsTrack = synchronized(lock) {
-            val ownsSession = session?.track?.get() === track
+
+        var flushHandle = 0L
+        var releaseClient = false
+        synchronized(lock) {
+            val active = session?.takeIf { it.track.get() === track }
             val ownsPending = pendingTrack?.get() === track
-            if (ownsSession) closeSessionLocked()
-            if (ownsPending) pendingTrack = null
-            ownsSession || ownsPending
+
+            when (UsbDirectTrackHandoffPolicy.actionFor(operation)) {
+                UsbDirectTrackHandoffAction.SUSPEND -> {
+                    if (active != null) {
+                        active.suspended = true
+                        active.hasWrittenPcm = false
+                        flushHandle = active.handle
+                    }
+                    if (ownsPending) {
+                        pendingTrack = null
+                        releaseClient = true
+                    }
+                }
+
+                UsbDirectTrackHandoffAction.CLOSE -> {
+                    if (active != null) {
+                        closeSessionLocked()
+                        releaseClient = true
+                    }
+                    if (ownsPending) {
+                        pendingTrack = null
+                        releaseClient = true
+                    }
+                }
+            }
         }
-        if (ownsTrack) UsbDirectDeviceClient.release(context)
+
+        if (flushHandle != 0L) UsbDirectUacBridge.flush(flushHandle)
+        if (releaseClient) UsbDirectDeviceClient.release(context)
+
         if (operation == "pause" || operation == "stop" || operation == "flush") {
             if (failedTrack?.get() === track) {
                 failedTrack = null
@@ -309,7 +361,7 @@ internal object UsbDirectUacController {
             val track = active?.track?.get()
             if (active != null && track != null) {
                 return statusFor(
-                    state = if (active.hasWrittenPcm) {
+                    state = if (!active.suspended && active.hasWrittenPcm) {
                         UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE
                     } else {
                         UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED
@@ -600,6 +652,7 @@ internal object UsbDirectUacController {
         val deviceType: Int,
         val streamGainCache: UsbDirectVolumeCache,
         var hasWrittenPcm: Boolean = false,
+        var suspended: Boolean = false,
     )
 
     private data class StereoGain(val left: Float, val right: Float) {

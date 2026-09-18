@@ -34,9 +34,10 @@ data class ModuleSettings(
         const val MIN_LYRIC_BLUR_RADIUS_OFFSET_PX = -10
         const val MAX_LYRIC_BLUR_RADIUS_OFFSET_PX = 10
 
-        const val DEFAULT_USB_DIRECT_PCM_BUFFER_MS = 500
+        const val MIN_USB_DIRECT_PCM_BUFFER_MS = 10
+        const val MAX_USB_DIRECT_PCM_BUFFER_MS = 100
+        const val DEFAULT_USB_DIRECT_PCM_BUFFER_MS = 100
         const val DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS = 0
-        val USB_DIRECT_PCM_BUFFER_PRESETS_MS = setOf(50, 100, 250, 500, 1000)
         val USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS = setOf(0, 2, 4, 8, 16)
     }
 }

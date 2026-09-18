@@ -57,6 +57,7 @@ import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import dev.amenhancer.module.XposedServiceSnapshot
 import dev.amenhancer.module.model.ModuleSettings
+import kotlin.math.roundToInt
 
 internal class AmppSettingsActions(
     val saveSettings: (ModuleSettings) -> Unit,
@@ -742,13 +743,13 @@ internal fun UsbAudioSettingsScreen(
             }
             item {
                 SettingsGroup(title = "USB Direct 缓冲") {
-                    UsbBufferPresetRow(
+                    UsbBufferRangeRow(
                         title = "音频缓冲区",
-                        summary = "PCM ring · 修改后需重启 Apple Music",
-                        values = listOf(50, 100, 250, 500, 1000),
+                        summary = "PCM ring · 10–100 ms · 修改后需重启 Apple Music",
+                        minValue = ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
+                        maxValue = ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
                         value = settings.usbDirectPcmBufferMs,
                         enabled = snapshot.isRemoteAvailable && settings.usbDirectUacEnabled,
-                        label = { "$it ms" },
                         onChanged = actions.setPcmBufferMs,
                     )
                     GroupDivider()
@@ -767,6 +768,58 @@ internal fun UsbAudioSettingsScreen(
                 UsbAudioPathCard(settings.usbBitPerfectEnabled, status, checking, actions.refresh)
             }
         }
+    }
+}
+
+@Composable
+private fun UsbBufferRangeRow(
+    title: String,
+    summary: String,
+    minValue: Int,
+    maxValue: Int,
+    value: Int,
+    enabled: Boolean,
+    onChanged: (Int) -> Unit,
+) {
+    val safeValue = value.coerceIn(minValue, maxValue)
+    var sliderValue by remember(value, minValue, maxValue) {
+        mutableFloatStateOf(safeValue.toFloat())
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.5f)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "${sliderValue.roundToInt().coerceIn(minValue, maxValue)} ms",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Text(
+            modifier = Modifier.padding(top = 4.dp),
+            text = summary,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = sliderValue,
+            enabled = enabled,
+            valueRange = minValue.toFloat()..maxValue.toFloat(),
+            steps = (maxValue - minValue - 1).coerceAtLeast(0),
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = {
+                onChanged(sliderValue.roundToInt().coerceIn(minValue, maxValue))
+            },
+        )
     }
 }
 

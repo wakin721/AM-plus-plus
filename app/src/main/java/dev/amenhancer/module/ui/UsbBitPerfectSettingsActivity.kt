@@ -18,6 +18,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -296,12 +297,12 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         background = roundedDrawable(palette.surface, 20, palette.outline)
         clipToOutline = true
         addView(
-            bufferPresetRow(
+            bufferRangeRow(
                 title = "音频缓冲区",
-                summary = "PCM ring · 修改后需重启 Apple Music",
-                values = listOf(50, 100, 250, 500, 1000),
+                summary = "PCM ring · 10–100 ms · 修改后需重启 Apple Music",
+                minValue = ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
+                maxValue = ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
                 selected = { store.settings().usbDirectPcmBufferMs },
-                label = { "$it ms" },
                 save = { value ->
                     store.saveSettings(store.settings().copy(usbDirectPcmBufferMs = value))
                 },
@@ -320,6 +321,65 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                 },
             ),
         )
+    }
+
+    private fun bufferRangeRow(
+        title: String,
+        summary: String,
+        minValue: Int,
+        maxValue: Int,
+        selected: () -> Int,
+        save: (Int) -> Unit,
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        minimumHeight = dp(96)
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        val safeValue = selected().coerceIn(minValue, maxValue)
+        val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
+            textSize = 14f
+            setTextColor(palette.primary)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            text = "$safeValue ms"
+        }
+        addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                    text = title
+                    textSize = 16f
+                    setTextColor(palette.onSurface)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                })
+                addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                    text = summary
+                    textSize = 12.5f
+                    setTextColor(palette.onSurfaceVariant)
+                    setPadding(0, dp(4), dp(8), 0)
+                })
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(valueView)
+        })
+        addView(SeekBar(this@UsbBitPerfectSettingsActivity).apply {
+            max = maxValue - minValue
+            progress = safeValue - minValue
+            isEnabled = store.settings().usbDirectUacEnabled
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    valueView.text = "${(minValue + progress).coerceIn(minValue, maxValue)} ms"
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    if (!store.settings().usbDirectUacEnabled) return
+                    val value = (minValue + progress).coerceIn(minValue, maxValue)
+                    save(value)
+                    valueView.text = "$value ms"
+                }
+            })
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
     private fun bufferPresetRow(
