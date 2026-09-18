@@ -33,6 +33,7 @@ class UsbDirectTrackHandoffPolicyTest {
                 sameTrack = true,
                 suspended = true,
                 existingTrackAlive = true,
+                existingTrackIdle = false,
             ),
         )
         assertFalse(
@@ -40,6 +41,7 @@ class UsbDirectTrackHandoffPolicyTest {
                 sameTrack = false,
                 suspended = false,
                 existingTrackAlive = true,
+                existingTrackIdle = false,
             ),
         )
         assertTrue(
@@ -47,6 +49,7 @@ class UsbDirectTrackHandoffPolicyTest {
                 sameTrack = false,
                 suspended = true,
                 existingTrackAlive = true,
+                existingTrackIdle = false,
             ),
         )
         assertTrue(
@@ -54,6 +57,15 @@ class UsbDirectTrackHandoffPolicyTest {
                 sameTrack = false,
                 suspended = false,
                 existingTrackAlive = false,
+                existingTrackIdle = false,
+            ),
+        )
+        assertTrue(
+            UsbDirectTrackHandoffPolicy.shouldHandoff(
+                sameTrack = false,
+                suspended = false,
+                existingTrackAlive = true,
+                existingTrackIdle = true,
             ),
         )
     }

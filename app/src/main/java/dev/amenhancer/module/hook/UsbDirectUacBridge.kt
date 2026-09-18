@@ -104,6 +104,18 @@ internal object UsbDirectUacBridge {
         nativeWriteBytes(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
+    fun suspend(handle: Long) {
+        if (!loaded || handle == 0L) return
+        runCatching { nativeSuspend(handle) }
+            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native suspend failed", error) }
+    }
+
+    fun resume(handle: Long) {
+        if (!loaded || handle == 0L) return
+        runCatching { nativeResume(handle) }
+            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native resume failed", error) }
+    }
+
     fun flush(handle: Long) {
         if (!loaded || handle == 0L) return
         runCatching { nativeFlush(handle) }
@@ -192,6 +204,12 @@ internal object UsbDirectUacBridge {
         gainLeft: Float,
         gainRight: Float,
     ): Int
+
+    @JvmStatic
+    private external fun nativeSuspend(handle: Long)
+
+    @JvmStatic
+    private external fun nativeResume(handle: Long)
 
     @JvmStatic
     private external fun nativeFlush(handle: Long)

@@ -15,5 +15,6 @@ internal object UsbDirectTrackHandoffPolicy {
         sameTrack: Boolean,
         suspended: Boolean,
         existingTrackAlive: Boolean,
-    ): Boolean = !sameTrack && (suspended || !existingTrackAlive)
+        existingTrackIdle: Boolean,
+    ): Boolean = !sameTrack && (suspended || !existingTrackAlive || existingTrackIdle)
 }
