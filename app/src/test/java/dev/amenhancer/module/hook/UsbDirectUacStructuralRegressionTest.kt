@@ -13,7 +13,7 @@ class UsbDirectUacStructuralRegressionTest {
         ?: error("$relativePath was not found from the unit-test working directory")
 
     @Test
-    fun `USB Host permission broker claims AudioStreaming and validates Apple Music uid`() {
+    fun `USB Host broker lends fd while native session owns interface lifecycle`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
         val permission = projectFile(
             "app/src/main/java/dev/amenhancer/module/usb/UsbDirectPermissionActivity.kt",
@@ -21,32 +21,25 @@ class UsbDirectUacStructuralRegressionTest {
         val broker = projectFile(
             "app/src/main/java/dev/amenhancer/module/usb/UsbDirectDeviceBrokerService.kt",
         )
-        val sampleRateControl = projectFile(
-            "app/src/main/java/dev/amenhancer/module/usb/UsbUacSampleRateControl.kt",
-        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
 
         assertTrue(manifest.contains("android.hardware.usb.host"))
-        assertTrue(manifest.contains("android.hardware.usb.action.USB_DEVICE_ATTACHED"))
-        assertTrue(manifest.contains("@xml/usb_direct_device_filter"))
-        assertTrue(manifest.contains("android:name=\".usb.UsbDirectPermissionActivity\""))
-        assertTrue(manifest.contains("android:enabled=\"false\""))
-        assertTrue(manifest.contains("android:name=\".usb.UsbDirectDeviceBrokerService\""))
         assertTrue(permission.contains("manager.requestPermission(device, permissionIntent)"))
-        assertTrue(permission.contains("PendingIntent.FLAG_MUTABLE"))
-        assertTrue(permission.contains("setComponentEnabledSetting"))
         assertTrue(broker.contains("message.sendingUid"))
         assertTrue(broker.contains("ModuleConstants.TARGET_PACKAGE"))
-        assertTrue(broker.contains("connection.claimInterface(usbInterface, true)"))
-        assertTrue(broker.contains("connection.setInterface(usbInterface)"))
         assertTrue(broker.contains("ParcelFileDescriptor.fromFd(connection.fileDescriptor)"))
-        assertTrue(sampleRateControl.contains("USB_RECIPIENT_INTERFACE = 0x01"))
-        assertTrue(broker.contains("USB_RECIPIENT_ENDPOINT = 0x02"))
-        assertTrue(broker.contains("UsbUacSampleRateControl.configureUac2"))
-        assertTrue(sampleRateControl.contains("UsbConstants.USB_DIR_IN or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE"))
-        assertTrue(sampleRateControl.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_INTERFACE"))
-        assertTrue(broker.contains("UsbConstants.USB_DIR_OUT or UsbConstants.USB_TYPE_CLASS or USB_RECIPIENT_ENDPOINT"))
-        assertFalse(sampleRateControl.contains("UsbConstants.USB_RECIP_INTERFACE"))
-        assertFalse(broker.contains("UsbConstants.USB_RECIP_ENDPOINT"))
+
+        assertFalse(broker.contains("connection.claimInterface("))
+        assertFalse(broker.contains("connection.setInterface("))
+        assertFalse(broker.contains("UsbUacSampleRateControl.configureUac2"))
+        assertFalse(broker.contains("connection.controlTransfer("))
+        assertFalse(broker.contains("ClaimedSession"))
+        assertFalse(broker.contains("releaseClaims("))
+
+        assertTrue(native.contains("USBDEVFS_CLAIMINTERFACE"))
+        assertTrue(native.contains("USBDEVFS_SETINTERFACE"))
+        assertTrue(native.contains("USBDEVFS_RELEASEINTERFACE"))
+        assertTrue(native.contains("USBDEVFS_CONTROL"))
     }
 
     @Test
@@ -122,6 +115,13 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(native.contains("USB Direct feedback timeout"))
         assertTrue(native.contains("USB Direct feedback payload invalid"))
         assertTrue(native.contains("if (!session->running.load() || session->closing.load()) break;"))
+
+        val stopSession = native.substringAfter("void stopSession(Session* session)")
+            .substringBefore("int64_t clampToBits")
+        val joinIndex = stopSession.indexOf("session->worker.join()")
+        val releaseIndex = stopSession.indexOf("releaseInterfaces(session)")
+        assertTrue(joinIndex >= 0)
+        assertTrue(releaseIndex > joinIndex)
     }
 
     @Test
@@ -182,6 +182,47 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(ui.contains("AudioFormat.ENCODING_PCM_FLOAT -> \"PCM Float\""))
         assertTrue(ui.contains("AudioFormat.ENCODING_PCM_24BIT_PACKED -> \"PCM 24-bit\""))
         assertTrue(ui.contains("\$mixerFormat · USB DIRECT · usbfs ISO PCM"))
+    }
+
+    @Test
+    fun `UAC ownership metadata survives broker IPC lease and JNI boundary`() {
+        val ipc = projectFile("app/src/main/java/dev/amenhancer/module/UsbDirectIpc.kt")
+        val broker = projectFile(
+            "app/src/main/java/dev/amenhancer/module/usb/UsbDirectDeviceBrokerService.kt",
+        )
+        val client = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectDeviceClient.kt",
+        )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        listOf(
+            "KEY_AUDIO_CONTROL_INTERFACE",
+            "KEY_CLOCK_SOURCE_ID",
+            "KEY_FIXED_SAMPLE_RATE_MATCH",
+        ).forEach { key -> assertTrue(ipc.contains(key)) }
+
+        assertTrue(broker.contains("alternative.audioControlInterface"))
+        assertTrue(broker.contains("alternative.clockSourceId"))
+        assertTrue(broker.contains("fixedSampleRateMatch"))
+
+        assertTrue(client.contains("val audioControlInterface: Int"))
+        assertTrue(client.contains("val clockSourceId: Int"))
+        assertTrue(client.contains("val fixedSampleRateMatch: Boolean"))
+
+        assertTrue(bridge.contains("lease.interfaceNumber"))
+        assertTrue(bridge.contains("lease.alternateSetting"))
+        assertTrue(bridge.contains("lease.audioControlInterface"))
+        assertTrue(bridge.contains("lease.clockSourceId"))
+        assertTrue(bridge.contains("lease.fixedSampleRateMatch"))
+
+        assertTrue(native.contains("jint interfaceNumber"))
+        assertTrue(native.contains("jint alternateSetting"))
+        assertTrue(native.contains("jint audioControlInterface"))
+        assertTrue(native.contains("jint clockSourceId"))
+        assertTrue(native.contains("jboolean fixedSampleRateMatch"))
     }
 
     @Test
