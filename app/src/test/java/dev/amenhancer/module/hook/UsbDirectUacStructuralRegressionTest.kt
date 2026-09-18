@@ -180,6 +180,25 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `native worker failure is reported separately from an idle claimed session`() {
+        val controller = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
+        )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        assertTrue(bridge.contains("const val STATE_FAILED = 3"))
+        assertTrue(native.contains("kSessionStateFailed = 3"))
+        assertTrue(native.contains("if (session->failed.load())"))
+        assertTrue(native.contains("return kSessionStateFailed"))
+        assertTrue(controller.contains("UsbDirectUacBridge.STATE_FAILED"))
+        assertTrue(controller.contains("UsbDirectUacBridge.lastError("))
+        assertTrue(controller.contains("native worker 已失败"))
+    }
+
+    @Test
     fun `pause and flush preserve USB claim while stop and release tear down`() {
         val controller = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
