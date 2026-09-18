@@ -16,6 +16,10 @@ data class ModuleSettings(
     val usbBitPerfectEnabled: Boolean = false,
     /** Experimental USB Host / UAC direct path. Disabled by default. */
     val usbDirectUacEnabled: Boolean = false,
+    /** PCM ring-buffer duration used by USB Direct. */
+    val usbDirectPcmBufferMs: Int = DEFAULT_USB_DIRECT_PCM_BUFFER_MS,
+    /** Target queued usbfs ISO duration. Zero keeps the compatibility/auto depth. */
+    val usbDirectTransferBufferMs: Int = DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS,
     val titleCorrectionEnabled: Boolean = false,
     /** Selected metadata profile; ignored while [titleCorrectionEnabled] is false. */
     val titleCorrectionMode: TitleCorrectionMode = TitleCorrectionMode.ORIGINAL_HYPER,
@@ -29,6 +33,11 @@ data class ModuleSettings(
     companion object {
         const val MIN_LYRIC_BLUR_RADIUS_OFFSET_PX = -10
         const val MAX_LYRIC_BLUR_RADIUS_OFFSET_PX = 10
+
+        const val DEFAULT_USB_DIRECT_PCM_BUFFER_MS = 500
+        const val DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS = 0
+        val USB_DIRECT_PCM_BUFFER_PRESETS_MS = setOf(50, 100, 250, 500, 1000)
+        val USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS = setOf(0, 2, 4, 8, 16)
     }
 }
 
