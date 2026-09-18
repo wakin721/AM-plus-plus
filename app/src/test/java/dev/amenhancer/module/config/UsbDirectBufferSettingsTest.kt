@@ -9,7 +9,7 @@ class UsbDirectBufferSettingsTest {
     fun `USB Direct buffer settings have compatibility defaults`() {
         val decoded = ModuleSettingsSchema.decode(emptyMap<String, Any?>())
 
-        assertEquals(500, decoded.usbDirectPcmBufferMs)
+        assertEquals(73, decoded.usbDirectPcmBufferMs)
         assertEquals(0, decoded.usbDirectTransferBufferMs)
     }
 
@@ -17,12 +17,12 @@ class UsbDirectBufferSettingsTest {
     fun `USB Direct buffer presets round trip through ordinary settings`() {
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
             ModuleSettings(
-                usbDirectPcmBufferMs = 100,
+                usbDirectPcmBufferMs = 73,
                 usbDirectTransferBufferMs = 8,
             ),
         )
 
-        assertEquals(100, encoded["usb_direct_pcm_buffer_ms"])
+        assertEquals(73, encoded["usb_direct_pcm_buffer_ms"])
         assertEquals(8, encoded["usb_direct_transfer_buffer_ms"])
 
         val decoded = ModuleSettingsSchema.decode(encoded)
@@ -31,15 +31,45 @@ class UsbDirectBufferSettingsTest {
     }
 
     @Test
-    fun `unsupported USB Direct buffer values fall back to safe defaults`() {
+    fun `PCM buffer is clamped to the 10 through 100 millisecond range`() {
+        assertEquals(
+            10,
+            ModuleSettingsSchema.decode(
+                mapOf("usb_direct_pcm_buffer_ms" to 9),
+            ).usbDirectPcmBufferMs,
+        )
+        assertEquals(
+            10,
+            ModuleSettingsSchema.decode(
+                mapOf("usb_direct_pcm_buffer_ms" to 10),
+            ).usbDirectPcmBufferMs,
+        )
+        assertEquals(
+            73,
+            ModuleSettingsSchema.decode(
+                mapOf("usb_direct_pcm_buffer_ms" to 73),
+            ).usbDirectPcmBufferMs,
+        )
+        assertEquals(
+            100,
+            ModuleSettingsSchema.decode(
+                mapOf("usb_direct_pcm_buffer_ms" to 100),
+            ).usbDirectPcmBufferMs,
+        )
+        assertEquals(
+            100,
+            ModuleSettingsSchema.decode(
+                mapOf("usb_direct_pcm_buffer_ms" to 101),
+            ).usbDirectPcmBufferMs,
+        )
+    }
+
+    @Test
+    fun `unsupported USB transfer buffer values still fall back to auto`() {
         val decoded = ModuleSettingsSchema.decode(
-            mapOf(
-                "usb_direct_pcm_buffer_ms" to 73,
-                "usb_direct_transfer_buffer_ms" to 3,
-            ),
+            mapOf("usb_direct_transfer_buffer_ms" to 3),
         )
 
-        assertEquals(500, decoded.usbDirectPcmBufferMs)
         assertEquals(0, decoded.usbDirectTransferBufferMs)
     }
 
@@ -49,12 +79,12 @@ class UsbDirectBufferSettingsTest {
             mapOf(
                 "usb_bit_perfect_enabled" to true,
                 "usb_direct_uac_enabled" to true,
-                "usb_direct_pcm_buffer_ms" to 250,
+                "usb_direct_pcm_buffer_ms" to 37,
                 "usb_direct_transfer_buffer_ms" to 4,
             ),
         )
 
-        assertEquals(250, values["usb_direct_pcm_buffer_ms"])
+        assertEquals(37, values["usb_direct_pcm_buffer_ms"])
         assertEquals(4, values["usb_direct_transfer_buffer_ms"])
     }
 }

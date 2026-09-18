@@ -59,6 +59,19 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
     }
 
     @Test
+    fun `PCM buffer slider exposes the 10 through 100 millisecond range`() {
+        val activity = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
+        )
+
+        assertTrue(activity.contains("valueRange = 10f..100f"))
+        assertTrue(activity.contains("roundToInt()"))
+        assertTrue(activity.contains("MIN_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(activity.contains("MAX_USB_DIRECT_PCM_BUFFER_MS"))
+        assertFalse(activity.contains("listOf(50, 100, 250, 500, 1000)"))
+    }
+
+    @Test
     fun `USB Direct copy advertises explicit feedback and preserves system fallback`() {
         val activity = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",

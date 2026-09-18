@@ -160,6 +160,29 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `AudioTrack handoff keeps a weak track reference and replaces only suspended sessions`() {
+        val controller = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
+        )
+        val bridge = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacBridge.kt",
+        )
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        assertTrue(controller.contains("val track: WeakReference<AudioTrack>"))
+        assertTrue(controller.contains("var suspended: Boolean = false"))
+        assertTrue(controller.contains("UsbDirectTrackHandoffPolicy.shouldHandoff("))
+        assertTrue(controller.contains("UsbDirectTrackHandoffPolicy.actionFor(operation)"))
+        assertTrue(controller.contains("UsbDirectUacBridge.flush(active.handle)"))
+        assertTrue(bridge.contains("fun flush(handle: Long)"))
+        assertTrue(bridge.contains("private external fun nativeFlush(handle: Long)"))
+        assertTrue(native.contains("UsbDirectUacBridge_nativeFlush"))
+        assertTrue(native.contains("session->ringRead = 0"))
+        assertTrue(native.contains("session->ringWrite = 0"))
+        assertTrue(native.contains("session->ringCount = 0"))
+    }
+
+    @Test
     fun `direct takeover remains fail open to the original AudioTrack`() {
         val hook = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
