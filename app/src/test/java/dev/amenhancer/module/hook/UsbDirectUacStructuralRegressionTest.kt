@@ -87,6 +87,19 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `native UAC control helper defines payload and fallback policy`() {
+        val relativePath = "app/src/main/cpp/UsbDirectUacControl.h"
+        val headerFile = sequenceOf(File(relativePath), File("../$relativePath"))
+            .firstOrNull(File::isFile)
+        assertTrue(headerFile != null)
+        val header = headerFile!!.readText()
+        assertTrue(header.contains("uac1RatePayload"))
+        assertTrue(header.contains("uac2RatePayload"))
+        assertTrue(header.contains("uac2ControlIndex"))
+        assertTrue(header.contains("acceptUac1SetCurResult"))
+    }
+
+    @Test
     fun `native engine uses usbfs isochronous URBs rather than AAudio`() {
         val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
         val cmake = projectFile("app/src/main/cpp/CMakeLists.txt")
