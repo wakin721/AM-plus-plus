@@ -107,6 +107,14 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                             }
                             updateToggles(ModuleApplication.serviceSnapshot)
                         },
+                        setPcmBufferMs = { value ->
+                            store.saveSettings(store.settings().copy(usbDirectPcmBufferMs = value))
+                            updateToggles(ModuleApplication.serviceSnapshot)
+                        },
+                        setTransferBufferMs = { value ->
+                            store.saveSettings(store.settings().copy(usbDirectTransferBufferMs = value))
+                            updateToggles(ModuleApplication.serviceSnapshot)
+                        },
                         refresh = ::refreshStatus,
                     ),
                 )
@@ -150,6 +158,8 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(20), dp(16), dp(20), dp(32))
                 addView(toggleCard())
+                addView(spacer(20))
+                addView(bufferCard())
                 addView(spacer(20))
                 addView(audioPathCard())
             }, ViewGroup.LayoutParams(
@@ -279,6 +289,83 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             }
         })
 
+    }
+
+    private fun bufferCard(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = roundedDrawable(palette.surface, 20, palette.outline)
+        clipToOutline = true
+        addView(
+            bufferPresetRow(
+                title = "音频缓冲区",
+                summary = "PCM ring · 修改后需重启 Apple Music",
+                values = listOf(50, 100, 250, 500, 1000),
+                selected = { store.settings().usbDirectPcmBufferMs },
+                label = { "$it ms" },
+                save = { value ->
+                    store.saveSettings(store.settings().copy(usbDirectPcmBufferMs = value))
+                },
+            ),
+        )
+        addView(divider())
+        addView(
+            bufferPresetRow(
+                title = "USB 传输缓冲",
+                summary = "usbfs ISO URB 预队列 · 修改后需重启 Apple Music",
+                values = listOf(0, 2, 4, 8, 16),
+                selected = { store.settings().usbDirectTransferBufferMs },
+                label = { if (it == 0) "自动" else "$it ms" },
+                save = { value ->
+                    store.saveSettings(store.settings().copy(usbDirectTransferBufferMs = value))
+                },
+            ),
+        )
+    }
+
+    private fun bufferPresetRow(
+        title: String,
+        summary: String,
+        values: List<Int>,
+        selected: () -> Int,
+        label: (Int) -> String,
+        save: (Int) -> Unit,
+    ): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(84)
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
+            textSize = 14f
+            setTextColor(palette.primary)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            text = label(selected())
+        }
+        addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                text = title
+                textSize = 16f
+                setTextColor(palette.onSurface)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            })
+            addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
+                text = summary
+                textSize = 12.5f
+                setTextColor(palette.onSurfaceVariant)
+                setPadding(0, dp(4), dp(8), 0)
+            })
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(valueView)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener {
+            if (!store.settings().usbDirectUacEnabled) return@setOnClickListener
+            val current = selected()
+            val index = values.indexOf(current).takeIf { it >= 0 } ?: 0
+            val next = values[(index + 1) % values.size]
+            save(next)
+            valueView.text = label(next)
+        }
     }
 
     private fun audioPathCard(): View = LinearLayout(this).apply {
