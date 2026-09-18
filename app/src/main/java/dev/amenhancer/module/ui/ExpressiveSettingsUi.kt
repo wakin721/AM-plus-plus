@@ -680,6 +680,8 @@ internal class UsbAudioSettingsActions(
     val navigateBack: () -> Unit,
     val setEnabled: (Boolean) -> Unit,
     val setDirectEnabled: (Boolean) -> Unit,
+    val setPcmBufferMs: (Int) -> Unit,
+    val setTransferBufferMs: (Int) -> Unit,
     val refresh: () -> Unit,
 )
 
@@ -739,9 +741,84 @@ internal fun UsbAudioSettingsScreen(
                 }
             }
             item {
+                SettingsGroup(title = "USB Direct 缓冲") {
+                    UsbBufferPresetRow(
+                        title = "音频缓冲区",
+                        summary = "PCM ring · 修改后需重启 Apple Music",
+                        values = listOf(50, 100, 250, 500, 1000),
+                        value = settings.usbDirectPcmBufferMs,
+                        enabled = snapshot.isRemoteAvailable && settings.usbDirectUacEnabled,
+                        label = { "$it ms" },
+                        onChanged = actions.setPcmBufferMs,
+                    )
+                    GroupDivider()
+                    UsbBufferPresetRow(
+                        title = "USB 传输缓冲",
+                        summary = "usbfs ISO URB 预队列 · 修改后需重启 Apple Music",
+                        values = listOf(0, 2, 4, 8, 16),
+                        value = settings.usbDirectTransferBufferMs,
+                        enabled = snapshot.isRemoteAvailable && settings.usbDirectUacEnabled,
+                        label = { if (it == 0) "自动" else "$it ms" },
+                        onChanged = actions.setTransferBufferMs,
+                    )
+                }
+            }
+            item {
                 UsbAudioPathCard(settings.usbBitPerfectEnabled, status, checking, actions.refresh)
             }
         }
+    }
+}
+
+@Composable
+private fun UsbBufferPresetRow(
+    title: String,
+    summary: String,
+    values: List<Int>,
+    value: Int,
+    enabled: Boolean,
+    label: (Int) -> String,
+    onChanged: (Int) -> Unit,
+) {
+    val selectedIndex = values.indexOf(value).coerceAtLeast(0)
+    var sliderIndex by remember(value, values) {
+        mutableFloatStateOf(selectedIndex.toFloat())
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.5f)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                modifier = Modifier.weight(1f),
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = label(values[sliderIndex.toInt().coerceIn(values.indices)]),
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Text(
+            modifier = Modifier.padding(top = 4.dp),
+            text = summary,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Slider(
+            value = sliderIndex,
+            enabled = enabled,
+            valueRange = 0f..values.lastIndex.toFloat(),
+            steps = (values.size - 2).coerceAtLeast(0),
+            onValueChange = { sliderIndex = it },
+            onValueChangeFinished = {
+                onChanged(values[sliderIndex.toInt().coerceIn(values.indices)])
+            },
+        )
     }
 }
 
