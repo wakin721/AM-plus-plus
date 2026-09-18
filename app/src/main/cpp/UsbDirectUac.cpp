@@ -610,6 +610,12 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     jint sampleRate,
     jint inputFormatCode,
     jint channels,
+    jint interfaceNumber,
+    jint alternateSetting,
+    jint audioControlInterface,
+    jint clockSourceId,
+    jboolean fixedSampleRateMatch,
+    jint protocol,
     jint endpointAddress,
     jint maxPacketSize,
     jint interval,
@@ -622,6 +628,12 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     jint transferBufferMs
 ) {
     setError("");
+    (void) interfaceNumber;
+    (void) alternateSetting;
+    (void) audioControlInterface;
+    (void) clockSourceId;
+    (void) fixedSampleRateMatch;
+    (void) protocol;
     const int inputSampleBytes = inputBytesPerSample(inputFormatCode);
     if (
         fd < 0 || sampleRate <= 0 || channels <= 0 || inputSampleBytes == 0 ||

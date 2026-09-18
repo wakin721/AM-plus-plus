@@ -121,6 +121,10 @@ class UsbDirectDeviceBrokerService : Service() {
             replyError(message, "$deviceLabel: $reason")
             return
         }
+        val fixedSampleRateMatch =
+            !alternative.isUac2 &&
+                alternative.sampleRates.size == 1 &&
+                sampleRate in alternative.sampleRates
         val usbInterface = findInterface(device, alternative)
         if (usbInterface == null) {
             connection.close()
@@ -202,6 +206,9 @@ class UsbDirectDeviceBrokerService : Service() {
             putInt(UsbDirectIpc.KEY_CHANNELS, channels)
             putInt(UsbDirectIpc.KEY_INTERFACE_NUMBER, alternative.interfaceNumber)
             putInt(UsbDirectIpc.KEY_ALTERNATE_SETTING, alternative.alternateSetting)
+            putInt(UsbDirectIpc.KEY_AUDIO_CONTROL_INTERFACE, alternative.audioControlInterface)
+            putInt(UsbDirectIpc.KEY_CLOCK_SOURCE_ID, alternative.clockSourceId)
+            putBoolean(UsbDirectIpc.KEY_FIXED_SAMPLE_RATE_MATCH, fixedSampleRateMatch)
             putInt(UsbDirectIpc.KEY_ENDPOINT_ADDRESS, alternative.endpointAddress)
             putInt(UsbDirectIpc.KEY_MAX_PACKET_SIZE, alternative.maxPacketSize)
             putInt(UsbDirectIpc.KEY_INTERVAL, alternative.interval)
