@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "UsbDirectBufferSizing.h"
 #include "UsbFeedbackClock.h"
 #include "UsbPcmPacking.h"
 
@@ -30,13 +31,10 @@ constexpr int kFormatI24 = 3;
 constexpr int kFormatI32 = 4;
 
 constexpr int kIsoPacketsPerUrb = 4;
-constexpr int kIsoUrbCount = 4;
 constexpr int kFeedbackUrbCount = 2;
 constexpr int kMaxInvalidFeedbackPackets = 8;
 constexpr auto kFeedbackTimeout = std::chrono::seconds(2);
 constexpr int kWriteWaitMillis = 500;
-constexpr size_t kMinRingBytes = 256 * 1024;
-constexpr size_t kMaxRingBytes = 8 * 1024 * 1024;
 
 std::mutex gErrorMutex;
 std::string gLastError;
@@ -619,7 +617,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     jint feedbackMaxPacketSize,
     jint feedbackInterval,
     jint targetSubslotBytes,
-    jint targetBitResolution
+    jint targetBitResolution,
+    jint pcmBufferMs,
+    jint transferBufferMs
 ) {
     setError("");
     const int inputSampleBytes = inputBytesPerSample(inputFormatCode);
@@ -627,7 +627,8 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         fd < 0 || sampleRate <= 0 || channels <= 0 || inputSampleBytes == 0 ||
         endpointAddress <= 0 || (endpointAddress & 0x80) != 0 || maxPacketSize <= 0 ||
         targetSubslotBytes < 2 || targetSubslotBytes > 4 ||
-        targetBitResolution < 8 || targetBitResolution > targetSubslotBytes * 8
+        targetBitResolution < 8 || targetBitResolution > targetSubslotBytes * 8 ||
+        pcmBufferMs <= 0 || transferBufferMs < 0
     ) {
         setError("Invalid USB Direct stream parameters");
         return 0;
@@ -678,11 +679,18 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         usb_feedback::nominalFeedbackQ16(sampleRate, session->busTicksPerSecond)
     );
 
-    const size_t halfSecondBytes = static_cast<size_t>(sampleRate) *
-        session->targetFrameBytes / 2;
-    const size_t ringBytes = std::clamp(halfSecondBytes, kMinRingBytes, kMaxRingBytes);
-    session->ring.resize(
-        std::max(session->targetFrameBytes, ringBytes - (ringBytes % session->targetFrameBytes))
+    const size_t ringBytes = usb_direct_buffer::ringBytesForDuration(
+        sampleRate,
+        session->targetFrameBytes,
+        pcmBufferMs
+    );
+    session->ring.resize(ringBytes);
+
+    const int isoUrbCount = usb_direct_buffer::isoUrbCountForTarget(
+        session->busTicksPerSecond,
+        session->outputServiceTicks,
+        transferBufferMs,
+        kIsoPacketsPerUrb
     );
 
     if (session->usesExplicitFeedback) {
@@ -705,7 +713,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
         }
     }
 
-    for (int index = 0; index < kIsoUrbCount; ++index) {
+    for (int index = 0; index < isoUrbCount; ++index) {
         auto slot = std::make_unique<IsoSlot>();
         slot->role = IsoRole::AudioOut;
         slot->urbStorage.resize(
