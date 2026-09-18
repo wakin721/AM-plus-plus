@@ -70,10 +70,12 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
         assertTrue(activity.contains("bufferRangeRow("))
         assertTrue(activity.contains("ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS"))
         assertTrue(activity.contains("ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(activity.contains("ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS"))
         assertTrue(expressive.contains("UsbBufferRangeRow("))
         assertTrue(expressive.contains("ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS"))
         assertTrue(expressive.contains("ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS"))
-        assertTrue(expressive.contains("roundToInt()"))
+        assertTrue(expressive.contains("ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS"))
+        assertTrue(expressive.contains("steps = 8"))
         assertFalse(activity.contains("listOf(50, 100, 250, 500, 1000)"))
         assertFalse(expressive.contains("listOf(50, 100, 250, 500, 1000)"))
     }

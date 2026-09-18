@@ -17,21 +17,21 @@ class UsbDirectBufferSettingsTest {
     fun `USB Direct PCM buffer values round trip through ordinary settings`() {
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
             ModuleSettings(
-                usbDirectPcmBufferMs = 73,
+                usbDirectPcmBufferMs = 70,
                 usbDirectTransferBufferMs = 8,
             ),
         )
 
-        assertEquals(73, encoded["usb_direct_pcm_buffer_ms"])
+        assertEquals(70, encoded["usb_direct_pcm_buffer_ms"])
         assertEquals(8, encoded["usb_direct_transfer_buffer_ms"])
 
         val decoded = ModuleSettingsSchema.decode(encoded)
-        assertEquals(73, decoded.usbDirectPcmBufferMs)
+        assertEquals(70, decoded.usbDirectPcmBufferMs)
         assertEquals(8, decoded.usbDirectTransferBufferMs)
     }
 
     @Test
-    fun `PCM buffer is clamped to the 10 through 100 millisecond range`() {
+    fun `PCM buffer is normalized to 10 millisecond steps from 10 through 100`() {
         assertEquals(
             10,
             ModuleSettingsSchema.decode(
@@ -45,9 +45,15 @@ class UsbDirectBufferSettingsTest {
             ).usbDirectPcmBufferMs,
         )
         assertEquals(
-            73,
+            70,
             ModuleSettingsSchema.decode(
                 mapOf("usb_direct_pcm_buffer_ms" to 73),
+            ).usbDirectPcmBufferMs,
+        )
+        assertEquals(
+            40,
+            ModuleSettingsSchema.decode(
+                mapOf("usb_direct_pcm_buffer_ms" to 37),
             ).usbDirectPcmBufferMs,
         )
         assertEquals(
@@ -84,7 +90,7 @@ class UsbDirectBufferSettingsTest {
             ),
         )
 
-        assertEquals(37, values["usb_direct_pcm_buffer_ms"])
+        assertEquals(40, values["usb_direct_pcm_buffer_ms"])
         assertEquals(4, values["usb_direct_transfer_buffer_ms"])
     }
 }
