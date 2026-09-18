@@ -59,16 +59,23 @@ class UsbBitPerfectSettingsUiStructuralRegressionTest {
     }
 
     @Test
-    fun `PCM buffer slider exposes the 10 through 100 millisecond range`() {
+    fun `PCM buffer controls expose the 10 through 100 millisecond range in both UIs`() {
         val activity = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
         )
+        val expressive = projectFile(
+            "app/src/main/java/dev/amenhancer/module/ui/ExpressiveSettingsUi.kt",
+        )
 
-        assertTrue(activity.contains("valueRange = 10f..100f"))
-        assertTrue(activity.contains("roundToInt()"))
-        assertTrue(activity.contains("MIN_USB_DIRECT_PCM_BUFFER_MS"))
-        assertTrue(activity.contains("MAX_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(activity.contains("bufferRangeRow("))
+        assertTrue(activity.contains("ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(activity.contains("ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(expressive.contains("UsbBufferRangeRow("))
+        assertTrue(expressive.contains("ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(expressive.contains("ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(expressive.contains("roundToInt()"))
         assertFalse(activity.contains("listOf(50, 100, 250, 500, 1000)"))
+        assertFalse(expressive.contains("listOf(50, 100, 250, 500, 1000)"))
     }
 
     @Test
