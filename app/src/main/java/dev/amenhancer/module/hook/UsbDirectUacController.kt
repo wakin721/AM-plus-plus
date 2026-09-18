@@ -345,6 +345,8 @@ internal object UsbDirectUacController {
                         UsbBitPerfectStatusProtocol.STATE_DIRECT_ACTIVE
                     UsbDirectUacBridge.STATE_CLAIMED ->
                         UsbBitPerfectStatusProtocol.STATE_DIRECT_CONFIGURED
+                    UsbDirectUacBridge.STATE_FAILED ->
+                        UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK
                     else ->
                         UsbBitPerfectStatusProtocol.STATE_DIRECT_FALLBACK
                 }
@@ -362,6 +364,14 @@ internal object UsbDirectUacController {
                             }
                             UsbDirectUacBridge.STATE_CLAIMED ->
                                 append("native session 仍持有 interface，当前等待/暂停 PCM。")
+                            UsbDirectUacBridge.STATE_FAILED -> {
+                                val reason = UsbDirectUacBridge.lastError(
+                                    "USB Direct native worker failed"
+                                )
+                                append("native worker 已失败：")
+                                append(reason)
+                                append("。下一次 PCM 写入将走 fail-open 释放 USB 并恢复系统输出。")
+                            }
                             else ->
                                 append("native session 已不可用；下一次 PCM 写入将走 fail-open 恢复系统输出。")
                         }

@@ -49,6 +49,7 @@ constexpr uint8_t kUsbRecipientEndpoint = 0x02;
 constexpr int kSessionStateMissing = 0;
 constexpr int kSessionStateClaimed = 1;
 constexpr int kSessionStateStreaming = 2;
+constexpr int kSessionStateFailed = 3;
 
 std::mutex gErrorMutex;
 std::string gLastError;
@@ -1154,10 +1155,12 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeState(
     ) {
         return kSessionStateMissing;
     }
+    if (session->failed.load()) {
+        return kSessionStateFailed;
+    }
     if (
         session->workerStarted.load() &&
-        session->running.load() &&
-        !session->failed.load()
+        session->running.load()
     ) {
         return kSessionStateStreaming;
     }

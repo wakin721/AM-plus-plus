@@ -12,6 +12,7 @@ internal object UsbDirectUacBridge {
     const val STATE_MISSING = 0
     const val STATE_CLAIMED = 1
     const val STATE_STREAMING = 2
+    const val STATE_FAILED = 3
 
     sealed interface OpenResult {
         data class Opened(val handle: Long) : OpenResult
