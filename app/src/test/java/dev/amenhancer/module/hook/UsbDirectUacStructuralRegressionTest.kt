@@ -160,7 +160,7 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
-    fun `AudioTrack handoff keeps a weak track reference and replaces only suspended sessions`() {
+    fun `AudioTrack handoff suspends cleanly and can replace idle sessions`() {
         val controller = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
         )
@@ -173,11 +173,24 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(controller.contains("var suspended: Boolean = false"))
         assertTrue(controller.contains("UsbDirectTrackHandoffPolicy.shouldHandoff("))
         assertTrue(controller.contains("UsbDirectTrackHandoffPolicy.actionFor(operation)"))
+        assertTrue(controller.contains("suspendHandle = active.handle"))
         assertTrue(controller.contains("flushHandle = active.handle"))
+        assertTrue(controller.contains("UsbDirectUacBridge.suspend(suspendHandle)"))
         assertTrue(controller.contains("UsbDirectUacBridge.flush(flushHandle)"))
+        assertTrue(controller.contains("existingTrackIdle = existingTrackIdle"))
+        assertTrue(controller.contains("if (active.suspended) return consumeSuspendedWrite(args)"))
+        assertTrue(controller.contains("UsbDirectUacBridge.resume(resumeHandle)"))
+        assertTrue(bridge.contains("fun suspend(handle: Long)"))
+        assertTrue(bridge.contains("fun resume(handle: Long)"))
         assertTrue(bridge.contains("fun flush(handle: Long)"))
+        assertTrue(bridge.contains("private external fun nativeSuspend(handle: Long)"))
+        assertTrue(bridge.contains("private external fun nativeResume(handle: Long)"))
         assertTrue(bridge.contains("private external fun nativeFlush(handle: Long)"))
+        assertTrue(native.contains("UsbDirectUacBridge_nativeSuspend"))
+        assertTrue(native.contains("UsbDirectUacBridge_nativeResume"))
         assertTrue(native.contains("UsbDirectUacBridge_nativeFlush"))
+        assertTrue(native.contains("std::atomic<bool> suspended{false}"))
+        assertTrue(native.contains("if (session->suspended.load())"))
         assertTrue(native.contains("session->ringRead = 0"))
         assertTrue(native.contains("session->ringWrite = 0"))
         assertTrue(native.contains("session->ringCount = 0"))
