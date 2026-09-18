@@ -6,6 +6,7 @@ add_library(
     SHARED
     UsbDirectUac.cpp
     UsbDirectBufferSizingCompileTest.cpp
+    UsbDirectUacControlCompileTest.cpp
     UsbFeedbackClockCompileTest.cpp
     UsbPcmPackingCompileTest.cpp
 )
