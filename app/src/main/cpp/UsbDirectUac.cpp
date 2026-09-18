@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -20,6 +21,7 @@
 #include <vector>
 
 #include "UsbDirectBufferSizing.h"
+#include "UsbDirectUacControl.h"
 #include "UsbFeedbackClock.h"
 #include "UsbPcmPacking.h"
 
@@ -35,6 +37,14 @@ constexpr int kFeedbackUrbCount = 2;
 constexpr int kMaxInvalidFeedbackPackets = 8;
 constexpr auto kFeedbackTimeout = std::chrono::seconds(2);
 constexpr int kWriteWaitMillis = 500;
+constexpr int kControlTimeoutMillis = 1000;
+constexpr uint8_t kUacCur = 0x01;
+constexpr uint16_t kSamplingFreqControl = 0x01 << 8;
+constexpr uint8_t kUsbDirOut = 0x00;
+constexpr uint8_t kUsbDirIn = 0x80;
+constexpr uint8_t kUsbTypeClass = 0x20;
+constexpr uint8_t kUsbRecipientInterface = 0x01;
+constexpr uint8_t kUsbRecipientEndpoint = 0x02;
 
 std::mutex gErrorMutex;
 std::string gLastError;
@@ -77,6 +87,15 @@ struct Session {
     int inputFormat = 0;
     int inputBytesPerSample = 0;
     int channels = 0;
+    int interfaceNumber = -1;
+    int alternateSetting = 0;
+    int audioControlInterface = -1;
+    int clockSourceId = 0;
+    int protocol = 0;
+    bool fixedSampleRateMatch = false;
+    bool controlInterfaceClaimed = false;
+    bool streamingInterfaceClaimed = false;
+    bool alternateSettingActive = false;
     int endpointAddress = 0;
     int maxPacketSize = 0;
     int interval = 1;
@@ -146,6 +165,208 @@ bool isHighOrSuperSpeed(int fd) {
 #endif
     // Linux enum usb_device_speed: FULL=2, HIGH=3, SUPER=5, SUPER_PLUS=6.
     return speed == 3 || speed == 5 || speed == 6;
+}
+
+
+bool claimInterface(Session* session, int interfaceNumber) {
+    if (session == nullptr || session->fd < 0 || interfaceNumber < 0) return false;
+    unsigned int iface = static_cast<unsigned int>(interfaceNumber);
+    if (ioctl(session->fd, USBDEVFS_CLAIMINTERFACE, &iface) == 0) return true;
+
+#if defined(USBDEVFS_DISCONNECT_CLAIM) && defined(USBDEVFS_DISCONNECT_CLAIM_IF_DRIVER)
+    usbdevfs_disconnect_claim disconnectClaim{};
+    disconnectClaim.interface = static_cast<unsigned int>(interfaceNumber);
+    disconnectClaim.flags = USBDEVFS_DISCONNECT_CLAIM_IF_DRIVER;
+    std::strncpy(
+        disconnectClaim.driver,
+        "snd-usb-audio",
+        sizeof(disconnectClaim.driver) - 1
+    );
+    if (ioctl(session->fd, USBDEVFS_DISCONNECT_CLAIM, &disconnectClaim) == 0) {
+        return true;
+    }
+#endif
+
+    setError(
+        "USBDEVFS_CLAIMINTERFACE failed for interface " +
+        std::to_string(interfaceNumber) +
+        " errno=" + std::to_string(errno)
+    );
+    return false;
+}
+
+bool claimInterfaces(Session* session) {
+    if (session->protocol >= 0x20) {
+        if (!claimInterface(session, session->audioControlInterface)) return false;
+        session->controlInterfaceClaimed = true;
+    }
+
+    if (
+        session->audioControlInterface != session->interfaceNumber ||
+        !session->controlInterfaceClaimed
+    ) {
+        if (!claimInterface(session, session->interfaceNumber)) return false;
+    }
+    session->streamingInterfaceClaimed = true;
+    return true;
+}
+
+void releaseInterfaces(Session* session) {
+    if (session == nullptr || session->fd < 0) return;
+    if (session->streamingInterfaceClaimed) {
+        unsigned int iface = static_cast<unsigned int>(session->interfaceNumber);
+        ioctl(session->fd, USBDEVFS_RELEASEINTERFACE, &iface);
+        session->streamingInterfaceClaimed = false;
+    }
+    if (
+        session->controlInterfaceClaimed &&
+        session->audioControlInterface != session->interfaceNumber
+    ) {
+        unsigned int iface = static_cast<unsigned int>(session->audioControlInterface);
+        ioctl(session->fd, USBDEVFS_RELEASEINTERFACE, &iface);
+    }
+    session->controlInterfaceClaimed = false;
+    session->alternateSettingActive = false;
+}
+
+bool selectStreamingAlternate(Session* session) {
+    usbdevfs_setinterface setting{};
+    setting.interface = session->interfaceNumber;
+    setting.altsetting = session->alternateSetting;
+    if (ioctl(session->fd, USBDEVFS_SETINTERFACE, &setting) == 0) {
+        session->alternateSettingActive = true;
+        return true;
+    }
+    setError(
+        "USBDEVFS_SETINTERFACE failed interface=" +
+        std::to_string(session->interfaceNumber) +
+        " alt=" + std::to_string(session->alternateSetting) +
+        " errno=" + std::to_string(errno)
+    );
+    return false;
+}
+
+int controlTransfer(
+    Session* session,
+    uint8_t requestType,
+    uint8_t request,
+    uint16_t value,
+    uint16_t index,
+    void* data,
+    uint16_t length
+) {
+    usbdevfs_ctrltransfer transfer{};
+    transfer.bRequestType = requestType;
+    transfer.bRequest = request;
+    transfer.wValue = value;
+    transfer.wIndex = index;
+    transfer.wLength = length;
+    transfer.timeout = kControlTimeoutMillis;
+    transfer.data = data;
+    return ioctl(session->fd, USBDEVFS_CONTROL, &transfer);
+}
+
+uint32_t u32le(const uint8_t* data) {
+    return static_cast<uint32_t>(data[0]) |
+        (static_cast<uint32_t>(data[1]) << 8) |
+        (static_cast<uint32_t>(data[2]) << 16) |
+        (static_cast<uint32_t>(data[3]) << 24);
+}
+
+bool configureUac1Rate(Session* session) {
+    auto payload = usb_direct_uac::uac1RatePayload(session->sampleRate);
+    const int transferred = controlTransfer(
+        session,
+        kUsbDirOut | kUsbTypeClass | kUsbRecipientEndpoint,
+        kUacCur,
+        kSamplingFreqControl,
+        static_cast<uint16_t>(session->endpointAddress),
+        payload.data(),
+        static_cast<uint16_t>(payload.size())
+    );
+    if (usb_direct_uac::acceptUac1SetCurResult(
+            transferred,
+            session->fixedSampleRateMatch
+        )) {
+        return true;
+    }
+    setError(
+        "UAC1 sample-rate control rejected " +
+        std::to_string(session->sampleRate) + "Hz"
+    );
+    return false;
+}
+
+bool configureUac2Rate(Session* session) {
+    const uint16_t index = static_cast<uint16_t>(
+        usb_direct_uac::uac2ControlIndex(
+            session->clockSourceId,
+            session->audioControlInterface
+        )
+    );
+
+    std::array<uint8_t, 4> current{};
+    const int initialRead = controlTransfer(
+        session,
+        kUsbDirIn | kUsbTypeClass | kUsbRecipientInterface,
+        kUacCur,
+        kSamplingFreqControl,
+        index,
+        current.data(),
+        static_cast<uint16_t>(current.size())
+    );
+    if (
+        initialRead == static_cast<int>(current.size()) &&
+        u32le(current.data()) == static_cast<uint32_t>(session->sampleRate)
+    ) {
+        return true;
+    }
+
+    auto target = usb_direct_uac::uac2RatePayload(session->sampleRate);
+    const int written = controlTransfer(
+        session,
+        kUsbDirOut | kUsbTypeClass | kUsbRecipientInterface,
+        kUacCur,
+        kSamplingFreqControl,
+        index,
+        target.data(),
+        static_cast<uint16_t>(target.size())
+    );
+    if (written != static_cast<int>(target.size())) {
+        setError(
+            "UAC2 sample-rate control rejected " +
+            std::to_string(session->sampleRate) + "Hz"
+        );
+        return false;
+    }
+
+    if (initialRead != static_cast<int>(current.size())) return true;
+
+    current.fill(0);
+    const int verifyRead = controlTransfer(
+        session,
+        kUsbDirIn | kUsbTypeClass | kUsbRecipientInterface,
+        kUacCur,
+        kSamplingFreqControl,
+        index,
+        current.data(),
+        static_cast<uint16_t>(current.size())
+    );
+    if (
+        verifyRead == static_cast<int>(current.size()) &&
+        u32le(current.data()) == static_cast<uint32_t>(session->sampleRate)
+    ) {
+        return true;
+    }
+
+    setError("UAC2 sample-rate verification failed");
+    return false;
+}
+
+bool configureSampleRate(Session* session) {
+    return session->protocol >= 0x20
+        ? configureUac2Rate(session)
+        : configureUac1Rate(session);
 }
 
 int framesForNextInterval(Session* session) {
@@ -384,8 +605,11 @@ void stopSession(Session* session) {
         if (slot && slot->urb) ioctl(session->fd, USBDEVFS_DISCARDURB, slot->urb);
     }
     session->spaceAvailable.notify_all();
-    if (session->worker.joinable()) session->worker.join();
+    if (session->worker.joinable()) {
+        session->worker.join();
+    }
     if (session->fd >= 0) {
+        releaseInterfaces(session);
         close(session->fd);
         session->fd = -1;
     }
@@ -628,18 +852,14 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     jint transferBufferMs
 ) {
     setError("");
-    (void) interfaceNumber;
-    (void) alternateSetting;
-    (void) audioControlInterface;
-    (void) clockSourceId;
-    (void) fixedSampleRateMatch;
-    (void) protocol;
     const int inputSampleBytes = inputBytesPerSample(inputFormatCode);
     if (
         fd < 0 || sampleRate <= 0 || channels <= 0 || inputSampleBytes == 0 ||
         endpointAddress <= 0 || (endpointAddress & 0x80) != 0 || maxPacketSize <= 0 ||
         targetSubslotBytes < 2 || targetSubslotBytes > 4 ||
         targetBitResolution < 8 || targetBitResolution > targetSubslotBytes * 8 ||
+        interfaceNumber < 0 || alternateSetting <= 0 ||
+        (protocol >= 0x20 && (audioControlInterface < 0 || clockSourceId <= 0)) ||
         pcmBufferMs <= 0 || transferBufferMs < 0
     ) {
         setError("Invalid USB Direct stream parameters");
@@ -671,6 +891,12 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     session->inputFormat = inputFormatCode;
     session->inputBytesPerSample = inputSampleBytes;
     session->channels = channels;
+    session->interfaceNumber = interfaceNumber;
+    session->alternateSetting = alternateSetting;
+    session->audioControlInterface = audioControlInterface;
+    session->clockSourceId = clockSourceId;
+    session->protocol = protocol;
+    session->fixedSampleRateMatch = fixedSampleRateMatch == JNI_TRUE;
     session->endpointAddress = endpointAddress;
     session->maxPacketSize = maxPacketSize;
     session->interval = std::max(1, interval);
@@ -690,6 +916,25 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeOpen(
     session->packetScheduler.updateFeedback(
         usb_feedback::nominalFeedbackQ16(sampleRate, session->busTicksPerSecond)
     );
+
+    if (!claimInterfaces(session.get())) {
+        releaseInterfaces(session.get());
+        close(session->fd);
+        session->fd = -1;
+        return 0;
+    }
+    if (!selectStreamingAlternate(session.get())) {
+        releaseInterfaces(session.get());
+        close(session->fd);
+        session->fd = -1;
+        return 0;
+    }
+    if (!configureSampleRate(session.get())) {
+        releaseInterfaces(session.get());
+        close(session->fd);
+        session->fd = -1;
+        return 0;
+    }
 
     const size_t ringBytes = usb_direct_buffer::ringBytesForDuration(
         sampleRate,
