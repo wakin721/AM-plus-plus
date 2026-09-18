@@ -748,6 +748,7 @@ internal fun UsbAudioSettingsScreen(
                         summary = "PCM ring · 10–100 ms · 修改后需重启 Apple Music",
                         minValue = ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
                         maxValue = ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
+                        stepValue = ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS,
                         value = settings.usbDirectPcmBufferMs,
                         enabled = snapshot.isRemoteAvailable && settings.usbDirectUacEnabled,
                         onChanged = actions.setPcmBufferMs,
@@ -777,12 +778,13 @@ private fun UsbBufferRangeRow(
     summary: String,
     minValue: Int,
     maxValue: Int,
+    stepValue: Int,
     value: Int,
     enabled: Boolean,
     onChanged: (Int) -> Unit,
 ) {
-    val safeValue = value.coerceIn(minValue, maxValue)
-    var sliderValue by remember(value, minValue, maxValue) {
+    val safeValue = ModuleSettings.normalizeUsbDirectPcmBufferMs(value)
+    var sliderValue by remember(value, minValue, maxValue, stepValue) {
         mutableFloatStateOf(safeValue.toFloat())
     }
     Column(
@@ -799,7 +801,7 @@ private fun UsbBufferRangeRow(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "${sliderValue.roundToInt().coerceIn(minValue, maxValue)} ms",
+                text = "${ModuleSettings.normalizeUsbDirectPcmBufferMs(sliderValue.roundToInt())} ms",
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
             )
@@ -814,10 +816,12 @@ private fun UsbBufferRangeRow(
             value = sliderValue,
             enabled = enabled,
             valueRange = minValue.toFloat()..maxValue.toFloat(),
-            steps = (maxValue - minValue - 1).coerceAtLeast(0),
+            steps = 8,
             onValueChange = { sliderValue = it },
             onValueChangeFinished = {
-                onChanged(sliderValue.roundToInt().coerceIn(minValue, maxValue))
+                onChanged(
+                    ModuleSettings.normalizeUsbDirectPcmBufferMs(sliderValue.roundToInt()),
+                )
             },
         )
     }

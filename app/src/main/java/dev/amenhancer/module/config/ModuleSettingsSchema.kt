@@ -39,10 +39,7 @@ internal object ModuleSettingsSchema {
         usbBitPerfectEnabled = values.boolean(KEY_USB_BIT_PERFECT, default = false),
         usbDirectUacEnabled = values.boolean(KEY_USB_DIRECT_UAC, default = false),
         usbDirectPcmBufferMs = values.number(KEY_USB_DIRECT_PCM_BUFFER_MS)
-            ?.coerceIn(
-                ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
-                ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
-            )
+            ?.let(ModuleSettings::normalizeUsbDirectPcmBufferMs)
             ?: ModuleSettings.DEFAULT_USB_DIRECT_PCM_BUFFER_MS,
         usbDirectTransferBufferMs = values.number(KEY_USB_DIRECT_TRANSFER_BUFFER_MS)
             ?.takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }
@@ -88,9 +85,8 @@ internal object ModuleSettingsSchema {
             ),
             KEY_USB_BIT_PERFECT to settings.usbBitPerfectEnabled,
             KEY_USB_DIRECT_UAC to settings.usbDirectUacEnabled,
-            KEY_USB_DIRECT_PCM_BUFFER_MS to settings.usbDirectPcmBufferMs.coerceIn(
-                ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
-                ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
+            KEY_USB_DIRECT_PCM_BUFFER_MS to ModuleSettings.normalizeUsbDirectPcmBufferMs(
+                settings.usbDirectPcmBufferMs,
             ),
             KEY_USB_DIRECT_TRANSFER_BUFFER_MS to (
                 settings.usbDirectTransferBufferMs
@@ -116,10 +112,7 @@ internal object ModuleSettingsSchema {
             (values[KEY_USB_BIT_PERFECT] as? Boolean)?.let { put(KEY_USB_BIT_PERFECT, it) }
             (values[KEY_USB_DIRECT_UAC] as? Boolean)?.let { put(KEY_USB_DIRECT_UAC, it) }
             (values[KEY_USB_DIRECT_PCM_BUFFER_MS] as? Number)?.toInt()
-                ?.coerceIn(
-                    ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
-                    ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
-                )
+                ?.let(ModuleSettings::normalizeUsbDirectPcmBufferMs)
                 ?.let { put(KEY_USB_DIRECT_PCM_BUFFER_MS, it) }
             (values[KEY_USB_DIRECT_TRANSFER_BUFFER_MS] as? Number)?.toInt()
                 ?.takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }

@@ -302,6 +302,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                 summary = "PCM ring · 10–100 ms · 修改后需重启 Apple Music",
                 minValue = ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
                 maxValue = ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
+                stepValue = ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS,
                 selected = { store.settings().usbDirectPcmBufferMs },
                 save = { value ->
                     store.saveSettings(store.settings().copy(usbDirectPcmBufferMs = value))
@@ -328,13 +329,14 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         summary: String,
         minValue: Int,
         maxValue: Int,
+        stepValue: Int,
         selected: () -> Int,
         save: (Int) -> Unit,
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         minimumHeight = dp(96)
         setPadding(dp(16), dp(12), dp(16), dp(12))
-        val safeValue = selected().coerceIn(minValue, maxValue)
+        val safeValue = ModuleSettings.normalizeUsbDirectPcmBufferMs(selected())
         val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
             textSize = 14f
             setTextColor(palette.primary)
@@ -362,19 +364,20 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             addView(valueView)
         })
         addView(SeekBar(this@UsbBitPerfectSettingsActivity).apply {
-            max = maxValue - minValue
-            progress = safeValue - minValue
+            max = (maxValue - minValue) / stepValue
+            progress = (safeValue - minValue) / stepValue
             isEnabled = store.settings().usbDirectUacEnabled
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    valueView.text = "${(minValue + progress).coerceIn(minValue, maxValue)} ms"
+                    val value = (minValue + progress * stepValue).coerceIn(minValue, maxValue)
+                    valueView.text = "$value ms"
                 }
 
                 override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
 
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     if (!store.settings().usbDirectUacEnabled) return
-                    val value = (minValue + progress).coerceIn(minValue, maxValue)
+                    val value = (minValue + progress * stepValue).coerceIn(minValue, maxValue)
                     save(value)
                     valueView.text = "$value ms"
                 }
