@@ -125,6 +125,7 @@ struct Session {
     std::mutex lifecycleMutex;
 
     std::atomic<bool> running{false};
+    std::atomic<bool> suspended{false};
     std::atomic<bool> failed{false};
     std::atomic<bool> closing{false};
     std::atomic<bool> workerStarted{false};
@@ -387,6 +388,10 @@ int framesForNextInterval(Session* session) {
 }
 
 void copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes) {
+    if (session->suspended.load()) {
+        std::memset(destination, 0, bytes);
+        return;
+    }
     std::unique_lock<std::mutex> lock(session->ringMutex);
     size_t copied = 0;
     while (copied < bytes && session->ringCount > 0) {
@@ -1134,6 +1139,28 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
     if (session->failed.load() || session->closing.load()) return -1;
     const size_t acceptedSamples = accepted / session->targetSubslotBytes;
     return static_cast<jint>(acceptedSamples * session->inputBytesPerSample);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeSuspend(
+    JNIEnv*,
+    jclass,
+    jlong handle
+) {
+    auto session = findSession(handle);
+    if (session == nullptr || session->closing.load()) return;
+    session->suspended.store(true);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeResume(
+    JNIEnv*,
+    jclass,
+    jlong handle
+) {
+    auto session = findSession(handle);
+    if (session == nullptr || session->closing.load()) return;
+    session->suspended.store(false);
 }
 
 extern "C" JNIEXPORT void JNICALL
