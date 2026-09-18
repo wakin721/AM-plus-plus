@@ -7,7 +7,6 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Build
-import android.os.SystemClock
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import java.lang.ref.WeakReference
@@ -186,7 +185,7 @@ internal object UsbDirectUacController {
             synchronized(lock) {
                 session?.takeIf { it.track.get() === track }?.apply {
                     hasWrittenPcm = true
-                    lastWriteRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+                    lastWriteRealtimeNanos = System.nanoTime()
                 }
             }
         }
@@ -249,7 +248,7 @@ internal object UsbDirectUacController {
         observedTrack = WeakReference(track)
         if (track.playState != AudioTrack.PLAYSTATE_PLAYING) return
 
-        val now = SystemClock.elapsedRealtimeNanos()
+        val now = System.nanoTime()
         var handoffContext: Context? = null
         synchronized(lock) {
             val active = session
@@ -572,15 +571,17 @@ internal object UsbDirectUacController {
         }
     }
 
-    private fun consumeSuspendedWrite(args: Array<Any?>): Int? = when (val data = args.firstOrNull()) {
-        is FloatArray, is ShortArray, is ByteArray -> args.getOrNull(2) as? Int
-        is ByteBuffer -> {
-            val sizeBytes = args.getOrNull(1) as? Int ?: return null
-            if (sizeBytes < 0 || sizeBytes > data.remaining()) return null
-            data.position(data.position() + sizeBytes)
-            sizeBytes
+    private fun consumeSuspendedWrite(args: Array<Any?>): Int? {
+        return when (val data = args.firstOrNull()) {
+            is FloatArray, is ShortArray, is ByteArray -> args.getOrNull(2) as? Int
+            is ByteBuffer -> {
+                val sizeBytes = args.getOrNull(1) as? Int ?: return null
+                if (sizeBytes < 0 || sizeBytes > data.remaining()) return null
+                data.position(data.position() + sizeBytes)
+                sizeBytes
+            }
+            else -> null
         }
-        else -> null
     }
 
     private fun writeModeForArray(args: Array<Any?>): Int =
