@@ -211,11 +211,22 @@ bool claimInterfaces(Session* session) {
     return true;
 }
 
+void reconnectKernelDriver(Session* session, int interfaceNumber) {
+    if (session == nullptr || session->fd < 0 || interfaceNumber < 0) return;
+    usbdevfs_ioctl control{};
+    control.ifno = interfaceNumber;
+    control.ioctl_code = USBDEVFS_CONNECT;
+    control.data = nullptr;
+    ioctl(session->fd, USBDEVFS_IOCTL, &control);
+}
+
 void releaseInterfaces(Session* session) {
     if (session == nullptr || session->fd < 0) return;
     if (session->streamingInterfaceClaimed) {
         unsigned int iface = static_cast<unsigned int>(session->interfaceNumber);
-        ioctl(session->fd, USBDEVFS_RELEASEINTERFACE, &iface);
+        if (ioctl(session->fd, USBDEVFS_RELEASEINTERFACE, &iface) == 0) {
+            reconnectKernelDriver(session, session->interfaceNumber);
+        }
         session->streamingInterfaceClaimed = false;
     }
     if (
@@ -223,7 +234,9 @@ void releaseInterfaces(Session* session) {
         session->audioControlInterface != session->interfaceNumber
     ) {
         unsigned int iface = static_cast<unsigned int>(session->audioControlInterface);
-        ioctl(session->fd, USBDEVFS_RELEASEINTERFACE, &iface);
+        if (ioctl(session->fd, USBDEVFS_RELEASEINTERFACE, &iface) == 0) {
+            reconnectKernelDriver(session, session->audioControlInterface);
+        }
     }
     session->controlInterfaceClaimed = false;
     session->alternateSettingActive = false;
