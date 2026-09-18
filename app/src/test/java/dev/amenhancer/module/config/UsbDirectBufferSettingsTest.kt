@@ -9,12 +9,12 @@ class UsbDirectBufferSettingsTest {
     fun `USB Direct buffer settings have compatibility defaults`() {
         val decoded = ModuleSettingsSchema.decode(emptyMap<String, Any?>())
 
-        assertEquals(73, decoded.usbDirectPcmBufferMs)
+        assertEquals(100, decoded.usbDirectPcmBufferMs)
         assertEquals(0, decoded.usbDirectTransferBufferMs)
     }
 
     @Test
-    fun `USB Direct buffer presets round trip through ordinary settings`() {
+    fun `USB Direct PCM buffer values round trip through ordinary settings`() {
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(
             ModuleSettings(
                 usbDirectPcmBufferMs = 73,
@@ -26,7 +26,7 @@ class UsbDirectBufferSettingsTest {
         assertEquals(8, encoded["usb_direct_transfer_buffer_ms"])
 
         val decoded = ModuleSettingsSchema.decode(encoded)
-        assertEquals(100, decoded.usbDirectPcmBufferMs)
+        assertEquals(73, decoded.usbDirectPcmBufferMs)
         assertEquals(8, decoded.usbDirectTransferBufferMs)
     }
 
@@ -74,7 +74,7 @@ class UsbDirectBufferSettingsTest {
     }
 
     @Test
-    fun `standalone USB settings synchronization carries buffer presets`() {
+    fun `standalone USB settings synchronization carries buffer values`() {
         val values = ModuleSettingsSchema.usbDirectSettingsValues(
             mapOf(
                 "usb_bit_perfect_enabled" to true,
