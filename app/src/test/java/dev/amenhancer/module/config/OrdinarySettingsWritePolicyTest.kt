@@ -100,7 +100,7 @@ class OrdinarySettingsWritePolicyTest {
                 "lyric_blur_radius_offset_px" to 6,
                 "usb_bit_perfect_enabled" to true,
                 "usb_direct_uac_enabled" to true,
-                "usb_direct_pcm_buffer_ms" to 500,
+                "usb_direct_pcm_buffer_ms" to 100,
                 "usb_direct_transfer_buffer_ms" to 0,
                 "title_correction_enabled" to false,
                 "title_correction_mode" to "original_hyper",
