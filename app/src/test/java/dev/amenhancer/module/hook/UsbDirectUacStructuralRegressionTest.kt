@@ -143,6 +143,23 @@ class UsbDirectUacStructuralRegressionTest {
     }
 
     @Test
+    fun `native release reconnects kernel driver after interface release`() {
+        val native = projectFile("app/src/main/cpp/UsbDirectUac.cpp")
+
+        assertTrue(native.contains("USBDEVFS_DISCONNECT_CLAIM"))
+        assertTrue(native.contains("USBDEVFS_IOCTL"))
+        assertTrue(native.contains("USBDEVFS_CONNECT"))
+        assertTrue(native.contains("reconnectKernelDriver"))
+
+        val release = native.substringAfter("void releaseInterfaces(Session* session)")
+            .substringBefore("bool selectStreamingAlternate")
+        val releaseIndex = release.indexOf("USBDEVFS_RELEASEINTERFACE")
+        val reconnectIndex = release.indexOf("reconnectKernelDriver")
+        assertTrue(releaseIndex >= 0)
+        assertTrue(reconnectIndex > releaseIndex)
+    }
+
+    @Test
     fun `direct takeover remains fail open to the original AudioTrack`() {
         val hook = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
