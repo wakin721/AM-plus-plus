@@ -109,6 +109,7 @@ internal object UsbDirectUacController {
         val active = synchronized(lock) {
             session?.takeIf { it.track.get() === track }
         } ?: return null
+        if (active.suspended) return consumeSuspendedWrite(args)
         val gains = effectiveGains(active)
 
         val written = when (val data = args.firstOrNull()) {
@@ -326,7 +327,7 @@ internal object UsbDirectUacController {
                         active.suspended = true
                         active.hasWrittenPcm = false
                         suspendHandle = active.handle
-                        if (operation == "flush") flushHandle = active.handle
+                        flushHandle = active.handle
                     }
                     if (ownsPending) {
                         pendingTrack = null
@@ -569,6 +570,17 @@ internal object UsbDirectUacController {
             is ByteBuffer -> args.size == 3
             else -> false
         }
+    }
+
+    private fun consumeSuspendedWrite(args: Array<Any?>): Int? = when (val data = args.firstOrNull()) {
+        is FloatArray, is ShortArray, is ByteArray -> args.getOrNull(2) as? Int
+        is ByteBuffer -> {
+            val sizeBytes = args.getOrNull(1) as? Int ?: return null
+            if (sizeBytes < 0 || sizeBytes > data.remaining()) return null
+            data.position(data.position() + sizeBytes)
+            sizeBytes
+        }
+        else -> null
     }
 
     private fun writeModeForArray(args: Array<Any?>): Int =
