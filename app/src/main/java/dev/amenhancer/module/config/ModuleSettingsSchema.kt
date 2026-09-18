@@ -85,12 +85,16 @@ internal object ModuleSettingsSchema {
             ),
             KEY_USB_BIT_PERFECT to settings.usbBitPerfectEnabled,
             KEY_USB_DIRECT_UAC to settings.usbDirectUacEnabled,
-            KEY_USB_DIRECT_PCM_BUFFER_MS to settings.usbDirectPcmBufferMs
-                .takeIf { it in ModuleSettings.USB_DIRECT_PCM_BUFFER_PRESETS_MS }
-                ?: ModuleSettings.DEFAULT_USB_DIRECT_PCM_BUFFER_MS,
-            KEY_USB_DIRECT_TRANSFER_BUFFER_MS to settings.usbDirectTransferBufferMs
-                .takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }
-                ?: ModuleSettings.DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS,
+            KEY_USB_DIRECT_PCM_BUFFER_MS to (
+                settings.usbDirectPcmBufferMs
+                    .takeIf { it in ModuleSettings.USB_DIRECT_PCM_BUFFER_PRESETS_MS }
+                    ?: ModuleSettings.DEFAULT_USB_DIRECT_PCM_BUFFER_MS
+            ),
+            KEY_USB_DIRECT_TRANSFER_BUFFER_MS to (
+                settings.usbDirectTransferBufferMs
+                    .takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }
+                    ?: ModuleSettings.DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS
+            ),
             KEY_TITLE_CORRECTION_ENABLED to settings.titleCorrectionEnabled,
             KEY_TITLE_CORRECTION_MODE to settings.titleCorrectionMode.storageValue,
             KEY_CUSTOM_LYRICS_ENABLED to settings.customLyricsEnabled,
