@@ -38,6 +38,12 @@ internal object ModuleSettingsSchema {
             ) ?: 0,
         usbBitPerfectEnabled = values.boolean(KEY_USB_BIT_PERFECT, default = false),
         usbDirectUacEnabled = values.boolean(KEY_USB_DIRECT_UAC, default = false),
+        usbDirectPcmBufferMs = values.number(KEY_USB_DIRECT_PCM_BUFFER_MS)
+            ?.takeIf { it in ModuleSettings.USB_DIRECT_PCM_BUFFER_PRESETS_MS }
+            ?: ModuleSettings.DEFAULT_USB_DIRECT_PCM_BUFFER_MS,
+        usbDirectTransferBufferMs = values.number(KEY_USB_DIRECT_TRANSFER_BUFFER_MS)
+            ?.takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }
+            ?: ModuleSettings.DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS,
         titleCorrectionEnabled = values.boolean(
             KEY_TITLE_CORRECTION_ENABLED,
             default = false,
@@ -79,6 +85,12 @@ internal object ModuleSettingsSchema {
             ),
             KEY_USB_BIT_PERFECT to settings.usbBitPerfectEnabled,
             KEY_USB_DIRECT_UAC to settings.usbDirectUacEnabled,
+            KEY_USB_DIRECT_PCM_BUFFER_MS to settings.usbDirectPcmBufferMs
+                .takeIf { it in ModuleSettings.USB_DIRECT_PCM_BUFFER_PRESETS_MS }
+                ?: ModuleSettings.DEFAULT_USB_DIRECT_PCM_BUFFER_MS,
+            KEY_USB_DIRECT_TRANSFER_BUFFER_MS to settings.usbDirectTransferBufferMs
+                .takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }
+                ?: ModuleSettings.DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS,
             KEY_TITLE_CORRECTION_ENABLED to settings.titleCorrectionEnabled,
             KEY_TITLE_CORRECTION_MODE to settings.titleCorrectionMode.storageValue,
             KEY_CUSTOM_LYRICS_ENABLED to settings.customLyricsEnabled,
@@ -89,7 +101,7 @@ internal object ModuleSettingsSchema {
     }
 
     /**
-     * Extracts only the two USB Direct toggles owned by the standalone settings
+     * Extracts only the USB Direct settings owned by the standalone settings
      * screen. Missing or malformed values are ignored so synchronization can
      * never reset an initialized host setting to a default.
      */
@@ -97,6 +109,12 @@ internal object ModuleSettingsSchema {
         linkedMapOf<String, Any>().apply {
             (values[KEY_USB_BIT_PERFECT] as? Boolean)?.let { put(KEY_USB_BIT_PERFECT, it) }
             (values[KEY_USB_DIRECT_UAC] as? Boolean)?.let { put(KEY_USB_DIRECT_UAC, it) }
+            (values[KEY_USB_DIRECT_PCM_BUFFER_MS] as? Number)?.toInt()
+                ?.takeIf { it in ModuleSettings.USB_DIRECT_PCM_BUFFER_PRESETS_MS }
+                ?.let { put(KEY_USB_DIRECT_PCM_BUFFER_MS, it) }
+            (values[KEY_USB_DIRECT_TRANSFER_BUFFER_MS] as? Number)?.toInt()
+                ?.takeIf { it in ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS }
+                ?.let { put(KEY_USB_DIRECT_TRANSFER_BUFFER_MS, it) }
         }
 
     fun encodeFontManifest(manifest: LyricsFontManifest): Map<String, Any> {
@@ -227,6 +245,8 @@ internal object ModuleSettingsSchema {
         KEY_LYRIC_BLUR_RADIUS_OFFSET,
         KEY_USB_BIT_PERFECT,
         KEY_USB_DIRECT_UAC,
+        KEY_USB_DIRECT_PCM_BUFFER_MS,
+        KEY_USB_DIRECT_TRANSFER_BUFFER_MS,
         KEY_TITLE_CORRECTION_ENABLED,
         KEY_TITLE_CORRECTION_MODE,
         KEY_TITLE_CORRECTION_TARGET_LANGUAGE,
@@ -258,6 +278,8 @@ internal object ModuleSettingsSchema {
     private const val KEY_USB_BIT_PERFECT = "usb_bit_perfect_enabled"
     private const val KEY_REMOVED_USB_EXCLUSIVE_AAUDIO = "usb_exclusive_aaudio_enabled"
     private const val KEY_USB_DIRECT_UAC = "usb_direct_uac_enabled"
+    private const val KEY_USB_DIRECT_PCM_BUFFER_MS = "usb_direct_pcm_buffer_ms"
+    private const val KEY_USB_DIRECT_TRANSFER_BUFFER_MS = "usb_direct_transfer_buffer_ms"
     private const val KEY_TITLE_CORRECTION_ENABLED = "title_correction_enabled"
     private const val KEY_TITLE_CORRECTION_MODE = "title_correction_mode"
     private const val KEY_TITLE_CORRECTION_TARGET_LANGUAGE = "title_correction_target_language"
