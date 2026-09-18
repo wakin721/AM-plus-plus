@@ -46,6 +46,10 @@ constexpr uint8_t kUsbTypeClass = 0x20;
 constexpr uint8_t kUsbRecipientInterface = 0x01;
 constexpr uint8_t kUsbRecipientEndpoint = 0x02;
 
+constexpr int kSessionStateMissing = 0;
+constexpr int kSessionStateClaimed = 1;
+constexpr int kSessionStateStreaming = 2;
+
 std::mutex gErrorMutex;
 std::string gLastError;
 
@@ -1134,6 +1138,47 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeWriteBytes(
     if (session->failed.load() || session->closing.load()) return -1;
     const size_t acceptedSamples = accepted / session->targetSubslotBytes;
     return static_cast<jint>(acceptedSamples * session->inputBytesPerSample);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeState(
+    JNIEnv*,
+    jclass,
+    jlong handle
+) {
+    auto session = findSession(handle);
+    if (
+        session == nullptr ||
+        session->fd < 0 ||
+        session->closing.load()
+    ) {
+        return kSessionStateMissing;
+    }
+    if (
+        session->workerStarted.load() &&
+        session->running.load() &&
+        !session->failed.load()
+    ) {
+        return kSessionStateStreaming;
+    }
+    return kSessionStateClaimed;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeFlush(
+    JNIEnv*,
+    jclass,
+    jlong handle
+) {
+    auto session = findSession(handle);
+    if (session == nullptr || session->closing.load()) return;
+    {
+        std::lock_guard<std::mutex> lock(session->ringMutex);
+        session->ringRead = 0;
+        session->ringWrite = 0;
+        session->ringCount = 0;
+    }
+    session->spaceAvailable.notify_all();
 }
 
 extern "C" JNIEXPORT void JNICALL
