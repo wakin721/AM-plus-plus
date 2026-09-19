@@ -24,7 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * resumes the original AudioTrack so Android's normal audio path can continue.
  */
 internal object UsbDirectUacController {
-    private const val TRACK_HANDOFF_IDLE_NANOS = 250_000_000L
+    private const val TRACK_HANDOFF_IDLE_NANOS = 1_000_000_000L
+    private const val TRACK_HANDOFF_STARTUP_GRACE_NANOS = 2_000_000_000L
 
     private val enabled = AtomicBoolean(false)
     private val lock = Any()
@@ -255,9 +256,13 @@ internal object UsbDirectUacController {
             if (active != null) {
                 val existingTrack = active.track.get()
                 val sameTrack = existingTrack === track
-                val existingTrackIdle =
-                    active.lastWriteRealtimeNanos == 0L ||
-                        now - active.lastWriteRealtimeNanos >= TRACK_HANDOFF_IDLE_NANOS
+                val existingTrackIdle = UsbDirectTrackHandoffPolicy.isIdleOwner(
+                    ownerStartedRealtimeNanos = active.ownerStartedRealtimeNanos,
+                    lastWriteRealtimeNanos = active.lastWriteRealtimeNanos,
+                    nowRealtimeNanos = now,
+                    idleThresholdNanos = TRACK_HANDOFF_IDLE_NANOS,
+                    startupGraceNanos = TRACK_HANDOFF_STARTUP_GRACE_NANOS,
+                )
                 if (!UsbDirectTrackHandoffPolicy.shouldHandoff(
                         sameTrack = sameTrack,
                         suspended = active.suspended,
@@ -326,6 +331,17 @@ internal object UsbDirectUacController {
                         active.suspended = true
                         active.hasWrittenPcm = false
                         suspendHandle = active.handle
+                        flushHandle = active.handle
+                    }
+                    if (ownsPending) {
+                        pendingTrack = null
+                        releaseClient = true
+                    }
+                }
+
+                UsbDirectTrackHandoffAction.FLUSH -> {
+                    if (active != null) {
+                        active.hasWrittenPcm = false
                         flushHandle = active.handle
                     }
                     if (ownsPending) {
@@ -680,6 +696,7 @@ internal object UsbDirectUacController {
         val streamGainCache: UsbDirectVolumeCache,
         var hasWrittenPcm: Boolean = false,
         var suspended: Boolean = false,
+        val ownerStartedRealtimeNanos: Long = System.nanoTime(),
         var lastWriteRealtimeNanos: Long = 0L,
     )
 

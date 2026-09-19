@@ -7,13 +7,13 @@ import org.junit.Test
 
 class UsbDirectTrackHandoffPolicyTest {
     @Test
-    fun `pause and flush suspend while stop and release close`() {
+    fun `pause suspends flush only clears buffers and stop or release close`() {
         assertEquals(
             UsbDirectTrackHandoffAction.SUSPEND,
             UsbDirectTrackHandoffPolicy.actionFor("pause"),
         )
         assertEquals(
-            UsbDirectTrackHandoffAction.SUSPEND,
+            UsbDirectTrackHandoffAction.FLUSH,
             UsbDirectTrackHandoffPolicy.actionFor("flush"),
         )
         assertEquals(
@@ -69,4 +69,48 @@ class UsbDirectTrackHandoffPolicyTest {
             ),
         )
     }
+    @Test
+    fun `fresh owner is protected during startup grace before its first direct PCM write`() {
+        assertFalse(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                ownerStartedRealtimeNanos = 4_000_000_000L,
+                lastWriteRealtimeNanos = 0L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+                startupGraceNanos = 2_000_000_000L,
+            ),
+        )
+        assertTrue(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                ownerStartedRealtimeNanos = 3_000_000_000L,
+                lastWriteRealtimeNanos = 0L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+                startupGraceNanos = 2_000_000_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun `owner with direct PCM becomes idle only after the normal threshold`() {
+        assertFalse(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                ownerStartedRealtimeNanos = 1_000_000_000L,
+                lastWriteRealtimeNanos = 4_500_000_000L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+                startupGraceNanos = 2_000_000_000L,
+            ),
+        )
+        assertTrue(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                ownerStartedRealtimeNanos = 1_000_000_000L,
+                lastWriteRealtimeNanos = 4_000_000_000L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+                startupGraceNanos = 2_000_000_000L,
+            ),
+        )
+    }
+
 }
