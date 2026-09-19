@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * resumes the original AudioTrack so Android's normal audio path can continue.
  */
 internal object UsbDirectUacController {
-    private const val TRACK_HANDOFF_IDLE_NANOS = 250_000_000L
+    private const val TRACK_HANDOFF_IDLE_NANOS = 1_000_000_000L
 
     private val enabled = AtomicBoolean(false)
     private val lock = Any()
@@ -255,9 +255,11 @@ internal object UsbDirectUacController {
             if (active != null) {
                 val existingTrack = active.track.get()
                 val sameTrack = existingTrack === track
-                val existingTrackIdle =
-                    active.lastWriteRealtimeNanos == 0L ||
-                        now - active.lastWriteRealtimeNanos >= TRACK_HANDOFF_IDLE_NANOS
+                val existingTrackIdle = UsbDirectTrackHandoffPolicy.isIdleOwner(
+                    lastWriteRealtimeNanos = active.lastWriteRealtimeNanos,
+                    nowRealtimeNanos = now,
+                    idleThresholdNanos = TRACK_HANDOFF_IDLE_NANOS,
+                )
                 if (!UsbDirectTrackHandoffPolicy.shouldHandoff(
                         sameTrack = sameTrack,
                         suspended = active.suspended,
