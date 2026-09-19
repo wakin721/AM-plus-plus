@@ -52,9 +52,9 @@ internal class AppleMusicUsbBitPerfectTarget(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             return TargetCapabilityInstall.Degraded("USB Bit-Perfect requires Android 14 or newer")
         }
-        if (!UsbBitPerfectStatusRequestResponder(application).register()) {
-            return TargetCapabilityInstall.Degraded(
-                "USB Bit-Perfect status request receiver could not be registered",
+        if (!UsbBitPerfectStatusRequestResponder.register(application)) {
+            ModernXposedRuntime.log(
+                "usb_bit_perfect: live status receiver unavailable; continuing audio hook install",
             )
         }
         UsbDirectSystemVolumeObserver.register(application)
@@ -549,9 +549,9 @@ internal object UsbBitPerfectController {
         "${sampleRate}Hz encoding=$encoding channels=$channelCount"
 }
 
-private class UsbBitPerfectStatusRequestResponder(
-    private val application: Application,
-) {
+internal object UsbBitPerfectStatusRequestResponder {
+    private val registered = AtomicBoolean(false)
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != UsbBitPerfectStatusProtocol.REQUEST_ACTION) return
@@ -559,53 +559,91 @@ private class UsbBitPerfectStatusRequestResponder(
                 ?.takeIf(String::isNotBlank)
                 ?: return
             val resultReceiver = intent.resultReceiver() ?: return
-            val status = UsbBitPerfectController.currentStatus(application)
-            resultReceiver.send(
-                UsbBitPerfectStatusProtocol.RESULT_AVAILABLE,
-                Bundle().apply {
-                    putString(UsbBitPerfectStatusProtocol.EXTRA_REQUEST_TOKEN, token)
-                    putString(UsbBitPerfectStatusProtocol.EXTRA_STATE, status.state)
-                    status.deviceName?.let {
-                        putString(UsbBitPerfectStatusProtocol.EXTRA_DEVICE_NAME, it)
-                    }
-                    putInt(UsbBitPerfectStatusProtocol.EXTRA_TRACK_SAMPLE_RATE, status.trackSampleRate)
-                    putInt(UsbBitPerfectStatusProtocol.EXTRA_TRACK_ENCODING, status.trackEncoding)
-                    putInt(UsbBitPerfectStatusProtocol.EXTRA_TRACK_CHANNELS, status.trackChannels)
-                    putInt(UsbBitPerfectStatusProtocol.EXTRA_MIXER_SAMPLE_RATE, status.mixerSampleRate)
-                    putInt(UsbBitPerfectStatusProtocol.EXTRA_MIXER_ENCODING, status.mixerEncoding)
-                    putInt(UsbBitPerfectStatusProtocol.EXTRA_MIXER_CHANNELS, status.mixerChannels)
-                    status.message?.let {
-                        putString(UsbBitPerfectStatusProtocol.EXTRA_MESSAGE, it)
-                    }
-                },
-            )
+            val status = runCatching {
+                UsbBitPerfectController.currentStatus(context.applicationContext)
+            }.getOrElse { error ->
+                ModernXposedRuntime.log("usb_bit_perfect: live status query failed", error)
+                UsbBitPerfectStatusDetails(
+                    state = UsbBitPerfectStatusProtocol.STATE_REQUEST_FAILED,
+                    message = "实时状态读取失败：${error.message ?: error.javaClass.simpleName}",
+                )
+            }
+            runCatching {
+                resultReceiver.send(
+                    UsbBitPerfectStatusProtocol.RESULT_AVAILABLE,
+                    Bundle().apply {
+                        putString(UsbBitPerfectStatusProtocol.EXTRA_REQUEST_TOKEN, token)
+                        putString(UsbBitPerfectStatusProtocol.EXTRA_STATE, status.state)
+                        status.deviceName?.let {
+                            putString(UsbBitPerfectStatusProtocol.EXTRA_DEVICE_NAME, it)
+                        }
+                        putInt(
+                            UsbBitPerfectStatusProtocol.EXTRA_TRACK_SAMPLE_RATE,
+                            status.trackSampleRate,
+                        )
+                        putInt(
+                            UsbBitPerfectStatusProtocol.EXTRA_TRACK_ENCODING,
+                            status.trackEncoding,
+                        )
+                        putInt(
+                            UsbBitPerfectStatusProtocol.EXTRA_TRACK_CHANNELS,
+                            status.trackChannels,
+                        )
+                        putInt(
+                            UsbBitPerfectStatusProtocol.EXTRA_MIXER_SAMPLE_RATE,
+                            status.mixerSampleRate,
+                        )
+                        putInt(
+                            UsbBitPerfectStatusProtocol.EXTRA_MIXER_ENCODING,
+                            status.mixerEncoding,
+                        )
+                        putInt(
+                            UsbBitPerfectStatusProtocol.EXTRA_MIXER_CHANNELS,
+                            status.mixerChannels,
+                        )
+                        status.message?.let {
+                            putString(UsbBitPerfectStatusProtocol.EXTRA_MESSAGE, it)
+                        }
+                    },
+                )
+            }.onFailure { error ->
+                ModernXposedRuntime.log("usb_bit_perfect: live status reply failed", error)
+            }
         }
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    fun register(): Boolean = runCatching {
-        val filter = IntentFilter(UsbBitPerfectStatusProtocol.REQUEST_ACTION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            application.registerReceiver(
-                receiver,
-                filter,
-                UsbBitPerfectStatusProtocol.REQUEST_PERMISSION,
-                null,
-                Context.RECEIVER_EXPORTED,
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            application.registerReceiver(
-                receiver,
-                filter,
-                UsbBitPerfectStatusProtocol.REQUEST_PERMISSION,
-                null,
-            )
+    fun register(application: Application): Boolean {
+        if (registered.get()) return true
+        synchronized(this) {
+            if (registered.get()) return true
+            val installed = runCatching {
+                val filter = IntentFilter(UsbBitPerfectStatusProtocol.REQUEST_ACTION)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    application.registerReceiver(
+                        receiver,
+                        filter,
+                        UsbBitPerfectStatusProtocol.REQUEST_PERMISSION,
+                        null,
+                        Context.RECEIVER_EXPORTED,
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    application.registerReceiver(
+                        receiver,
+                        filter,
+                        UsbBitPerfectStatusProtocol.REQUEST_PERMISSION,
+                        null,
+                    )
+                }
+                true
+            }.onFailure { error ->
+                ModernXposedRuntime.log("usb_bit_perfect: status request receiver failed", error)
+            }.getOrDefault(false)
+            if (installed) registered.set(true)
+            return installed
         }
-        true
-    }.onFailure { error ->
-        ModernXposedRuntime.log("usb_bit_perfect: status request receiver failed", error)
-    }.getOrDefault(false)
+    }
 
     @Suppress("DEPRECATION")
     private fun Intent.resultReceiver(): ResultReceiver? =

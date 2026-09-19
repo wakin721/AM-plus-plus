@@ -160,6 +160,7 @@ class HookEntry : XposedModule() {
                         val application = param.thisObject as? Application ?: return
                         if (application.packageName != ModuleConstants.TARGET_PACKAGE) return
                         if (!isTargetMainProcess(application)) return
+                        UsbBitPerfectStatusRequestResponder.register(application)
                         val build = targetBuild(application)
                         if (!bootstrap.supports(build)) {
                             ModernXposedRuntime.log(
