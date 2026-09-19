@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal object UsbDirectUacController {
     private const val TRACK_HANDOFF_IDLE_NANOS = 1_000_000_000L
+    private const val TRACK_HANDOFF_STARTUP_GRACE_NANOS = 2_000_000_000L
 
     private val enabled = AtomicBoolean(false)
     private val lock = Any()
@@ -256,9 +257,11 @@ internal object UsbDirectUacController {
                 val existingTrack = active.track.get()
                 val sameTrack = existingTrack === track
                 val existingTrackIdle = UsbDirectTrackHandoffPolicy.isIdleOwner(
+                    ownerStartedRealtimeNanos = active.ownerStartedRealtimeNanos,
                     lastWriteRealtimeNanos = active.lastWriteRealtimeNanos,
                     nowRealtimeNanos = now,
                     idleThresholdNanos = TRACK_HANDOFF_IDLE_NANOS,
+                    startupGraceNanos = TRACK_HANDOFF_STARTUP_GRACE_NANOS,
                 )
                 if (!UsbDirectTrackHandoffPolicy.shouldHandoff(
                         sameTrack = sameTrack,
@@ -682,6 +685,7 @@ internal object UsbDirectUacController {
         val streamGainCache: UsbDirectVolumeCache,
         var hasWrittenPcm: Boolean = false,
         var suspended: Boolean = false,
+        val ownerStartedRealtimeNanos: Long = System.nanoTime(),
         var lastWriteRealtimeNanos: Long = 0L,
     )
 
