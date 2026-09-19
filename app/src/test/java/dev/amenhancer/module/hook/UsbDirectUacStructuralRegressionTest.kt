@@ -173,6 +173,7 @@ class UsbDirectUacStructuralRegressionTest {
         assertTrue(controller.contains("var suspended: Boolean = false"))
         assertTrue(controller.contains("UsbDirectTrackHandoffPolicy.shouldHandoff("))
         assertTrue(controller.contains("UsbDirectTrackHandoffPolicy.actionFor(operation)"))
+        assertTrue(controller.contains("UsbDirectTrackHandoffAction.FLUSH ->"))
         assertTrue(controller.contains("suspendHandle = active.handle"))
         assertTrue(controller.contains("flushHandle = active.handle"))
         assertTrue(controller.contains("UsbDirectUacBridge.suspend(suspendHandle)"))
