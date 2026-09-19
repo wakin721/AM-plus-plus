@@ -7,13 +7,13 @@ import org.junit.Test
 
 class UsbDirectTrackHandoffPolicyTest {
     @Test
-    fun `pause and flush suspend while stop and release close`() {
+    fun `pause suspends flush only clears buffers and stop or release close`() {
         assertEquals(
             UsbDirectTrackHandoffAction.SUSPEND,
             UsbDirectTrackHandoffPolicy.actionFor("pause"),
         )
         assertEquals(
-            UsbDirectTrackHandoffAction.SUSPEND,
+            UsbDirectTrackHandoffAction.FLUSH,
             UsbDirectTrackHandoffPolicy.actionFor("flush"),
         )
         assertEquals(
