@@ -11,6 +11,15 @@ internal object UsbDirectTrackHandoffPolicy {
         else -> UsbDirectTrackHandoffAction.CLOSE
     }
 
+    fun isIdleOwner(
+        lastWriteRealtimeNanos: Long,
+        nowRealtimeNanos: Long,
+        idleThresholdNanos: Long,
+    ): Boolean =
+        lastWriteRealtimeNanos > 0L &&
+            nowRealtimeNanos >= lastWriteRealtimeNanos &&
+            nowRealtimeNanos - lastWriteRealtimeNanos >= idleThresholdNanos
+
     fun shouldHandoff(
         sameTrack: Boolean,
         suspended: Boolean,
