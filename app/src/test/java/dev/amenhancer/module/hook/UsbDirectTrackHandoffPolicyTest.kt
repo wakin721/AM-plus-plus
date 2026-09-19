@@ -69,4 +69,33 @@ class UsbDirectTrackHandoffPolicyTest {
             ),
         )
     }
+    @Test
+    fun `fresh owner is never considered idle before its first direct PCM write`() {
+        assertFalse(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                lastWriteRealtimeNanos = 0L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun `owner becomes idle only after a real direct PCM write ages past threshold`() {
+        assertFalse(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                lastWriteRealtimeNanos = 4_500_000_000L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+            ),
+        )
+        assertTrue(
+            UsbDirectTrackHandoffPolicy.isIdleOwner(
+                lastWriteRealtimeNanos = 4_000_000_000L,
+                nowRealtimeNanos = 5_000_000_000L,
+                idleThresholdNanos = 1_000_000_000L,
+            ),
+        )
+    }
+
 }
