@@ -339,6 +339,17 @@ internal object UsbDirectUacController {
                     }
                 }
 
+                UsbDirectTrackHandoffAction.FLUSH -> {
+                    if (active != null) {
+                        active.hasWrittenPcm = false
+                        flushHandle = active.handle
+                    }
+                    if (ownsPending) {
+                        pendingTrack = null
+                        releaseClient = true
+                    }
+                }
+
                 UsbDirectTrackHandoffAction.CLOSE -> {
                     if (active != null) {
                         closeSessionLocked()
