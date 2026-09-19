@@ -19,7 +19,15 @@ internal class UsbBitPerfectStatusRequester(
     private val applicationContext = context.applicationContext
     private var activeRequest: ActiveRequest? = null
     private val timeout = Runnable {
-        activeRequest?.let { request -> complete(request.token, null) }
+        activeRequest?.let { request ->
+            complete(
+                request.token,
+                UsbBitPerfectStatusDetails(
+                    state = UsbBitPerfectStatusProtocol.STATE_REQUEST_FAILED,
+                    message = "Apple Music 实时状态 responder 在 3 秒内未响应",
+                ),
+            )
+        }
     }
     private val resultReceiver = object : ResultReceiver(handler) {
         override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
@@ -69,13 +77,26 @@ internal class UsbBitPerfectStatusRequester(
         val request = ActiveRequest(UUID.randomUUID().toString(), onResult)
         activeRequest = request
         handler.postDelayed(timeout, TIMEOUT_MILLIS)
-        applicationContext.sendBroadcast(
-            Intent(UsbBitPerfectStatusProtocol.REQUEST_ACTION)
-                .setPackage(ModuleConstants.TARGET_PACKAGE)
-                .putExtra(UsbBitPerfectStatusProtocol.EXTRA_REQUEST_TOKEN, request.token)
-                .putExtra(UsbBitPerfectStatusProtocol.EXTRA_RESULT_RECEIVER, resultReceiver),
-        )
-        return true
+        val sent = runCatching {
+            applicationContext.sendBroadcast(
+                Intent(UsbBitPerfectStatusProtocol.REQUEST_ACTION)
+                    .setPackage(ModuleConstants.TARGET_PACKAGE)
+                    .addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    .putExtra(UsbBitPerfectStatusProtocol.EXTRA_REQUEST_TOKEN, request.token)
+                    .putExtra(UsbBitPerfectStatusProtocol.EXTRA_RESULT_RECEIVER, resultReceiver),
+            )
+            true
+        }.getOrElse { error ->
+            complete(
+                request.token,
+                UsbBitPerfectStatusDetails(
+                    state = UsbBitPerfectStatusProtocol.STATE_REQUEST_FAILED,
+                    message = "实时状态请求发送失败：${error.message ?: error.javaClass.simpleName}",
+                ),
+            )
+            false
+        }
+        return sent
     }
 
     fun cancel() {
@@ -100,6 +121,6 @@ internal class UsbBitPerfectStatusRequester(
     )
 
     private companion object {
-        const val TIMEOUT_MILLIS = 1_500L
+        const val TIMEOUT_MILLIS = 3_000L
     }
 }
