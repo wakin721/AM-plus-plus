@@ -2,12 +2,14 @@ package dev.amenhancer.module.hook
 
 internal enum class UsbDirectTrackHandoffAction {
     SUSPEND,
+    FLUSH,
     CLOSE,
 }
 
 internal object UsbDirectTrackHandoffPolicy {
     fun actionFor(operation: String): UsbDirectTrackHandoffAction = when (operation) {
-        "pause", "flush" -> UsbDirectTrackHandoffAction.SUSPEND
+        "pause" -> UsbDirectTrackHandoffAction.SUSPEND
+        "flush" -> UsbDirectTrackHandoffAction.FLUSH
         else -> UsbDirectTrackHandoffAction.CLOSE
     }
 
