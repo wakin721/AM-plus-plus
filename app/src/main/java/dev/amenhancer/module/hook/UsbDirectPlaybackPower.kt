@@ -9,7 +9,7 @@ internal class UsbDirectPlaybackPower(context: Context) {
         context.getSystemService(PowerManager::class.java)
             ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AM++:UsbDirectPlayback")
             ?.apply { setReferenceCounted(false) }
-    }.getOrNull()
+    }.onFailure { ModernXposedRuntime.log("usb_direct: cannot create playback wake lock", it) }.getOrNull()
     private var refreshAtNanos = 0L
 
     fun keepAwake() {

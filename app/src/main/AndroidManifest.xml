@@ -7,6 +7,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_CURRENT_SONG_ID" />
     <uses-permission android:name="dev.amenhancer.module.permission.REQUEST_USB_BIT_PERFECT_STATUS" />
 
