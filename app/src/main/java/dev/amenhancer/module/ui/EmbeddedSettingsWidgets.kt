@@ -88,36 +88,25 @@ internal fun EmbeddedSettingsHost.embeddedFontCard(
         onChooseFont: () -> Unit,
         onClearFont: () -> Unit,
     ): View = embeddedCard(activity, "歌词字体") {
+        addView(embeddedNavigationRow(
+            activity,
+            "选择字体",
+            "${if (manifest.enabled) manifest.displayName else "原字体"} · 导入 TTF/OTF，重开 Apple Music 后生效",
+            onClick = onChooseFont,
+        ))
+        addView(embeddedDivider(activity))
         addView(TextView(activity).apply {
-            text = if (manifest.enabled) manifest.displayName else "原字体"
-            textSize = embeddedTextSize(activity, 16f, 17f)
-            setTextColor(EmbeddedSettingsPalette.onSurface)
-            setTypeface(typeface, Typeface.BOLD)
-            setSingleLine(false)
-            maxLines = 2
-            setPadding(dp(activity, 16), dp(activity, 4), dp(activity, 16), 0)
+            text = "恢复原字体"
+            textSize = 17f
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(activity, 52)
+            setPadding(dp(activity, 20), dp(activity, 12), dp(activity, 20), dp(activity, 12))
+            setTextColor(if (manifest.enabled) EmbeddedSettingsPalette.accent else EmbeddedSettingsPalette.disabledText)
+            isEnabled = manifest.enabled
+            isClickable = manifest.enabled
+            isFocusable = manifest.enabled
+            if (manifest.enabled) setOnClickListener { onClearFont() }
         }, matchWidthWrapContent())
-        addView(TextView(activity).apply {
-            text = if (manifest.enabled) {
-                "仅覆盖播放器歌词 · 重开 Apple Music 后生效"
-            } else {
-                "导入 TTF/OTF · 重开 Apple Music 后生效"
-            }
-            textSize = embeddedTextSize(activity, 12.5f, 13.5f)
-            setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
-            setSingleLine(false)
-            setPadding(dp(activity, 16), dp(activity, 4), dp(activity, 16), dp(activity, 12))
-        }, matchWidthWrapContent())
-        val actions = LinearLayout(activity).apply {
-            orientation = embeddedActionOrientation(activity)
-            setPadding(dp(activity, 12), 0, dp(activity, 12), dp(activity, 12))
-            addView(embeddedActionButton(activity, "选择字体", onClick = onChooseFont),
-                embeddedActionButtonParams(activity))
-            addView(embeddedActionSpacer(activity))
-            addView(embeddedActionButton(activity, "恢复原字体", manifest.enabled, onClearFont),
-                embeddedActionButtonParams(activity))
-        }
-        addView(actions, matchWidthWrapContent())
     }
 
 
@@ -151,7 +140,7 @@ internal fun EmbeddedSettingsHost.embeddedSectionLabel(activity: Activity, text:
             val horizontalPadding = dp(activity, 20)
             setPadding(
                 horizontalPadding,
-                dp(activity, 20),
+                dp(activity, 12),
                 horizontalPadding,
                 dp(activity, 10),
             )
@@ -168,8 +157,8 @@ internal fun EmbeddedSettingsHost.embeddedInfoCard(
                 textSize = embeddedTextSize(activity, 12.5f, 13.5f)
                 setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
                 setSingleLine(false)
-                val horizontalPadding = dp(activity, if (isEmbeddedPhone(activity)) 12 else 16)
-                val verticalPadding = dp(activity, if (isEmbeddedPhone(activity)) 8 else 12)
+                val horizontalPadding = dp(activity, 20)
+                val verticalPadding = dp(activity, 12)
                 setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
             }, matchWidthWrapContent())
             onClick?.let { click ->
@@ -178,6 +167,14 @@ internal fun EmbeddedSettingsHost.embeddedInfoCard(
                 setOnClickListener { click() }
             }
         }
+
+internal fun EmbeddedSettingsHost.embeddedSectionFooter(activity: Activity, text: String): View =
+    TextView(activity).apply {
+        this.text = text
+        textSize = 13f
+        setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
+        setPadding(dp(activity, 20), dp(activity, 8), dp(activity, 20), 0)
+    }
 
 
 internal fun EmbeddedSettingsHost.showEmbeddedHelp(activity: Activity) {
@@ -250,26 +247,10 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
             }, matchWidthWrapContent())
         }
         addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val toggle = Switch(activity).apply {
+        val toggle = EmbeddedSettingsSwitch(activity).apply {
             isChecked = checked
             isEnabled = enabled
-            minimumWidth = dp(activity, 44)
-            minimumHeight = dp(activity, 44)
-            thumbDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.WHITE)
-                setSize(dp(activity, 28), dp(activity, 28))
-            }
-            trackDrawable = GradientDrawable().apply {
-                cornerRadius = dp(activity, 16).toFloat()
-                setColor(EmbeddedSettingsPalette.switchTrackOff)
-                setSize(dp(activity, 56), dp(activity, 32))
-            }
-            splitTrack = false
-            showText = false
-            switchMinWidth = dp(activity, 56)
-            thumbTintList = embeddedSwitchThumbColors()
-            trackTintList = embeddedSwitchTrackColors()
+            contentDescription = "$title，$summary"
         }
         var suppressToggleCallback = false
         var committedToggleValue = checked
@@ -307,8 +288,8 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
         }
         addView(toggleControls, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
-            dp(activity, if (isEmbeddedPhone(activity)) 44 else 44),
-        ))
+            dp(activity, 44),
+        ).apply { marginStart = dp(activity, 12) })
         setOnClickListener { toggle.isChecked = !toggle.isChecked }
     }
 
@@ -368,21 +349,24 @@ internal fun EmbeddedSettingsHost.embeddedBlurRadiusRow(
         onChanged: (Int) -> Unit,
     ): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        val horizontalPadding = dp(activity, if (isEmbeddedPhone(activity)) 12 else 16)
+        val horizontalPadding = dp(activity, 20)
         setPadding(
             horizontalPadding,
-            dp(activity, if (isEmbeddedPhone(activity)) 8 else 10),
+            dp(activity, 16),
             horizontalPadding,
-            dp(activity, if (isEmbeddedPhone(activity)) 6 else 8),
+            dp(activity, 8),
         )
         val title = "歌词模糊半径偏移"
         val label = TextView(activity).apply {
             text = "$title：${value}px"
-            textSize = embeddedTextSize(activity, 14f, 15f)
+            textSize = 17f
             setTextColor(EmbeddedSettingsPalette.onSurface)
         }
         addView(label, matchWidthWrapContent())
         addView(SeekBar(activity).apply {
+            minimumHeight = dp(activity, 44)
+            progressTintList = ColorStateList.valueOf(EmbeddedSettingsPalette.accent)
+            thumbTintList = ColorStateList.valueOf(EmbeddedSettingsPalette.accent)
             max = ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX -
                 ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX
             progress = value - ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX
@@ -425,16 +409,16 @@ internal fun EmbeddedSettingsHost.embeddedGlassRangeRow(
         onChanged: (Int) -> Unit,
     ): View = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        val horizontalPadding = dp(activity, if (isEmbeddedPhone(activity)) 12 else 16)
+        val horizontalPadding = dp(activity, 20)
         setPadding(
             horizontalPadding,
-            dp(activity, if (isEmbeddedPhone(activity)) 8 else 10),
+            dp(activity, 12),
             horizontalPadding,
-            dp(activity, if (isEmbeddedPhone(activity)) 6 else 8),
+            dp(activity, 8),
         )
         val label = TextView(activity).apply {
             text = "$title：${value}dp"
-            textSize = embeddedTextSize(activity, 14f, 15f)
+            textSize = 17f
             setTextColor(EmbeddedSettingsPalette.onSurface)
         }
         // Small one-tap restore at the row's top-right corner.
@@ -449,23 +433,28 @@ internal fun EmbeddedSettingsHost.embeddedGlassRangeRow(
             contentDescription = "恢复默认"
             isClickable = true
             isFocusable = true
-            setPadding(dp(activity, 6), dp(activity, 4), 0, dp(activity, 4))
+            setPadding(dp(activity, 10), dp(activity, 10), dp(activity, 10), dp(activity, 10))
         }
         addView(LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(reset, LinearLayout.LayoutParams(dp(activity, 28), dp(activity, 28)))
-        }, matchWidthWrapContent())
-        addView(TextView(activity).apply {
-            text = suffix
-            textSize = embeddedTextSize(activity, 13f, 12f)
-            setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
-            setSingleLine(false)
-            maxLines = 2
-            setPadding(0, dp(activity, 2), 0, 0)
+            addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(label, matchWidthWrapContent())
+                addView(TextView(activity).apply {
+                    text = suffix
+                    textSize = 14f
+                    setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
+                    setSingleLine(false)
+                    setPadding(0, dp(activity, 2), 0, 0)
+                }, matchWidthWrapContent())
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(reset, LinearLayout.LayoutParams(dp(activity, 44), dp(activity, 44)))
         }, matchWidthWrapContent())
         val seekBar = SeekBar(activity).apply {
+            minimumHeight = dp(activity, 44)
+            progressTintList = ColorStateList.valueOf(EmbeddedSettingsPalette.accent)
+            thumbTintList = ColorStateList.valueOf(EmbeddedSettingsPalette.accent)
             max = rangeMax - rangeMin
             progress = value - rangeMin
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -663,6 +652,9 @@ internal fun EmbeddedSettingsHost.embeddedActionButton(
         alpha = if (enabled) 1f else 0.55f
         minHeight = dp(activity, 48)
         minimumHeight = dp(activity, 48)
+        stateListAnimator = null
+        elevation = 0f
+        translationZ = 0f
         setTextColor(if (enabled) EmbeddedSettingsPalette.accent else EmbeddedSettingsPalette.disabledText)
         background = GradientDrawable().apply {
             setColor(if (enabled) EmbeddedSettingsPalette.softSurface else EmbeddedSettingsPalette.disabledSurface)
@@ -1112,8 +1104,8 @@ internal fun EmbeddedSettingsHost.embeddedDivider(activity: Activity): View = Vi
             ViewGroup.LayoutParams.MATCH_PARENT,
             dp(activity, 1),
         ).apply {
-            marginStart = dp(activity, 16)
-            marginEnd = dp(activity, 16)
+            marginStart = dp(activity, 20)
+            marginEnd = dp(activity, 20)
         }
     }
 

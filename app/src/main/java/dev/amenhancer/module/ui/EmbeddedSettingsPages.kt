@@ -17,7 +17,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import dev.amenhancer.glass.GlassPolicy
@@ -84,7 +83,7 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
             addView(embeddedSettingRow(
                 activity,
                 "液态玻璃底栏",
-                "为手机与开启平板双栏播放器的平板横屏的底栏和迷你播放器启用液态玻璃效果，需重开应用",
+                "手机及平板双栏横屏的底栏与迷你播放器使用液态玻璃，需重开应用",
                 settings.phoneLiquidGlassEnabled,
                 iconTint = EmbeddedSettingsPalette.accent,
                 iconDrawable = EmbeddedGlyphDrawable(
@@ -130,7 +129,7 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
             addView(embeddedSettingRow(
                 activity,
                 "CJK 长尾歌词动画",
-                "CJK 歌词启用原生 rush-gradient 动画 · 重开 Apple Music 后生效",
+                "CJK 歌词使用原生长尾动画 · 重开 Apple Music 后生效",
                 settings.cjkKaraokeAnimationEnabled,
                 iconTint = EmbeddedSettingsPalette.accent,
                 iconDrawable = EmbeddedGlyphDrawable(
@@ -195,22 +194,22 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
                 pageRefresh?.invoke()
             })
         })
-        parent.addView(embeddedSpacer(activity, 20))
+        parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedFontCard(
             activity = activity,
             manifest = settings.fontManifest,
             onChooseFont = onChooseFont,
             onClearFont = onClearFont,
         ))
-        parent.addView(embeddedSpacer(activity, 20))
+        parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedCard(activity, "应用") {
             addView(embeddedNavigationRow(activity, "插件", "导入 ZIP、管理启用状态与冲突", onClick = { showPluginManagement(activity) }))
         })
-        parent.addView(embeddedInfoCard(
+        parent.addView(embeddedSectionFooter(
             activity,
             "配置保存在 Apple Music 私有目录中",
         ))
-        parent.addView(embeddedSpacer(activity, 16))
+        parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedSectionLabel(activity, "帮助"))
         parent.addView(embeddedInfoCard(
             activity,
@@ -500,15 +499,13 @@ internal fun EmbeddedSettingsHost.embeddedCustomLyricsEntryRow(
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginEnd = dp(activity, 4)
             })
-            addView(Switch(activity).apply {
+            addView(EmbeddedSettingsSwitch(activity).apply {
                 isChecked = group.allEnabled
                 contentDescription = "${entry.displayName} 自定义歌词开关"
-                thumbTintList = embeddedSwitchThumbColors()
-                trackTintList = embeddedSwitchTrackColors()
                 setOnCheckedChangeListener { _, checked ->
                     runAsync(activity) { controller.setLyricsEnabled(group.appleMusicIds, checked) }
                 }
-            }, LinearLayout.LayoutParams(dp(activity, if (isEmbeddedPhone(activity)) 56 else 48), dp(activity, 44)))
+            }, LinearLayout.LayoutParams(dp(activity, 56), dp(activity, 44)))
             addView(ImageView(activity).apply {
                 setImageDrawable(
                     EmbeddedGlyphDrawable(

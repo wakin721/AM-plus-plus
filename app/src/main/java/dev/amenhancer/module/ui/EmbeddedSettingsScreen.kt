@@ -62,7 +62,7 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
         gravity = Gravity.START or Gravity.CENTER_VERTICAL
         marginStart = dp(activity, 12)
     })
-    root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 72)))
+    root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 64)))
     val pageContent = FrameLayout(activity)
     root.addView(pageContent, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
