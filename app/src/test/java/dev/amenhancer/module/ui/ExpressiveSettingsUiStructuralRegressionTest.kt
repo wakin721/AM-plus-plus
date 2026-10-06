@@ -139,8 +139,8 @@ class ExpressiveSettingsUiStructuralRegressionTest {
         assertTrue(theme.contains("background = darkBackground"))
         assertTrue(theme.contains("staticBackgroundColor(dark = false)"))
         assertTrue(theme.contains("private fun Color.mixWith"))
-        assertTrue(appBuild.contains("versionCode = 103"))
-        assertTrue(appBuild.contains("versionName = \"1.5.4\""))
+        assertTrue(appBuild.contains("versionCode = 114"))
+        assertTrue(appBuild.contains("versionName = \"1.6.4\""))
         assertTrue(workflow.contains("name: AM-plus-plus-debug-"))
         assertTrue(manifest.contains(".ui.AppearanceSettingsActivity"))
     }
