@@ -1,5 +1,7 @@
 package dev.amenhancer.module.hook
 
+import dev.amenhancer.module.lyrics.source.HttpLyricTransport
+import dev.amenhancer.module.lyrics.source.AmLyricsClient
 import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,13 +11,13 @@ class CurrentSongIdentityStructuralRegressionTest {
     private fun projectFile(relativePath: String): String = sequenceOf(
         File(relativePath),
         File("../$relativePath"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("$relativePath was not found from the unit-test working directory")
 
     @Test
     fun `caches the identity in memory without storage or network on the hook path`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCurrentSongIdentityTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCurrentSongIdentityTarget.kt",
         )
         val feature = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/CurrentSongIdentityFeature.kt",
@@ -39,7 +41,7 @@ class CurrentSongIdentityStructuralRegressionTest {
     @Test
     fun `reuses the verified current item seam instead of duplicating it`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
 
         assertTrue(target.contains("val seam = CurrentItemIdentitySeam(symbols)"))
@@ -55,7 +57,7 @@ class CurrentSongIdentityStructuralRegressionTest {
     @Test
     fun `opens unavailable lyrics only after an exact replacement is ready`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
 
         assertTrue(target.contains("AppleMusicSymbols.LyricsAvailabilityPredicate"))
@@ -72,21 +74,21 @@ class CurrentSongIdentityStructuralRegressionTest {
 
     @Test
     fun `registers the capability in adaptation and the feature in installation`() {
-        val adaptation = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/TargetAdaptation.kt",
-        )
+        val adaptation = projectFile("host-api/src/main/java/dev/amenhancer/module/hook/TargetAdaptation.kt")
+        val factory = projectFile("host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicHostFactory.kt")
+        val assembly = projectFile("app/src/main/java/dev/amenhancer/module/hook/AppleMusicAssembly.kt")
         val installation = projectFile(
             "app/src/main/java/dev/amenhancer/module/hook/FeatureInstallation.kt",
         )
-        val constants = projectFile("app/src/main/java/dev/amenhancer/module/ModuleConstants.kt")
+        val constants = projectFile("core/src/main/kotlin/dev/amenhancer/module/ModuleConstants.kt")
 
         assertTrue(adaptation.contains("currentSong: CurrentSongIdentityCache = CurrentSongIdentityCache()"))
-        assertTrue(adaptation.contains("currentSong = currentSong"))
-        assertTrue(adaptation.contains("currentSongIdentity = AppleMusicCurrentSongIdentityTarget("))
-        assertTrue(adaptation.contains("customLyrics = AppleMusicCustomLyricsTarget("))
-        assertTrue(adaptation.contains("autoLyricsRuntime = autoLyricsRuntime"))
-        assertTrue(adaptation.contains("settings.customLyricsEnabled && settings.automaticLyricsEnabled"))
-        assertTrue(adaptation.contains("internal fun interface CurrentSongIdentityTarget"))
+        assertTrue(factory.contains("currentSong = currentSong"))
+        assertTrue(factory.contains("currentSongIdentity = AppleMusicCurrentSongIdentityTarget("))
+        assertTrue(factory.contains("customLyrics = AppleMusicCustomLyricsTarget("))
+        assertTrue(factory.contains("autoLyricsRuntime = autoLyricsRuntime"))
+        assertTrue(assembly.contains("settings.customLyricsEnabled && settings.automaticLyricsEnabled"))
+        assertTrue(adaptation.contains("fun interface CurrentSongIdentityTarget"))
         assertTrue(installation.contains("FeatureInstallationPlan(feature = CurrentSongIdentityFeature())"))
         assertTrue(
             installation.indexOf("FeatureInstallationPlan(feature = CurrentSongIdentityFeature())") <
@@ -96,23 +98,22 @@ class CurrentSongIdentityStructuralRegressionTest {
     }
 
     @Test
-    fun `embedded cache and standalone requester coexist`() {
+    fun `embedded settings shares the in-process cache without a broadcast bridge`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCurrentSongIdentityTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCurrentSongIdentityTarget.kt",
         )
-        val protocol = projectFile(
-            "app/src/main/java/dev/amenhancer/module/CurrentSongIdentityProtocol.kt",
+        val details = projectFile(
+            "core/src/main/kotlin/dev/amenhancer/module/CurrentSongDetails.kt",
         )
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
         val entry = projectFile("app/src/main/java/dev/amenhancer/module/hook/HookEntry.kt")
 
-        assertTrue(target.contains("CurrentSongIdentityRequestResponder"))
-        assertTrue(target.contains("registerRequestResponder: Boolean = true"))
         assertTrue(entry.contains("currentSong = { currentSong.current()?.details }"))
         assertTrue(entry.contains("EmbeddedRuntimeSettingsController"))
-        assertTrue(protocol.contains("EXTRA_SONG_TITLE"))
-        assertTrue(protocol.contains("EXTRA_SONG_ARTIST"))
-        assertTrue(manifest.contains("android:protectionLevel=\"signature\""))
-        assertTrue(manifest.contains("permission.REQUEST_CURRENT_SONG_ID"))
+        assertTrue(details.contains("data class CurrentSongDetails"))
+        assertFalse(target.contains("BroadcastReceiver"))
+        assertFalse(target.contains("registerRequestResponder"))
+        assertFalse(manifest.contains("android:protectionLevel=\"signature\""))
+        assertFalse(manifest.contains("permission.REQUEST_CURRENT_SONG_ID"))
     }
 }

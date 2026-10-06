@@ -15,13 +15,14 @@ class RightLyricsPaneStructuralRegressionTest {
     private val source: String by lazy {
         sequenceOf(
             File("src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
-            File("app/src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
-        ).firstOrNull(File::isFile)?.readText()
+            File("host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
+        File("../host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
+        ).firstOrNull(File::isFile)?.readRefactorComponent()
             ?: error("AppleMusicDualPaneTarget.kt was not found from the unit-test working directory")
     }
     private val compactSource: String by lazy { source.replace(Regex("\\s+"), " ") }
     private val paneSource: String by lazy {
-        source.substringAfter("private object RightLyricsPaneLayout")
+        source.substringAfter("internal object RightLyricsPaneLayout")
             .substringBefore("internal data class AlphaGradientEdgeFieldProfile")
     }
 
@@ -36,10 +37,17 @@ class RightLyricsPaneStructuralRegressionTest {
         assertTrue(source.contains("rootParams.topMargin = 0"))
         assertTrue(source.contains("anchorTopToParent"))
         assertTrue(source.contains("configureVerticalGradientEdges"))
-        assertTrue(source.contains("TOP_EDGE_FRACTION = 0.30f"))
+        assertTrue(source.contains("TOP_EDGE_FRACTION = 0.15f"))
         assertTrue(source.contains("TOP_CLEAR_FRACTION = 0.075f"))
         assertTrue(source.contains("TOP_CLEAR_WITHIN_FADE_FRACTION = 0.25f"))
         assertTrue(source.contains("BOTTOM_EDGE_FRACTION = 0.15f"))
+        assertTrue(source.contains("val bottomFadeColors = intArrayOf("))
+        assertTrue(source.contains("val bottomFadePositions = floatArrayOf("))
+        assertTrue(source.contains("1f - TOP_CLEAR_WITHIN_FADE_FRACTION"))
+        assertTrue(source.contains("dualPaneField(gradients.javaClass, \"b\")"))
+        assertTrue(source.contains("dualPaneField(gradients.javaClass, \"f\")"))
+        assertTrue(source.contains("bottomFadeColorsField.set(gradients, bottomFadeColors)"))
+        assertTrue(source.contains("bottomFadePositionsField.set(gradients, bottomFadePositions)"))
         assertTrue(source.contains("topFadeColorsField.set(gradients, topFadeColors)"))
         assertTrue(source.contains("topFadePositionsField.set(gradients, topFadePositions)"))
         assertTrue(source.contains("setVerticalFadeSizes.invoke(gradients, topEdgeSize, bottomEdgeSize)"))
@@ -67,10 +75,9 @@ class RightLyricsPaneStructuralRegressionTest {
     }
 
     @Test
-    fun `reapplies the tablet highlight anchor after delayed sheet expansion`() {
+    fun `keeps the tablet highlight anchor fixed at thirty percent`() {
         assertTrue(source.contains("installHighlightAnchorResizeSync(fragment)"))
-        assertTrue(source.contains("container.addOnLayoutChangeListener"))
-        assertTrue(source.contains("bottom - top == oldBottom - oldTop"))
+        assertTrue(source.contains("container.addOnLayoutChangeListener(listener)"))
         assertTrue(source.contains("refreshHighlightAnchor(container, fragmentReference)"))
         assertTrue(compactSource.contains(
             "installHighlightAnchorResizeSync(fragment) TabletLyricTypography.attach(fragment)",
@@ -79,6 +86,13 @@ class RightLyricsPaneStructuralRegressionTest {
         assertTrue(source.contains("WeakReference(fragment)"))
         assertTrue(source.contains("LyricsLayoutFieldProfiles.resolve(fragment.javaClass)"))
         assertTrue(source.contains("profile.synchronizedMetrics.first()"))
+        assertTrue(compactSource.contains(
+            "currentOffset = highlightOffset.getInt(metrics), containerHeight = container.height",
+        ))
+        assertFalse(source.contains("LyricsViewModelSetCurrentHighlightedLine"))
+        assertFalse(source.contains("measuredHighlightedRowCenterOffset"))
+        assertFalse(source.contains("artworkCenterInContainerPx"))
+        assertFalse(source.contains("container.postDelayed("))
         assertTrue(source.contains("RightLyricsPaneLayout.reapplyVerticalGradientEdges(gradients)"))
     }
 

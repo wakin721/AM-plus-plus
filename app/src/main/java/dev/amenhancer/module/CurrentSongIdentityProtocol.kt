@@ -14,8 +14,3 @@ internal object CurrentSongIdentityProtocol {
     const val RESULT_AVAILABLE = 1
 }
 
-internal data class CurrentSongDetails(
-    val appleMusicId: Long,
-    val title: String? = null,
-    val artist: String? = null,
-)

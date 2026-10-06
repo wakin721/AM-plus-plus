@@ -17,22 +17,30 @@ class DualPaneStructuralRegressionTest {
     private val source: String by lazy {
         sequenceOf(
             File("src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
-            File("app/src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
-        ).firstOrNull(File::isFile)?.readText()
+            File("host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
+        File("../host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicDualPaneTarget.kt"),
+        ).firstOrNull(File::isFile)?.readRefactorComponent()
             ?: error("AppleMusicDualPaneTarget.kt was not found from the unit-test working directory")
     }
     private val featureSource: String by lazy {
         sequenceOf(
             File("src/main/java/dev/amenhancer/module/hook/DualPaneFeature.kt"),
             File("app/src/main/java/dev/amenhancer/module/hook/DualPaneFeature.kt"),
-        ).firstOrNull(File::isFile)?.readText()
+        File("../app/src/main/java/dev/amenhancer/module/hook/DualPaneFeature.kt"),
+        File("../host-applemusic/src/main/java/dev/amenhancer/module/hook/DualPaneFeature.kt"),
+        File("../host-api/src/main/java/dev/amenhancer/module/hook/DualPaneFeature.kt"),
+        File("../core/src/main/kotlin/dev/amenhancer/module/hook/DualPaneFeature.kt"),
+        File("../hook-runtime/src/main/java/dev/amenhancer/module/hook/DualPaneFeature.kt"),
+
+        ).firstOrNull(File::isFile)?.readRefactorComponent()
             ?: error("DualPaneFeature.kt was not found from the unit-test working directory")
     }
     private val interceptGuardSource: String by lazy {
         sequenceOf(
             File("src/main/java/dev/amenhancer/module/hook/StaticCollapsedInterceptGuard.kt"),
-            File("app/src/main/java/dev/amenhancer/module/hook/StaticCollapsedInterceptGuard.kt"),
-        ).firstOrNull(File::isFile)?.readText()
+            File("host-applemusic/src/main/java/dev/amenhancer/module/hook/StaticCollapsedInterceptGuard.kt"),
+        File("../host-applemusic/src/main/java/dev/amenhancer/module/hook/StaticCollapsedInterceptGuard.kt"),
+        ).firstOrNull(File::isFile)?.readRefactorComponent()
             ?: error("StaticCollapsedInterceptGuard.kt was not found from the unit-test working directory")
     }
 
@@ -112,6 +120,45 @@ class DualPaneStructuralRegressionTest {
         assertTrue(source.contains("params.width = ViewGroup.LayoutParams.MATCH_PARENT"))
         assertTrue(source.contains("params.height = ViewGroup.LayoutParams.WRAP_CONTENT"))
         assertTrue(source.contains("params.gravity = Gravity.CENTER"))
+    }
+
+    @Test
+    fun `applies AMLL artwork size and title gap to the native left pane`() {
+        assertTrue(source.contains("private const val ARTWORK_CONTAINER = \"artwork_container\""))
+        assertTrue(source.contains("private const val METADATA_BARRIER_TOP = \"metadata_barrier_top\""))
+        assertTrue(source.contains("installTabletArtworkLayout(playerRoot, playerHost)"))
+        assertTrue(source.contains("TabletArtworkLayoutPolicy.resolve("))
+        assertTrue(source.contains("nativeSizeByArtwork[artwork]"))
+        assertTrue(source.contains("val statusBarInsetTopPx = playerRoot.rootWindowInsets?.systemWindowInsetTop"))
+        assertTrue(source.contains("windowRootLocation[1] + statusBarInsetTopPx"))
+        assertTrue(source.contains("val availableHeightPx = (barrierLocation[1] - intervalTopPx).toFloat()"))
+        assertTrue(source.contains("val desiredArtworkTopPx = intervalTopPx + layout.edgeGapPx"))
+        assertTrue(source.contains("artwork.translationY += artworkDeltaPx"))
+        assertTrue(source.contains("params.topMargin = 0"))
+        assertTrue(source.contains("params.bottomMargin = 0"))
+        assertTrue(source.contains("params.setObject(\"dimensionRatio\", null)"))
+        assertTrue(source.contains("params.setInt(\"topToTop\", PARENT_ID)"))
+        assertTrue(source.contains("params.setInt(\"topToBottom\", -1)"))
+        assertTrue(source.contains("nativeSizePx = nativeSizePx.toFloat()"))
+    }
+
+    @Test
+    fun `waits for measured artwork after paired fragments are committed`() {
+        val commitIndex = source.indexOf(
+            "invokeCompatible(transaction, listOf(\"h\", \"commit\"), false)",
+        )
+        val reapplyIndex = source.indexOf("state.artworkLayoutReapply?.invoke()", commitIndex)
+        assertTrue(commitIndex >= 0)
+        assertTrue(reapplyIndex > commitIndex)
+        assertTrue(source.contains("val artworkLayoutReapply = installTabletArtworkLayout(playerRoot, playerHost)"))
+        assertTrue(source.contains("DualPaneState(root, playerHost, lyricsHost, artworkLayoutReapply)"))
+        assertTrue(source.contains("ARTWORK_LAYOUT_REAPPLY_MAX_PRE_DRAWS"))
+        assertTrue(source.contains("scheduleArtworkLayoutReapplyAfterMeasure"))
+        assertTrue(source.contains("playerHost.viewTreeObserver.addOnPreDrawListener"))
+        assertTrue(source.contains("playerHost.addOnAttachStateChangeListener"))
+        assertTrue(source.contains("playerHost.removeOnAttachStateChangeListener"))
+        assertTrue(source.contains("playerHost.requestLayout()"))
+        assertTrue(source.contains("removeOnPreDrawListener"))
     }
 
     @Test
@@ -233,6 +280,24 @@ class DualPaneStructuralRegressionTest {
     }
 
     @Test
+    fun `silences flat boundary sync writes while the tablet glass session is active`() {
+        // Geometry arbitration: the liquid-glass peek rewrite is the single
+        // source of collapsed geometry while glass is active, so sync() must
+        // bail out before touching playerContainer.translationY or
+        // tabsFrame.visibility (a peek+translation double lift would push the
+        // mini player out of its capsule and expose a black strip).
+        assertTrue(source.contains("TabletGlassChrome.isGlassActive(root)"))
+        val syncIndex = source.indexOf("fun sync() {")
+        assertTrue(syncIndex >= 0)
+        val guardIndex = source.indexOf("TabletGlassChrome.isGlassActive(root)", syncIndex)
+        assertTrue(guardIndex > syncIndex)
+        val translationWriteIndex = source.indexOf("playerContainer.translationY = desiredTranslation", syncIndex)
+        val tabsVisibilityWriteIndex = source.indexOf("tabsFrame.visibility = desiredTabsVisibility", syncIndex)
+        assertTrue(translationWriteIndex > guardIndex)
+        assertTrue(tabsVisibilityWriteIndex > guardIndex)
+    }
+
+    @Test
     fun `creates the right lyrics pane through the target controller factory`() {
         assertFalse(source.contains("lyricsClass.getDeclaredConstructor()"))
         assertTrue(source.contains("getChildFragmentManager"))
@@ -243,7 +308,7 @@ class DualPaneStructuralRegressionTest {
         assertTrue(source.contains("DualPaneShell.installImmediately(root)"))
         assertTrue(source.contains("installForControllerRoot(controllerInstance, param.result as? View, \"onCreateView\")"))
         assertFalse(source.contains("PendingDualPaneState"))
-        val synchronousInstallSource = source.substringBefore("private fun installFlatPlayerBoundarySync")
+        val synchronousInstallSource = source.substringBefore("private fun installTabletArtworkLayout")
         assertFalse(synchronousInstallSource.contains("addOnAttachStateChangeListener"))
         assertFalse(synchronousInstallSource.contains("onViewAttachedToWindow"))
         assertTrue(source.contains("[AMENH-2]"))
@@ -254,7 +319,7 @@ class DualPaneStructuralRegressionTest {
         assertTrue(source.contains("val state = stateFor(controllerInstance) ?: return"))
         assertTrue(source.contains("if (!TabletModeQualifier.isEligible(state.root.context))"))
         assertTrue(source.contains("state.root.setTag(R.id.am_enhancer_dual_pane_state, null)"))
-        assertTrue(source.contains("if (requested.name == LYRICS_STATE)"))
+        assertTrue(source.contains("if (requested.name == DUAL_PANE_LYRICS_STATE)"))
     }
 
     @Test
@@ -323,7 +388,13 @@ class DualPaneStructuralRegressionTest {
         assertTrue(source.contains("AppleMusicSymbols.LyricsFragmentUpdateMetrics"))
         assertTrue(source.contains("alignSynchronizedLyricsHighlightAnchor"))
         assertTrue(source.contains("TabletLyricAnchorPolicy.highlightOffset"))
-        assertTrue(source.contains("listOf(\"z0\", \"A0\")"))
+        assertTrue(dev.amenhancer.host.applemusic.AppleMusicHostProfiles.all.filter { it.family == "legacy-activity" }.all { profile ->
+            val variants = profile.document.getJSONObject("layoutVariants").getJSONArray("lyricsFields")
+            (0 until variants.length()).any { index ->
+                val names = variants.getJSONObject(index).getJSONArray("synchronizedMetrics")
+                List(names.length()) { names.getString(it) } == listOf("z0", "A0")
+            }
+        })
         assertTrue(source.contains("lowerBoundary.getInt(bounds) - controlsHeight"))
         assertTrue(source.contains("ModernXposedRuntime.callMethod(recycler, \"S\")"))
         assertTrue(source.contains("corrected landscape lyrics metrics"))

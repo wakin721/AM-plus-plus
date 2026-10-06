@@ -6,10 +6,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HleMetadataIntegrationStructuralTest {
+    @Test
+    fun `nullable embedded module native directory does not abort HLE construction`() {
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+            .replace("\r\n", "\n")
+        // The module application info is optional: a failed lookup must not throw while the
+        // runtime is being constructed, and the native library directory may stay empty because
+        // the package keeps its native libraries inside the APK (extractNativeLibs=false).
+        assertTrue(runtime.contains("runCatching { module.getModuleApplicationInfo() }.getOrNull()"))
+        assertTrue(
+            runtime.contains("nativeLibraryDir = moduleApplicationInfo?.nativeLibraryDir.orEmpty()"),
+        )
+        assertTrue(runtime.contains("moduleApkPaths = listOfNotNull("))
+        assertTrue(runtime.contains("moduleApplicationInfo?.splitSourceDirs.orEmpty()"))
+    }
+
     private fun source(relative: String): String = sequenceOf(
         File(relative),
         File("../$relative"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("Missing $relative")
 
     @Test
@@ -24,9 +39,9 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `surface bridge keeps the original HLE metadata hook families live`() {
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
         val playback = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/ApplePlaybackMetadataHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/ApplePlaybackMetadataHooks.kt",
         )
         listOf(
             "AppleListenNowHooks",
@@ -45,7 +60,7 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `playback host delegates alias validation to HLE policy without recursion`() {
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
         assertTrue(
             runtime.contains(
                 "io.github.proify.lyricon.amprovider.xposed.validatedOriginalSongAlias(",
@@ -58,12 +73,12 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `new metadata lookups scope storefront and language rewriting to HLE tokens`() {
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
         val localization = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/hooks/AppleContentLocalizationHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/hooks/AppleContentLocalizationHooks.kt",
         )
         val resolver = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleInternalCatalogResolver.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleInternalCatalogResolver.kt",
         )
         assertTrue(runtime.contains("mode.contentUiLanguageSelection"))
         assertTrue(runtime.contains("cacheNamespace = mode.cacheNamespace"))
@@ -80,7 +95,7 @@ class HleMetadataIntegrationStructuralTest {
     @Test
     fun `fixed region lookups retain HLE identity and ISRC fallback`() {
         val resolver = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleInternalCatalogResolver.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleInternalCatalogResolver.kt",
         )
         assertTrue(resolver.contains("resolveLocalizedRequestByLockedIsrc"))
         assertTrue(resolver.contains("enqueueLockedIsrcFallback"))
@@ -107,8 +122,8 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `library and album refresh paths delegate to HLE stateful hosts`() {
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
         assertTrue(bridge.contains("collectionSurfaceHooks.albumTrackMediaIds"))
         assertTrue(bridge.contains("metadataApplier.requestLibraryControllerBuild"))
         assertTrue(bridge.contains("collectionSurfaceHooks.controllerAppliedAlias"))
@@ -125,9 +140,9 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `typed host adapters preserve HLE callback contracts`() {
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
         assertTrue(bridge.contains("createHostAdapters()"))
-        assertTrue(bridge.contains("private inline fun <T> hostCall"))
+        assertTrue(bridge.contains("internal inline fun <T> hostCall"))
         listOf(
             "AppleMetadataSurfaceHost",
             "AppleLibrarySurfaceHost",
@@ -154,8 +169,8 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `queue host delegates media3 identity and surface scope to HLE runtime`() {
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
 
         assertFalse(runtime.contains("metadata as? android.media.MediaMetadata"))
         assertTrue(runtime.contains("bridgeMedia3MetadataId(metadata, fallback, trustedFallback)"))
@@ -178,8 +193,8 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `all HLE hosts use merged aliases and preserve original album candidates`() {
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
 
         assertTrue(runtime.contains("bridgeEffectiveAlias(mediaId)"))
         assertTrue(runtime.contains("bridgeEffectiveAlias = surfaceBridge::effectiveAlias"))
@@ -192,8 +207,8 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `action sheet and data binding hosts delegate stateful HLE policies`() {
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
 
         val actionSheet = runtime
             .substringAfter("actionSheetMetadataHooks = AppleActionSheetMetadataHooks")
@@ -213,8 +228,8 @@ class HleMetadataIntegrationStructuralTest {
 
     @Test
     fun `framework queue and action sheet identities share the media3 fallback chain`() {
-        val runtime = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val runtime = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataRuntime.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
 
         assertTrue(
             runtime
@@ -241,7 +256,7 @@ class HleMetadataIntegrationStructuralTest {
     @Test
     fun `visible refresh paths share one frame queue while playback stays immediate`() {
         val queue = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleInAppMetadataRefreshQueue.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleInAppMetadataRefreshQueue.kt",
         )
         assertTrue(queue.contains("MetadataFrameScheduler"))
         assertTrue(queue.contains("VISIBLE_RESOLUTION"))
@@ -249,13 +264,13 @@ class HleMetadataIntegrationStructuralTest {
         assertTrue(queue.contains("higherResolutionMode"))
         assertTrue(queue.contains("frameScheduler.postFrame"))
         val binding = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleDataBindingMetadataHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleDataBindingMetadataHooks.kt",
         )
         val library = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleLibrarySurfaceHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleLibrarySurfaceHooks.kt",
         )
         val listenNow = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleListenNowHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleListenNowHooks.kt",
         )
         assertTrue(binding.contains("AppleMetadataRefreshKind.DATA_BINDING_REBIND"))
         assertTrue(binding.contains("AppleMetadataRefreshKind.GENERIC_RECYCLER_NOTIFY"))
@@ -263,7 +278,7 @@ class HleMetadataIntegrationStructuralTest {
         assertTrue(library.contains("AppleMetadataRefreshKind.LIBRARY_COMPOSE_REBIND"))
         assertTrue(listenNow.contains("AppleMetadataRefreshKind.LISTEN_NOW_REBIND"))
         val applier = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleInAppMetadataApplier.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleInAppMetadataApplier.kt",
         )
         assertTrue(applier.contains("runtime.mainHandler.post"))
     }
@@ -271,7 +286,7 @@ class HleMetadataIntegrationStructuralTest {
     @Test
     fun `listen now release artwork lookup avoids diagnostics cache scans`() {
         val listenNow = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleListenNowHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleListenNowHooks.kt",
         )
         assertTrue(
             listenNow.contains(
@@ -285,10 +300,10 @@ class HleMetadataIntegrationStructuralTest {
     @Test
     fun `generic profile top songs use the direct relationship and h1 binding seam`() {
         val artist = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleArtistSurfaceHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleArtistSurfaceHooks.kt",
         )
         val coordinator = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleMediaApiMetadataCoordinator.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleMediaApiMetadataCoordinator.kt",
         )
         assertTrue(artist.contains("method.name == \"populateViews\""))
         assertTrue(artist.contains("registerGenericProfileRelationship(controller, relationship)"))
@@ -302,26 +317,21 @@ class HleMetadataIntegrationStructuralTest {
     }
 
     @Test
-    fun `settings expose profile selector without restoring refresh action`() {
-        val standalone = source("app/src/main/java/dev/amenhancer/module/ui/SettingsActivity.kt")
+    fun `embedded settings expose profile selector without restoring refresh action`() {
         val embedded = source("app/src/main/java/dev/amenhancer/module/ui/EmbeddedSettingsHost.kt")
-        assertTrue(standalone.contains("歌曲名显示修正"))
         assertTrue(embedded.contains("歌曲名显示修正"))
-        assertTrue(standalone.contains("歌曲名修正模式"))
         assertTrue(embedded.contains("歌曲名修正模式"))
-        assertTrue(standalone.contains("titleCorrectionMode"))
         assertTrue(embedded.contains("titleCorrectionMode"))
-        assertFalse(standalone.contains("刷新资料库"))
         assertFalse(embedded.contains("刷新资料库"))
     }
 
     @Test
     fun `schema owns the profile selector and HLE token requests remain isolated`() {
-        val schema = source("app/src/main/java/dev/amenhancer/module/config/ModuleSettingsSchema.kt")
+        val schema = source("core/src/main/kotlin/dev/amenhancer/module/config/ModuleSettingsSchema.kt")
         val target = source(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCatalogLanguageTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCatalogLanguageTarget.kt",
         )
-        val bridge = source("app/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
+        val bridge = source("host-applemusic/src/main/java/dev/amenhancer/module/hook/HleMetadataSurfaceBridge.kt")
         assertTrue(schema.contains("KEY_TITLE_CORRECTION_MODE"))
         assertTrue(schema.contains("KEY_TITLE_CORRECTION_TARGET_LANGUAGE"))
         assertTrue(target.contains("isHleResolverRequest"))

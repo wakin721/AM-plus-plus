@@ -1,4 +1,5 @@
 package io.github.proify.lyricon.amprovider.xposed
+import dev.amenhancer.module.hook.readRefactorComponent
 
 import java.io.File
 import org.junit.Assert.assertFalse
@@ -9,13 +10,13 @@ class AppleOriginalMetadataCacheWarmupStructuralTest {
     private fun source(relative: String): String = sequenceOf(
         File(relative),
         File("../$relative"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("Missing $relative")
 
     @Test
     fun startupWarmupNeverQueuesVisibleCacheHitsBehindTheFullCacheScan() {
         val source = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleOriginalMetadataCache.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleOriginalMetadataCache.kt",
         )
         assertTrue(source.contains("private val interactiveExecutor"))
         assertTrue(source.contains("private val warmExecutor"))

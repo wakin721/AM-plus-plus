@@ -43,11 +43,6 @@ import dev.amenhancer.module.config.ConfigStore
 import dev.amenhancer.module.config.TitleCorrectionMode
 import dev.amenhancer.module.font.FontImportResult
 import dev.amenhancer.module.font.SafFontImporter
-import dev.amenhancer.module.hook.AmLyricsClient
-import dev.amenhancer.module.hook.AmllTtmlClient
-import dev.amenhancer.module.hook.FileLunabeatCatalogCache
-import dev.amenhancer.module.hook.HttpLyricTransport
-import dev.amenhancer.module.hook.LunabeatClient
 import dev.amenhancer.module.lyrics.CustomLyricsBatchSaveResult
 import dev.amenhancer.module.lyrics.CustomLyricsBackupResult
 import dev.amenhancer.module.lyrics.CustomLyricsFilePolicy
@@ -61,7 +56,8 @@ import dev.amenhancer.module.lyrics.CustomLyricsOnlineImporter
 import dev.amenhancer.module.lyrics.CustomLyricsRestoreResult
 import dev.amenhancer.module.lyrics.CustomLyricsRestorePolicy
 import dev.amenhancer.module.lyrics.CustomLyricsUpdateResult
-import dev.amenhancer.module.lyrics.CustomLyricsUpdateSources
+import dev.amenhancer.module.lyrics.createOnlineLyricsUpdateSources
+import dev.amenhancer.module.lyrics.createEmbeddedOnlineLyricsImporter
 import dev.amenhancer.module.model.CustomLyricsEntry
 import dev.amenhancer.module.model.CustomLyricsManifest
 import dev.amenhancer.module.model.CustomLyricsSources
@@ -794,25 +790,8 @@ class SettingsActivity : ComponentActivity() {
         )
         backgroundExecutor.execute {
             val result = runCatching {
-                val amll = AmllTtmlClient(HttpLyricTransport())
-                val amLyrics = AmLyricsClient(HttpLyricTransport())
-                val lunabeat = LunabeatClient(
-                    indexTransport = HttpLyricTransport(
-                        maxResponseBytes = LunabeatClient.INDEX_MAX_BYTES,
-                    ),
-                    lyricsTransport = HttpLyricTransport(),
-                    cache = FileLunabeatCatalogCache(
-                        java.io.File(filesDir, "ampp-lunabeat-cache"),
-                    ),
-                )
                 CustomLyricsManager(ModuleApplication.serviceSnapshot, store).updateLyrics(
-                    sources = CustomLyricsUpdateSources(
-                        fetchAmll = amll::fetch,
-                        loadAmLyricsIndex = amLyrics::fetchIndex,
-                        fetchAmLyricsTtml = amLyrics::fetchTtml,
-                        loadLunabeatCatalog = lunabeat::loadCatalog,
-                        fetchLunabeatTtml = lunabeat::fetch,
-                    ),
+                    sources = createOnlineLyricsUpdateSources(this),
                     isCancelled = cancelled::get,
                     onProgress = { update ->
                         runOnUiThread {
@@ -1693,17 +1672,8 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    private fun onlineLyricsImporter(): CustomLyricsOnlineImporter = CustomLyricsOnlineImporter(
-        fetchAmll = AmllTtmlClient(HttpLyricTransport())::fetch,
-        fetchAmLyrics = AmLyricsClient(HttpLyricTransport())::fetch,
-        fetchLunabeat = LunabeatClient(
-            indexTransport = HttpLyricTransport(maxResponseBytes = LunabeatClient.INDEX_MAX_BYTES),
-            lyricsTransport = HttpLyricTransport(),
-            cache = FileLunabeatCatalogCache(
-                java.io.File(filesDir, "ampp-lunabeat-cache"),
-            ),
-        )::fetch,
-    )
+    private fun onlineLyricsImporter(): CustomLyricsOnlineImporter =
+        createEmbeddedOnlineLyricsImporter(application)
 
     private fun importFromAmll(
         appleMusicIdInput: EditText,

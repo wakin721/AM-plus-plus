@@ -8,13 +8,13 @@ class HlePageWideMetadataPrefetchStructuralTest {
     private fun source(relative: String): String = sequenceOf(
         File(relative),
         File("../$relative"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("Missing $relative")
 
     @Test
     fun collectionModelsScheduleAllLoadedPageEntitiesBeforeRecyclerRowsBind() {
         val collection = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleCollectionSurfaceHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleCollectionSurfaceHooks.kt",
         )
 
         assertTrue(collection.contains("schedulePageMetadataResolution"))
@@ -27,7 +27,7 @@ class HlePageWideMetadataPrefetchStructuralTest {
     @Test
     fun artistTopSongsUseOnePageWideOriginalMetadataRequest() {
         val artist = source(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleArtistSurfaceHooks.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/metadata/AppleArtistSurfaceHooks.kt",
         )
 
         assertTrue(artist.contains("requestPageOriginalMetadata"))

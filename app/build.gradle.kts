@@ -36,8 +36,8 @@ android {
         applicationId = "dev.amenhancer.module"
         minSdk = 26
         targetSdk = 37
-        versionCode = 103
-        versionName = "1.5.4"
+        versionCode = 114
+        versionName = "1.6.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -94,11 +94,17 @@ android {
 }
 
 dependencies {
+    implementation(project(":plugin-api"))
+    implementation(project(":plugin-runtime"))
+    implementation(project(":core"))
+    implementation(project(":host-api"))
+    implementation(project(":hook-runtime"))
+    implementation(project(":host-applemusic"))
+    implementation(project(":glass"))
     compileOnly("io.github.libxposed:api:102.0.0")
     implementation("io.github.libxposed:service:102.0.0")
     testCompileOnly("io.github.libxposed:service:102.0.0")
-    implementation("com.github.Dimezis:BlurView:version-3.2.0")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.24")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)

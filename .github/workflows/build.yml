@@ -29,6 +29,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Verify pinned glass renderer
+        run: python3 scripts/verify-glass-reference.py
+
+      - name: Verify architecture and exact host profiles
+        run: |
+          python3 scripts/verify-architecture.py
+          python3 scripts/verify-profile-data.py
+
       - name: Prepare release signing
         id: release_signing
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -46,14 +54,19 @@ jobs:
             echo '::notice::Release signing secrets are not configured; building a debug APK instead.'
           fi
 
+      - name: Build independent plugin example and SDK
+        run: |
+          chmod +x gradlew
+          python3 scripts/build-plugin-example.py
+
       - name: Build and test release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           chmod +x gradlew
           if [[ "${{ steps.release_signing.outputs.available }}" == 'true' ]]; then
-            ./gradlew test lintVitalRelease assembleRelease --no-daemon
+            ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleRelease -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
           else
-            ./gradlew test lintVitalRelease assembleDebug --no-daemon
+            ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleDebug -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
           fi
 
       - name: Verify release signature
@@ -71,7 +84,14 @@ jobs:
         if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
         run: |
           chmod +x gradlew
-          ./gradlew test lintVitalRelease assembleDebug --no-daemon
+          ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleDebug -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
+
+      - name: Upload plugin SDK and example
+        uses: actions/upload-artifact@v4
+        with:
+          name: AM-plus-plus-plugin-sdk-v1
+          path: build/plugin-example/*
+          if-no-files-found: error
 
       - name: Upload release APK
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_signing.outputs.available == 'true'

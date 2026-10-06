@@ -41,9 +41,13 @@ device-*.png
 device-*.xml
 
 # Local research inputs and agent working notes
+/.planning/
 /$tmp/
 /液态玻璃/
 /task_plan.md
 /findings.md
 /progress.md
 /design-qa.md
+
+# User-exported lyrics are data, not application source
+/github-lyrics-export/

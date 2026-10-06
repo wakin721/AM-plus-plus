@@ -7,7 +7,7 @@ import org.junit.Test
 
 class LibxposedApi102StructuralRegressionTest {
     private fun projectFile(path: String): String = sequenceOf(File(path), File("../$path"))
-        .firstOrNull(File::isFile)?.readText()
+        .firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("$path was not found")
 
     @Test
@@ -17,7 +17,7 @@ class LibxposedApi102StructuralRegressionTest {
         val entry = projectFile("app/src/main/resources/META-INF/xposed/java_init.list")
         val production = File("app/src/main/java").walkTopDown()
             .filter(File::isFile)
-            .joinToString("\n") { it.readText() }
+            .joinToString("\n") { it.readRefactorComponent() }
 
         assertTrue(build.contains("io.github.libxposed:api:102.0.0"))
         assertTrue(build.contains("io.github.libxposed:service:102.0.0"))
@@ -29,9 +29,9 @@ class LibxposedApi102StructuralRegressionTest {
     @Test
     fun `uses host private embedded storage and runtime layout inflation replacement`() {
         val storage = projectFile("app/src/main/java/dev/amenhancer/module/config/HostPrivateEmbeddedStorage.kt")
-        val target = projectFile("app/src/main/java/dev/amenhancer/module/config/TargetConfigClient.kt")
+        val target = projectFile("host-api/src/main/java/dev/amenhancer/module/config/TargetConfigClient.kt")
         val entry = projectFile("app/src/main/java/dev/amenhancer/module/hook/HookEntry.kt")
-        val layouts = projectFile("app/src/main/java/dev/amenhancer/module/hook/LayoutInflationRegistry.kt")
+        val layouts = projectFile("host-applemusic/src/main/java/dev/amenhancer/module/hook/LayoutInflationRegistry.kt")
 
         assertTrue(storage.contains("ampp-embedded-settings"))
         assertTrue(storage.contains("ampp-embedded-files"))

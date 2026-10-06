@@ -1,5 +1,6 @@
 package dev.amenhancer.module.hook
 
+import dev.amenhancer.module.lyrics.source.HttpLyricTransport
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,16 +18,16 @@ class CustomLyricsItemUpdateStructuralRegressionTest {
     private fun projectFile(relativePath: String): String = sequenceOf(
         File(relativePath),
         File("../$relativePath"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("$relativePath was not found from the unit-test working directory")
 
     @Test
     fun `o2 hook resolves the profile backed symbol and registers after i2`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
         val symbols = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/TargetSymbols.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/TargetSymbols.kt",
         )
 
         assertTrue(target.contains("AppleMusicSymbols.LyricsItemUpdateMethod"))
@@ -38,15 +39,19 @@ class CustomLyricsItemUpdateStructuralRegressionTest {
         assertTrue(symbols.contains("LyricsItemUpdateMethod"))
         assertTrue(symbols.contains("TargetSymbolId.LYRICS_ITEM_UPDATE_METHOD"))
         assertEquals(
-            3,
-            Regex("TargetSymbolId\\.LYRICS_ITEM_UPDATE_METHOD to \"o2\"").findAll(symbols).count(),
+            // One pin per exact host profile: 6.5.0, 6.5.1, 6.5.2 and 6.5.3.
+            4,
+            dev.amenhancer.host.applemusic.AppleMusicHostProfiles.all.count {
+                it.document.getJSONObject("indexed").getJSONObject("methods")
+                    .optString("LYRICS_ITEM_UPDATE_METHOD") == "o2"
+            },
         )
     }
 
     @Test
     fun `o2 hook enters a thread local context before apple and exits after`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
 
         assertTrue(target.contains("itemUpdateContext.enterO2()"))
@@ -58,7 +63,7 @@ class CustomLyricsItemUpdateStructuralRegressionTest {
     @Test
     fun `o2 hook coordinates the exact current item and flags holder after apple ran`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
         val o2Hook = target.substringAfter(
             "override fun afterHookedMethod(param: MethodHookParam)",
@@ -72,7 +77,7 @@ class CustomLyricsItemUpdateStructuralRegressionTest {
     @Test
     fun `o2 hook path never loads lyrics writes results or hooks resume`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
         val o2Hook = target.substringAfter(
             "AppleMusicSymbols.LyricsItemUpdateMethod",
@@ -90,7 +95,7 @@ class CustomLyricsItemUpdateStructuralRegressionTest {
     @Test
     fun `coordinator uses ready only lookup, the i2 identity seam, and the ready late ledger`() {
         val coordinator = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/LyricsItemUpdateCoordinator.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/LyricsItemUpdateCoordinator.kt",
         )
 
         assertTrue(coordinator.contains("fun decideLyricsItemUpdate("))
@@ -117,7 +122,7 @@ class CustomLyricsItemUpdateStructuralRegressionTest {
     @Test
     fun `automatic fallback is prewarmed from observed native metadata and manual ready wins`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
 
         assertTrue(target.contains("metadataOfAppleMusicId(id)"))

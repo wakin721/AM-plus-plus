@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
  * required order, lifecycle split, failure isolation, or health reporting.
  */
 internal object FeatureInstallation {
-    private val lyricsTypefaceSession by lazy(::LyricsTypefaceSession)
+    private val lyricsTypefaceSession by lazy(AppleMusicHostFactory::newTypefaceResources)
     private val module by lazy { productionFeatureInstallationModule(lyricsTypefaceSession) }
 
     /**
@@ -46,13 +46,12 @@ internal object FeatureInstallation {
         module.installNow(config) {
             HookContext(
                 config = config,
-                target = TargetAdaptation.appleMusic(
+                target = assembleAppleMusicTarget(
                     config = config,
                     application = application,
                     classLoader = targetClassLoader,
                     lyricsTypefaceSession = lyricsTypefaceSession,
                     currentSong = currentSong,
-                    registerCurrentSongResponder = false,
                 ),
             )
         }
@@ -240,22 +239,9 @@ internal class FeatureInstallResult private constructor(
     }
 }
 
-internal fun targetBuild(context: Context): TargetBuild = runCatching {
-    val packageInfo = context.packageManager.getPackageInfo(ModuleConstants.TARGET_PACKAGE, 0)
-    val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-        packageInfo.longVersionCode
-    } else {
-        @Suppress("DEPRECATION") packageInfo.versionCode.toLong()
-    }
-    TargetBuild(
-        packageName = ModuleConstants.TARGET_PACKAGE,
-        versionName = packageInfo.versionName.orEmpty(),
-        versionCode = versionCode,
-    )
-}.getOrDefault(TargetBuild.UNKNOWN)
 
 private fun productionFeatureInstallationModule(
-    lyricsTypefaceSession: LyricsTypefaceSession,
+    lyricsTypefaceSession: LyricsTypefaceResourceBinding,
 ): FeatureInstallationModule {
     // The same session is used by resource callbacks registered before
     // Application.onCreate and by lifecycle hooks installed afterwards.
@@ -264,16 +250,17 @@ private fun productionFeatureInstallationModule(
         plans = listOf(
             FeatureInstallationPlan(
                 feature = DualPaneFeature(),
-                registerResources = { DualPaneResourceHook.install() },
+                registerResources = { AppleMusicHostFactory.registerDualPaneResources() },
             ),
             FeatureInstallationPlan(feature = EditorialVideoFeature()),
+            FeatureInstallationPlan(feature = CellularDataEntryFeature()),
             FeatureInstallationPlan(
                 feature = PhoneLiquidGlassFeature(),
                 registerResources = PhoneLiquidGlassResourceHook::install,
             ),
             FeatureInstallationPlan(
                 feature = FutureLyricBlurFeature(),
-                registerResources = { LyricCreditsRowResourceHook.install() },
+                registerResources = { AppleMusicHostFactory.registerLyricAuxiliaryResources() },
             ),
             FeatureInstallationPlan(feature = CjkKaraokeAnimationFeature()),
             FeatureInstallationPlan(
@@ -284,8 +271,12 @@ private fun productionFeatureInstallationModule(
             FeatureInstallationPlan(feature = TitleCorrectionFeature()),
             FeatureInstallationPlan(feature = CustomLyricsFeature()),
             FeatureInstallationPlan(feature = UsbBitPerfectFeature()),
+            // The actual resource hook is installed during the Application
+            // before-hook; this plan records its final health alongside the
+            // regular post-Application features.
+            FeatureInstallationPlan(feature = AppleMusicDpiOverrideFeature()),
         ),
-        installLayoutInflationHooks = LayoutInflationRegistry::install,
+        installLayoutInflationHooks = AppleMusicHostFactory::installLayoutCallbacks,
         registerApplicationCreated = { config, targetClassLoader, onCreated ->
             val onCreate = Application::class.java.getDeclaredMethod("onCreate")
             ModernXposedRuntime.hookMethod(onCreate, object : ModernMethodHook() {
@@ -294,7 +285,7 @@ private fun productionFeatureInstallationModule(
                     onCreated {
                         HookContext(
                             config = config,
-                            target = TargetAdaptation.appleMusic(
+                            target = assembleAppleMusicTarget(
                                 config = config,
                                 application = application,
                                 classLoader = targetClassLoader,

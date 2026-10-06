@@ -11,9 +11,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven(url = "https://jitpack.io")
     }
 }
 
 rootProject.name = "AMPlusPlus"
 include(":app")
+include(":backdrop", ":glass")
+include(":core", ":host-api", ":hook-runtime", ":host-applemusic")
+include(":plugin-api", ":plugin-runtime")

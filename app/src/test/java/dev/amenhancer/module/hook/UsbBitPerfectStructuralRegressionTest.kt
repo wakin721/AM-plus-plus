@@ -9,7 +9,7 @@ class UsbBitPerfectStructuralRegressionTest {
     private fun projectFile(relativePath: String): String = sequenceOf(
         File(relativePath),
         File("../$relativePath"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("$relativePath was not found from the unit-test working directory")
 
     @Test
@@ -39,10 +39,10 @@ class UsbBitPerfectStructuralRegressionTest {
             "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
         )
         val model = projectFile(
-            "app/src/main/java/dev/amenhancer/module/model/ModuleModels.kt",
+            "core/src/main/kotlin/dev/amenhancer/module/model/ModuleModels.kt",
         )
         val schema = projectFile(
-            "app/src/main/java/dev/amenhancer/module/config/ModuleSettingsSchema.kt",
+            "core/src/main/kotlin/dev/amenhancer/module/config/ModuleSettingsSchema.kt",
         )
 
         assertTrue(feature.contains("val settings = context.config.settings()"))

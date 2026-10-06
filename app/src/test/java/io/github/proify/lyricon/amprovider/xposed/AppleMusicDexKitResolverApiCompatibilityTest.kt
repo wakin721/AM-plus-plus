@@ -14,7 +14,7 @@ class AppleMusicDexKitResolverApiCompatibilityTest {
     @Test
     fun `cache key supports package info before api 28`() {
         val resolver = projectFile(
-            "app/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleMusicDexKitResolver.kt",
+            "host-applemusic/src/main/java/io/github/proify/lyricon/amprovider/xposed/AppleMusicDexKitResolver.kt",
         )
 
         assertTrue(resolver.contains("Build.VERSION.SDK_INT >= Build.VERSION_CODES.P"))

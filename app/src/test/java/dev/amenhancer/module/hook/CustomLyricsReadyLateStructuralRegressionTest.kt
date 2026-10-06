@@ -9,13 +9,13 @@ class CustomLyricsReadyLateStructuralRegressionTest {
     private fun projectFile(relativePath: String): String = sequenceOf(
         File(relativePath),
         File("../$relativePath"),
-    ).firstOrNull(File::isFile)?.readText()
+    ).firstOrNull(File::isFile)?.readRefactorComponent()
         ?: error("$relativePath was not found from the unit-test working directory")
 
     @Test
     fun `i2 records a ready late miss without io or native parse on the hook path`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
         val hookBody = target.substringAfter(
             "override fun beforeHookedMethod(param: MethodHookParam)",
@@ -33,7 +33,7 @@ class CustomLyricsReadyLateStructuralRegressionTest {
     @Test
     fun `ready late callbacks hop to the main thread before re-entering i2`() {
         val target = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCustomLyricsTarget.kt",
         )
 
         assertTrue(target.contains("Handler(Looper.getMainLooper())"))
@@ -47,7 +47,7 @@ class CustomLyricsReadyLateStructuralRegressionTest {
     @Test
     fun `reapply ledger is weakly identity keyed, consumes before re-entry, and can be dismissed`() {
         val reapply = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/CustomLyricsReadyReapply.kt",
+            "host-applemusic/src/main/java/dev/amenhancer/module/hook/CustomLyricsReadyReapply.kt",
         )
 
         assertTrue(reapply.contains("mutableListOf<PendingMiss>()"))
@@ -69,7 +69,7 @@ class CustomLyricsReadyLateStructuralRegressionTest {
     @Test
     fun `session publishes the callback only after the cache write`() {
         val session = projectFile(
-            "app/src/main/java/dev/amenhancer/module/hook/CustomLyricsReplacementSession.kt",
+            "core/src/main/kotlin/dev/amenhancer/module/hook/CustomLyricsReplacementSession.kt",
         )
 
         assertTrue(session.contains("onReplacementPublished"))
