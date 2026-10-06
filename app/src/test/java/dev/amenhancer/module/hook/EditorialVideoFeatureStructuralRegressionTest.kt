@@ -1,6 +1,9 @@
 package dev.amenhancer.module.hook
 
 import java.io.File
+import dev.amenhancer.module.config.ModuleSettingsSchema
+import dev.amenhancer.module.config.SettingsSynchronizationPolicy
+import dev.amenhancer.module.model.ModuleSettings
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,7 +49,10 @@ class EditorialVideoFeatureStructuralRegressionTest {
         assertTrue(models.contains("val disableEditorialVideoOnTablet: Boolean = true"))
         assertTrue(schema.contains("\"disable_editorial_video_on_tablet\""))
         assertTrue(schema.contains("settings.disableEditorialVideoOnTablet"))
-        assertTrue(session.contains("ModuleSettingsSchema.encodeOrdinarySettings(settings)"))
+        val patch = SettingsSynchronizationPolicy.ordinaryPatch(
+            ModuleSettings(), ModuleSettings(disableEditorialVideoOnTablet = false),
+        )
+        assertFalse(ModuleSettingsSchema.decode(patch).disableEditorialVideoOnTablet)
         assertTrue(session.contains("ModuleSettingsSchema.encodeFontManifest(manifest)"))
         listOf(
             "lyrics_font_enabled",

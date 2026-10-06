@@ -1,6 +1,9 @@
 package dev.amenhancer.module.hook
 
 import java.io.File
+import dev.amenhancer.module.config.ModuleSettingsSchema
+import dev.amenhancer.module.config.SettingsSynchronizationPolicy
+import dev.amenhancer.module.model.ModuleSettings
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,7 +50,10 @@ class PhoneLiquidGlassStructuralRegressionTest {
         val settings = source("dev/amenhancer/module/ui/EmbeddedSettingsHost.kt")
 
         assertTrue(models.contains("val phoneLiquidGlassEnabled: Boolean = false"))
-        assertTrue(session.contains("ModuleSettingsSchema.encodeOrdinarySettings(settings)"))
+        val patch = SettingsSynchronizationPolicy.ordinaryPatch(
+            ModuleSettings(), ModuleSettings(phoneLiquidGlassEnabled = true),
+        )
+        assertTrue(ModuleSettingsSchema.decode(patch).phoneLiquidGlassEnabled)
         assertTrue(session.contains("ModuleSettingsSchema.encodeFontManifest(manifest)"))
         listOf(
             "lyrics_font_enabled",
