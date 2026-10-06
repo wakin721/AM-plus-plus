@@ -24,7 +24,7 @@ internal object UsbDirectUacBridge {
         duringOpen = null; failOpen = false; failWrite = false
         outputs.clear(); closed.clear()
     }
-    fun open(lease: UsbDirectDeviceClient.Lease, pcmBufferMs: Int, transferBufferMs: Int): OpenResult {
+    fun open(context: android.content.Context, lease: UsbDirectDeviceClient.Lease, pcmBufferMs: Int, transferBufferMs: Int): OpenResult {
         val handle = ++nextHandle
         outputs[handle] = Output()
         duringOpen?.invoke()

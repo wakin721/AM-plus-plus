@@ -1,6 +1,10 @@
 package dev.amenhancer.module.hook
 
+import android.content.Context
 import android.media.AudioFormat
+import android.os.Build
+import android.os.Process
+import dev.amenhancer.module.BuildConfig
 
 /** JNI wrapper for the usbfs isochronous UAC output engine. */
 internal object UsbDirectUacBridge {
@@ -17,24 +21,38 @@ internal object UsbDirectUacBridge {
     @Volatile
     private var loadFailure: String? = null
 
-    private val loaded: Boolean by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        runCatching {
-            System.loadLibrary("ampp_audio")
-            true
-        }.onFailure { error ->
-            loadFailure = "native USB Direct bridge load failed: ${error.message ?: error.javaClass.simpleName}"
-            ModernXposedRuntime.log("usb_direct: native bridge load failed", error)
-        }.getOrDefault(false)
+    @Volatile private var loaded = false
+    private val loadLock = Any()
+
+    private fun ensureLoaded(context: Context): Boolean = synchronized(loadLock) {
+        if (loaded) return true
+        val moduleInfo = runCatching {
+            ModernXposedRuntime.activeModule()?.getModuleApplicationInfo()
+        }.getOrNull() ?: runCatching {
+            context.packageManager.getApplicationInfo(BuildConfig.APPLICATION_ID, 0)
+        }.getOrNull()
+        val result = UsbDirectNativeLibraryLoader.load(
+            nativeLibraryDir = moduleInfo?.nativeLibraryDir.orEmpty(),
+            moduleApkPaths = listOfNotNull(moduleInfo?.sourceDir, moduleInfo?.publicSourceDir) +
+                moduleInfo?.splitSourceDirs.orEmpty(),
+            processAbis = (if (Process.is64Bit()) Build.SUPPORTED_64_BIT_ABIS else Build.SUPPORTED_32_BIT_ABIS).toList(),
+            cacheDir = context.codeCacheDir,
+        )
+        loaded = result.loaded
+        loadFailure = if (loaded) null else "native USB Direct bridge load failed: ${result.message}"
+        if (!loaded) ModernXposedRuntime.log("usb_direct: ${result.message}", result.cause)
+        loaded
     }
 
     fun open(
+        context: Context,
         lease: UsbDirectDeviceClient.Lease,
         pcmBufferMs: Int,
         transferBufferMs: Int,
     ): OpenResult {
         val inputFormatCode = formatCode(lease.encoding)
             ?: return OpenResult.Failed("当前 AudioTrack PCM encoding 不受 USB Direct 原型支持")
-        if (!loaded) return OpenResult.Failed(loadFailure ?: "native USB Direct bridge unavailable")
+        if (!ensureLoaded(context)) return OpenResult.Failed(loadFailure ?: "native USB Direct bridge unavailable")
         val handle = runCatching {
             nativeOpen(
                 lease.fd.fd,

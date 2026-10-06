@@ -36,10 +36,12 @@ try {
         ($hook + 'UsbDirectUacController.kt'), ($hook + 'UsbDirectDeviceClient.kt'),
         ($hook + 'UsbDirectVolumePolicy.kt'), ($hook + 'UsbDirectWriteFailurePolicy.kt'),
         ($hook + 'UsbDirectTrackHandoffPolicy.kt'),
+        ($hook + 'UsbDirectNativeLibraryLoader.kt'),
         'app/src/main/java/dev/amenhancer/module/UsbDirectIpc.kt',
         'app/src/main/java/dev/amenhancer/module/UsbBitPerfectStatusProtocol.kt',
         'app/src/main/java/dev/amenhancer/module/usb/UsbAudioDescriptorParser.kt',
         ($testHook + 'RefactorComponentSource.kt'),
+        ($testHook + 'UsbDirectNativeLibraryLoaderTest.kt'),
         ($testHook + 'UsbDirectTrackHandoffPolicyTest.kt'), ($testHook + 'UsbDirectVolumePolicyTest.kt'),
         ($testHook + 'UsbDirectWriteFailurePolicyTest.kt'), ($testHook + 'UsbDirectUacStructuralRegressionTest.kt'),
         'app/src/test/java/dev/amenhancer/module/usb/UsbAudioDescriptorParserTest.kt'
@@ -48,6 +50,7 @@ try {
     if ($LASTEXITCODE -ne 0) { Get-Content "$output/compile.log"; throw 'USB lifecycle test compilation failed.' }
     & $java -cp "$output/classes;$runtime" org.junit.runner.JUnitCore `
         dev.amenhancer.module.hook.UsbDirectLifecycleTest `
+        dev.amenhancer.module.hook.UsbDirectNativeLibraryLoaderTest `
         dev.amenhancer.module.hook.UsbDirectTrackHandoffPolicyTest `
         dev.amenhancer.module.hook.UsbDirectVolumePolicyTest `
         dev.amenhancer.module.hook.UsbDirectWriteFailurePolicyTest `

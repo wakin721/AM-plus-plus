@@ -481,6 +481,7 @@ internal object UsbDirectUacController {
             // pause/flush/stop/release can invalidate this request while it opens.
             when (
                 val opened = UsbDirectUacBridge.open(
+                    context = context,
                     lease = lease,
                     pcmBufferMs = pcmBufferMs,
                     transferBufferMs = transferBufferMs,
