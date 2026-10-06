@@ -41,7 +41,9 @@
 
 ## 项目简介
 
-设置页嵌在 Apple Music 自己的设置列表中，入口是“AM++ 模块设置”，没有独立的桌面图标。
+设置页嵌在 Apple Music 自己的设置列表中，入口是“AM++ 模块设置”。本分支同时保留独立的 AM++ 设置应用，提供 USB Bit-Perfect / USB Direct 设置、Material 3 外观和 DeepSeek AI 歌词翻译。
+
+本分支已同步上游 `1.6.4`。USB 音频选项默认关闭；AI 翻译仅在独立设置应用中手动发起，需要配置 API Key。
 
 支持通过 ZIP 导入和管理插件；开发说明见 [插件开发手册](docs/plugin-development.md)。
 
