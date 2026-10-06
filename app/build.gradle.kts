@@ -105,15 +105,11 @@ dependencies {
     implementation("io.github.libxposed:service:102.0.0")
     testCompileOnly("io.github.libxposed:service:102.0.0")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
-    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
-    implementation("androidx.activity:activity-compose:1.13.0")
+    // Compose is still used by the injected liquid-glass navigation renderer.
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3:1.5.0-alpha25")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation("androidx.activity:activity-ktx:1.13.0")
 
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     // HLE's exact Apple Music profile resolver uses DexKit only as a

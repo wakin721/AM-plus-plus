@@ -3,7 +3,6 @@ package dev.amenhancer.module.ui
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -18,6 +17,7 @@ import android.widget.TextView
 import android.content.res.ColorStateList
 import dev.amenhancer.module.R
 import java.util.WeakHashMap
+import dev.amenhancer.module.ui.theme.AppleMusicSettingsPalette
 
 /** Adds a compact navigation entry to the AM++ main settings page. */
 internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCallbacks {
@@ -50,12 +50,10 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
 
         val density = activity.resources.displayMetrics.density
         fun dp(value: Int): Int = (value * density).toInt()
-        val dark = (activity.resources.configuration.uiMode and 0x30) == 0x20
-        val surface = if (dark) Color.rgb(34, 27, 30) else Color.WHITE
-        val outline = if (dark) Color.rgb(77, 62, 67) else Color.rgb(235, 221, 226)
-        val onSurface = if (dark) Color.rgb(248, 239, 242) else Color.rgb(34, 27, 30)
-        val onVariant = if (dark) Color.rgb(213, 195, 201) else Color.rgb(113, 99, 104)
-        val primary = if (dark) Color.rgb(255, 139, 176) else Color.rgb(210, 56, 108)
+        val colors = AppleMusicSettingsPalette.resolve(activity)
+        val surface = colors.surface
+        val onSurface = colors.onSurface
+        val onVariant = colors.onSurfaceVariant
 
         content.addView(View(activity), LinearLayout.LayoutParams(1, dp(24)))
         content.addView(LinearLayout(activity).apply {
@@ -64,17 +62,16 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 setColor(surface)
-                cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), outline)
+                cornerRadius = dp(16).toFloat()
             }
-            elevation = dp(2).toFloat()
+            elevation = 0f
             clipToOutline = true
 
             addView(TextView(activity).apply {
                 text = "音频"
                 textSize = 14f
-                setTextColor(primary)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setTextColor(onVariant)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 setPadding(dp(16), dp(18), dp(16), dp(8))
             })
 
@@ -92,7 +89,7 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
                         text = "USB Bit-Perfect"
                         textSize = 17f
                         setTextColor(onSurface)
-                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                     })
                     addView(TextView(activity).apply {
                         text = "查看总开关、实时状态与 AudioTrack → Mixer → USB DAC 音频链路"

@@ -1,10 +1,7 @@
 package dev.amenhancer.module.ui
 
-import android.app.Activity
 import android.content.Context
 import android.content.res.ColorStateList
-import android.content.res.Configuration
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioFormat
@@ -19,13 +16,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
-import android.widget.Switch
+import android.widget.CompoundButton
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import dev.amenhancer.module.ModuleApplication
 import dev.amenhancer.module.R
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
@@ -33,9 +26,8 @@ import dev.amenhancer.module.UsbBitPerfectStatusProtocol
 import dev.amenhancer.module.XposedServiceSnapshot
 import dev.amenhancer.module.config.ConfigStore
 import dev.amenhancer.module.model.ModuleSettings
-import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
 import dev.amenhancer.module.ui.theme.AppAppearanceSettings
-import dev.amenhancer.module.ui.theme.AppUiStyle
+import dev.amenhancer.module.ui.theme.AppleMusicSettingsPalette
 import dev.amenhancer.module.ui.theme.AppearancePreferences
 import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 
@@ -43,20 +35,16 @@ import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 class UsbBitPerfectSettingsActivity : ComponentActivity() {
     private lateinit var store: ConfigStore
     private lateinit var requester: UsbBitPerfectStatusRequester
-    private lateinit var palette: Palette
-    private lateinit var toggle: Switch
-    private lateinit var directToggle: Switch
+    private lateinit var palette: AppleMusicSettingsPalette
+    private lateinit var toggle: CompoundButton
+    private lateinit var directToggle: CompoundButton
     private lateinit var statusTitle: TextView
     private lateinit var statusMessage: TextView
     private lateinit var appleMusicValue: TextView
     private lateinit var mixerValue: TextView
     private lateinit var usbValue: TextView
     private var suppressToggleCallback = false
-    private var expressiveUiActive = false
-    private var expressiveSettings by mutableStateOf(ModuleSettings())
-    private var expressiveSnapshot by mutableStateOf(XposedServiceSnapshot.waiting())
-    private var expressiveStatus by mutableStateOf<UsbBitPerfectStatusDetails?>(null)
-    private var expressiveChecking by mutableStateOf(false)
+    private val bufferControls = mutableListOf<View>()
     private lateinit var appearancePreferences: AppearancePreferences
     private var activeAppearance = AppAppearanceSettings()
 
@@ -74,53 +62,14 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         activeAppearance = appearancePreferences.settings()
         store = ConfigStore(this)
         requester = UsbBitPerfectStatusRequester(this)
-        palette = Palette.resolve(this)
+        palette = AppleMusicSettingsPalette.resolve(this)
+        EmbeddedSettingsPalette.update(this)
         syncUsbAttachHandling()
         configureSystemBars()
-        expressiveUiActive = activeAppearance.style == AppUiStyle.MATERIAL3
-        if (!expressiveUiActive) {
-            val root = buildScreen()
-            setContentView(root)
-            applySystemBarInsets(root)
-            updateToggles(ModuleApplication.serviceSnapshot)
-            return
-        }
+        val root = buildScreen()
+        setContentView(root)
+        applySystemBarInsets(root)
         updateToggles(ModuleApplication.serviceSnapshot)
-        setContent {
-            AmppExpressiveTheme(appearance = activeAppearance) {
-                UsbAudioSettingsScreen(
-                    settings = expressiveSettings,
-                    snapshot = expressiveSnapshot,
-                    status = expressiveStatus,
-                    checking = expressiveChecking,
-                    actions = UsbAudioSettingsActions(
-                        navigateBack = ::finish,
-                        setEnabled = { enabled ->
-                            store.saveSettings(store.settings().copy(usbBitPerfectEnabled = enabled))
-                            syncUsbAttachHandling()
-                            updateToggles(ModuleApplication.serviceSnapshot)
-                        },
-                        setDirectEnabled = { enabled ->
-                            store.saveSettings(store.settings().copy(usbDirectUacEnabled = enabled))
-                            syncUsbAttachHandling()
-                            if (enabled) {
-                                UsbDirectPermissionActivity.requestCurrentDevice(this)
-                            }
-                            updateToggles(ModuleApplication.serviceSnapshot)
-                        },
-                        setPcmBufferMs = { value ->
-                            store.saveSettings(store.settings().copy(usbDirectPcmBufferMs = value))
-                            updateToggles(ModuleApplication.serviceSnapshot)
-                        },
-                        setTransferBufferMs = { value ->
-                            store.saveSettings(store.settings().copy(usbDirectTransferBufferMs = value))
-                            updateToggles(ModuleApplication.serviceSnapshot)
-                        },
-                        refresh = ::refreshStatus,
-                    ),
-                )
-            }
-        }
     }
 
     override fun onResume() {
@@ -149,9 +98,8 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         setBackgroundColor(palette.background)
         addView(buildTopBar(), LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(56),
+            dp(64),
         ))
-        addView(divider())
         addView(ScrollView(this@UsbBitPerfectSettingsActivity).apply {
             isFillViewport = true
             clipToPadding = false
@@ -171,32 +119,40 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
     }
 
     private fun buildTopBar(): View = FrameLayout(this).apply {
-        setPadding(dp(12), 0, dp(24), 0)
         addView(ImageView(this@UsbBitPerfectSettingsActivity).apply {
-            setImageResource(R.drawable.ic_arrow_back)
-            imageTintList = ColorStateList.valueOf(palette.onSurface)
+            setImageDrawable(EmbeddedGlyphDrawable(EmbeddedGlyphKind.BackArrow, palette.onSurface))
             contentDescription = "返回"
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(palette.background)
+                setStroke(dp(1), palette.outline)
+            }
             isClickable = true
             isFocusable = true
             setOnClickListener { finish() }
-        }, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL))
+        }, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            marginStart = dp(12)
+        })
         addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
             text = "USB 音频输出"
             textSize = 20f
             setTextColor(palette.onSurface)
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.CENTER_VERTICAL,
-        ).apply { marginStart = dp(64) })
+        ).apply {
+            marginStart = dp(64)
+            marginEnd = dp(64)
+        })
     }
 
     private fun toggleCard(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = roundedDrawable(palette.surface, 20, palette.outline)
+        background = roundedDrawable(palette.surface, 16)
         clipToOutline = true
 
         addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
@@ -210,7 +166,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     text = "启用 USB 音频增强"
                     textSize = 17f
                     setTextColor(palette.onSurface)
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
                     text = "Android 14+ · USB DAC · 修改后需重启 Apple Music"
@@ -219,8 +175,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     setPadding(0, dp(4), dp(8), 0)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            toggle = Switch(this@UsbBitPerfectSettingsActivity).apply {
-                showText = false
+            toggle = EmbeddedSettingsSwitch(this@UsbBitPerfectSettingsActivity).apply {
                 contentDescription = "启用 USB 音频增强"
                 setOnCheckedChangeListener { _, enabled ->
                     if (suppressToggleCallback) return@setOnCheckedChangeListener
@@ -253,7 +208,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     text = "实验性 USB 直通独占"
                     textSize = 17f
                     setTextColor(palette.onSurface)
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
                     text = "Android USB Host 授权 → claim AudioStreaming interface → native usbfs isochronous；支持 UAC1/UAC2 标准显式 feedback，隐式 feedback/厂商私有格式仍会回退"
@@ -268,13 +223,13 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     setPadding(0, dp(5), dp(8), 0)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            directToggle = Switch(this@UsbBitPerfectSettingsActivity).apply {
-                showText = false
+            directToggle = EmbeddedSettingsSwitch(this@UsbBitPerfectSettingsActivity).apply {
                 contentDescription = "实验性 USB 直通独占"
                 setOnCheckedChangeListener { _, enabled ->
                     if (suppressToggleCallback) return@setOnCheckedChangeListener
                     store.saveSettings(store.settings().copy(usbDirectUacEnabled = enabled))
                     syncUsbAttachHandling()
+                    updateChildToggleEnabledState()
                     statusTitle.text = "等待重启 Apple Music"
                     statusMessage.text = if (enabled) {
                         UsbDirectPermissionActivity.requestCurrentDevice(this@UsbBitPerfectSettingsActivity)
@@ -294,7 +249,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
 
     private fun bufferCard(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = roundedDrawable(palette.surface, 20, palette.outline)
+        background = roundedDrawable(palette.surface, 16)
         clipToOutline = true
         addView(
             bufferRangeRow(
@@ -340,7 +295,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
             textSize = 14f
             setTextColor(palette.primary)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             text = "$safeValue ms"
         }
         addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
@@ -352,7 +307,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     text = title
                     textSize = 16f
                     setTextColor(palette.onSurface)
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
                     text = summary
@@ -364,9 +319,9 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             addView(valueView)
         })
         addView(SeekBar(this@UsbBitPerfectSettingsActivity).apply {
+            bufferControls.add(this)
             max = (maxValue - minValue) / stepValue
             progress = (safeValue - minValue) / stepValue
-            isEnabled = store.settings().usbDirectUacEnabled
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     val value = (minValue + progress * stepValue).coerceIn(minValue, maxValue)
@@ -376,7 +331,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                 override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
 
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    if (!store.settings().usbDirectUacEnabled) return
+                    if (!isEnabled) return
                     val value = (minValue + progress * stepValue).coerceIn(minValue, maxValue)
                     save(value)
                     valueView.text = "$value ms"
@@ -400,7 +355,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
             textSize = 14f
             setTextColor(palette.primary)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             text = label(selected())
         }
         addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
@@ -409,7 +364,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                 text = title
                 textSize = 16f
                 setTextColor(palette.onSurface)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             })
             addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
                 text = summary
@@ -421,8 +376,9 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         addView(valueView)
         isClickable = true
         isFocusable = true
+        bufferControls.add(this)
         setOnClickListener {
-            if (!store.settings().usbDirectUacEnabled) return@setOnClickListener
+            if (!isEnabled) return@setOnClickListener
             val current = selected()
             val index = values.indexOf(current).takeIf { it >= 0 } ?: 0
             val next = values[(index + 1) % values.size]
@@ -433,7 +389,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
 
     private fun audioPathCard(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = roundedDrawable(palette.surface, 20, palette.outline)
+        background = roundedDrawable(palette.surface, 16)
         clipToOutline = true
         setPadding(dp(16), dp(18), dp(16), dp(14))
 
@@ -441,7 +397,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             text = "音频链路"
             textSize = 14f
             setTextColor(palette.primary)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         })
         addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
             text = "优先 USB Direct UAC；失败后恢复原 AudioTrack/Android mixer。链路从 Apple Music 解码后的 AudioTrack PCM 开始，不代表原始 ALAC 元数据。"
@@ -454,7 +410,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             text = "正在检查…"
             textSize = 18f
             setTextColor(palette.onSurface)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             setPadding(0, 0, 0, dp(12))
         }
         addView(statusTitle)
@@ -508,7 +464,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             text = title
             textSize = 13f
             setTextColor(palette.primary)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         })
         val value = TextView(this).apply {
             text = initial
@@ -529,12 +485,6 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
     }
 
     private fun updateToggles(snapshot: XposedServiceSnapshot) {
-        if (expressiveUiActive) {
-            expressiveSnapshot = snapshot
-            expressiveSettings = store.settings()
-            syncUsbAttachHandling()
-            return
-        }
         if (!::toggle.isInitialized || !::directToggle.isInitialized) return
         val settings = store.settings()
         suppressToggleCallback = true
@@ -552,6 +502,11 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         val parentEnabled = store.settings().usbBitPerfectEnabled && ModuleApplication.serviceSnapshot.isRemoteAvailable
         directToggle.isEnabled = parentEnabled
         directToggle.alpha = if (parentEnabled) 1f else 0.58f
+        val buffersEnabled = parentEnabled && store.settings().usbDirectUacEnabled
+        bufferControls.forEach { control ->
+            control.isEnabled = buffersEnabled
+            control.alpha = if (buffersEnabled) 1f else 0.58f
+        }
     }
 
     private fun syncUsbAttachHandling() {
@@ -574,14 +529,6 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             )
             return
         }
-        if (expressiveUiActive) {
-            expressiveChecking = true
-            requester.request { status ->
-                if (isFinishing || isDestroyed) return@request
-                renderStatus(status, enabled)
-            }
-            return
-        }
         statusTitle.text = "正在检查…"
         statusMessage.text = "正在向 Apple Music 进程读取实时 AudioTrack / USB Direct 状态"
         requester.request { status ->
@@ -591,12 +538,6 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
     }
 
     private fun renderStatus(status: UsbBitPerfectStatusDetails?, enabled: Boolean) {
-        if (expressiveUiActive) {
-            expressiveStatus = status
-            expressiveChecking = false
-            expressiveSettings = store.settings()
-            return
-        }
         if (status == null) {
             statusTitle.text = if (enabled) "无法查询实时状态" else "已关闭"
             appleMusicValue.text = "等待 Apple Music"
@@ -765,7 +706,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         }
 
     private fun divider(): View = View(this).apply {
-        setBackgroundColor(palette.outline)
+        setBackgroundColor(palette.divider)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
     }
 
@@ -780,41 +721,4 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         val value: TextView,
     )
 
-    private data class Palette(
-        val background: Int,
-        val surface: Int,
-        val outline: Int,
-        val onSurface: Int,
-        val onSurfaceVariant: Int,
-        val primary: Int,
-        val isDark: Boolean,
-    ) {
-        companion object {
-            fun resolve(activity: Activity): Palette {
-                val dark = (activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                    Configuration.UI_MODE_NIGHT_YES
-                return if (dark) {
-                    Palette(
-                        background = Color.rgb(20, 16, 18),
-                        surface = Color.rgb(34, 27, 30),
-                        outline = Color.rgb(77, 62, 67),
-                        onSurface = Color.rgb(248, 239, 242),
-                        onSurfaceVariant = Color.rgb(213, 195, 201),
-                        primary = Color.rgb(255, 139, 176),
-                        isDark = true,
-                    )
-                } else {
-                    Palette(
-                        background = Color.rgb(255, 248, 250),
-                        surface = Color.WHITE,
-                        outline = Color.rgb(235, 221, 226),
-                        onSurface = Color.rgb(34, 27, 30),
-                        onSurfaceVariant = Color.rgb(113, 99, 104),
-                        primary = Color.rgb(210, 56, 108),
-                        isDark = false,
-                    )
-                }
-            }
-        }
-    }
 }

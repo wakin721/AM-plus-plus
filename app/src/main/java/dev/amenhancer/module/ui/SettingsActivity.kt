@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -28,14 +27,9 @@ import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.SeekBar
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import dev.amenhancer.module.ModuleApplication
 import dev.amenhancer.module.R
 import dev.amenhancer.module.XposedServiceSnapshot
@@ -63,14 +57,8 @@ import dev.amenhancer.module.model.CustomLyricsManifest
 import dev.amenhancer.module.model.CustomLyricsSources
 import dev.amenhancer.module.model.LyricsFontManifest
 import dev.amenhancer.module.model.ModuleSettings
-import dev.amenhancer.module.lyrics.AppleTtmlTranslationEditor
-import dev.amenhancer.module.translation.AiTranslationConfigStore
-import dev.amenhancer.module.translation.AiTranslationSettings
-import dev.amenhancer.module.translation.DeepSeekTranslationClient
-import dev.amenhancer.module.translation.DeepSeekTranslationResult
-import dev.amenhancer.module.ui.theme.AmppExpressiveTheme
 import dev.amenhancer.module.ui.theme.AppAppearanceSettings
-import dev.amenhancer.module.ui.theme.AppUiStyle
+import dev.amenhancer.module.ui.theme.AppleMusicSettingsPalette
 import dev.amenhancer.module.ui.theme.AppearancePreferences
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -90,24 +78,18 @@ class SettingsActivity : ComponentActivity() {
     private lateinit var launcherIconController: LauncherIconController
     private lateinit var content: LinearLayout
     private lateinit var settingsScroll: ScrollView
-    private lateinit var palette: Palette
+    private lateinit var palette: AppleMusicSettingsPalette
     private lateinit var currentSongIdentityRequester: CurrentSongIdentityRequester
     private lateinit var topBarTitle: TextView
     private lateinit var topBarBackButton: ImageView
     private val backgroundExecutor: ExecutorService get() = settingsExecutor
     private var pendingCustomTtmlImport: ((String) -> Unit)? = null
     private var awaitingCustomTtmlPickerResult = false
-    private var currentPage by mutableStateOf(SettingsPage.MAIN)
+    private var currentPage = SettingsPage.MAIN
     private val customLyricsListState = CustomLyricsListState()
     private var customLyricsSearchQuery = ""
     private var customLyricsListRegion: LinearLayout? = null
-    private var expressiveUiActive = false
-    private var expressiveSettings by mutableStateOf(ModuleSettings())
-    private var expressiveSnapshot by mutableStateOf(XposedServiceSnapshot.waiting())
-    private var expressiveLauncherHidden by mutableStateOf(false)
-    private var expressiveSearchQuery by mutableStateOf("")
-    private var expressiveDialog by mutableStateOf<ExpressiveSettingsDialog?>(null)
-    private var expressiveLyricsUpdateCancellation: AtomicBoolean? = null
+    private var lyricsUpdateCancellation: AtomicBoolean? = null
     private lateinit var appearancePreferences: AppearancePreferences
     private var activeAppearance = AppAppearanceSettings()
 
@@ -126,7 +108,8 @@ class SettingsActivity : ComponentActivity() {
         store = ConfigStore(this)
         launcherIconController = LauncherIconController(this)
         currentSongIdentityRequester = CurrentSongIdentityRequester(this)
-        palette = Palette.resolve(this)
+        palette = AppleMusicSettingsPalette.resolve(this)
+        EmbeddedSettingsPalette.update(this)
         awaitingCustomTtmlPickerResult = savedInstanceState?.getBoolean(
             STATE_AWAITING_CUSTOM_TTML_PICKER,
             false,
@@ -135,81 +118,10 @@ class SettingsActivity : ComponentActivity() {
             ?.let { saved -> runCatching { SettingsPage.valueOf(saved) }.getOrNull() }
             ?: SettingsPage.MAIN
         configureSystemBars()
-        expressiveUiActive = activeAppearance.style == AppUiStyle.MATERIAL3
-        expressiveLauncherHidden = launcherIconController.isHidden()
-        if (!expressiveUiActive) {
-            val root = buildScreen()
-            setContentView(root)
-            applySystemBarInsets(root)
-            render()
-            return
-        }
+        val root = buildScreen()
+        setContentView(root)
+        applySystemBarInsets(root)
         render()
-        setContent {
-            AmppExpressiveTheme(appearance = activeAppearance) {
-                AmppSettingsScreen(
-                    settings = expressiveSettings,
-                    snapshot = expressiveSnapshot,
-                    launcherHidden = expressiveLauncherHidden,
-                    customLyricsPage = currentPage == SettingsPage.CUSTOM_LYRICS,
-                    customLyricsQuery = expressiveSearchQuery,
-                    actions = AmppSettingsActions(
-                        saveSettings = { updated ->
-                            store.saveSettings(updated)
-                            render()
-                        },
-                        showTitleCorrectionMode = {
-                            expressiveDialog = ExpressiveSettingsDialog.TitleCorrectionMode(
-                                expressiveSettings.titleCorrectionMode,
-                            )
-                        },
-                        openCustomLyrics = { showPage(SettingsPage.CUSTOM_LYRICS) },
-                        chooseFont = ::chooseFont,
-                        restoreFont = ::restoreFont,
-                        openUsbAudio = {
-                            startActivity(Intent(this, UsbBitPerfectSettingsActivity::class.java))
-                        },
-                        openAppearance = ::openAppearanceSettings,
-                        setLauncherHidden = { hidden ->
-                            launcherIconController.setHidden(hidden)
-                            expressiveLauncherHidden = hidden
-                        },
-                        showHelp = { expressiveDialog = ExpressiveSettingsDialog.Help },
-                        backToMain = { showPage(SettingsPage.MAIN) },
-                        setCustomLyricsQuery = { query -> expressiveSearchQuery = query },
-                        addCustomLyrics = { showCustomLyricsEditorExpressive() },
-                        updateCustomLyrics = ::updateCustomLyricsExpressive,
-                        backupCustomLyrics = ::chooseCustomLyricsBackupDestination,
-                        restoreCustomLyrics = ::chooseCustomLyricsBackupRestore,
-                        setCustomLyricsEnabled = ::setCustomLyricsEnabled,
-                        editCustomLyrics = ::showCustomLyricsEditorExpressive,
-                        deleteCustomLyrics = { group ->
-                            expressiveDialog = ExpressiveSettingsDialog.DeleteLyrics(group)
-                        },
-                    ),
-                    dialogState = expressiveDialog,
-                    dialogActions = ExpressiveSettingsDialogActions(
-                        dismiss = ::dismissExpressiveDialog,
-                        selectTitleCorrectionMode = ::selectTitleCorrectionModeExpressive,
-                        cancelProgress = ::cancelExpressiveProgress,
-                        restoreLyrics = ::restoreLyricsExpressive,
-                        deleteLyrics = ::deleteLyricsExpressive,
-                        updateLyricsDraft = ::updateLyricsDraftExpressive,
-                        chooseTtml = ::chooseTtmlExpressive,
-                        requestCurrentSong = ::requestCurrentSongExpressive,
-                        importAmll = { importOnlineLyricsExpressive(CustomLyricsSources.AMLL) },
-                        importLunabeat = { importOnlineLyricsExpressive(CustomLyricsSources.LUNABEAT) },
-                        importAmLyrics = {
-                            importOnlineLyricsExpressive(CustomLyricsSources.AM_LYRICS)
-                        },
-                        openDeepSeek = ::openDeepSeekExpressive,
-                        saveLyrics = ::saveLyricsExpressive,
-                        updateDeepSeek = { expressiveDialog = it },
-                        translateDeepSeek = ::translateDeepSeekExpressive,
-                    ),
-                )
-            }
-        }
     }
 
     override fun onResume() {
@@ -229,6 +141,7 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::currentSongIdentityRequester.isInitialized) currentSongIdentityRequester.cancel()
+        lyricsUpdateCancellation?.set(true)
         super.onDestroy()
     }
 
@@ -263,7 +176,7 @@ class SettingsActivity : ComponentActivity() {
                 if (resultCode == RESULT_OK) data?.data?.let { uri ->
                     importCustomTtml(uri) { ttml ->
                         if (onImported != null) onImported(ttml) else if (restoreEditor) {
-                            showCustomLyricsEditorExpressive(initialTtml = ttml)
+                            showCustomLyricsEditor(initialTtml = ttml)
                         }
                     }
                 }
@@ -273,7 +186,7 @@ class SettingsActivity : ComponentActivity() {
             }
             CUSTOM_LYRICS_BACKUP_RESTORE_REQUEST_CODE -> {
                 if (resultCode == RESULT_OK) data?.data?.let { uri ->
-                    expressiveDialog = ExpressiveSettingsDialog.RestoreLyrics(uri)
+                    confirmRestoreCustomLyrics(uri)
                 }
             }
         }
@@ -320,9 +233,8 @@ class SettingsActivity : ComponentActivity() {
         setBackgroundColor(palette.background)
         addView(
             buildTopBar(),
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64)),
         )
-        addView(divider())
         settingsScroll = ScrollView(this@SettingsActivity).apply {
             isFillViewport = true
             clipToPadding = false
@@ -342,39 +254,42 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun buildTopBar(): View = FrameLayout(this).apply {
-        setPadding(dp(12), 0, dp(24), 0)
         topBarBackButton = ImageView(this@SettingsActivity).apply {
-            setImageResource(R.drawable.ic_arrow_back)
-            imageTintList = ColorStateList.valueOf(palette.onSurface)
+            setImageDrawable(EmbeddedGlyphDrawable(EmbeddedGlyphKind.BackArrow, palette.onSurface))
             contentDescription = "返回"
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = rippleDrawable()
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            isClickable = true
+            isFocusable = true
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(palette.background)
+                setStroke(dp(1), palette.outline)
+            }
             setOnClickListener { showPage(SettingsPage.MAIN) }
         }
         addView(
             topBarBackButton,
-            FrameLayout.LayoutParams(dp(48), dp(48), Gravity.START or Gravity.CENTER_VERTICAL),
+            FrameLayout.LayoutParams(dp(44), dp(44), Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                marginStart = dp(12)
+            },
         )
         topBarTitle = TextView(this@SettingsActivity).apply {
             textSize = 20f
             setTextColor(palette.onSurface)
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         addView(topBarTitle, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.CENTER_VERTICAL,
-        ).apply { marginStart = dp(12) })
+        ).apply {
+            marginStart = dp(64)
+            marginEnd = dp(64)
+        })
     }
 
     private fun render(snapshot: XposedServiceSnapshot = ModuleApplication.serviceSnapshot) {
-        if (expressiveUiActive) {
-            expressiveSnapshot = snapshot
-            expressiveSettings = store.settingsWithCustomLyrics(snapshot)
-            expressiveLauncherHidden = launcherIconController.isHidden()
-            return
-        }
         content.removeAllViews()
         val settings = store.settingsWithCustomLyrics(snapshot)
         updateTopBar()
@@ -389,17 +304,13 @@ class SettingsActivity : ComponentActivity() {
 
         content.addView(statusCard(snapshot))
         content.addView(spacer(20))
-        content.addView(featureCard(settings, writable))
+        content.addView(settingsGroup("功能", featureCard(settings, writable)))
         content.addView(spacer(24))
-        content.addView(fontCard(settings.fontManifest, snapshot.isRemoteFileAvailable))
+        content.addView(settingsGroup("歌词字体", fontCard(settings.fontManifest, snapshot.isRemoteFileAvailable)))
         content.addView(spacer(24))
-        content.addView(sectionLabel("应用"))
-        content.addView(spacer(10))
-        content.addView(appCard())
+        content.addView(settingsGroup("应用", appCard()))
         content.addView(spacer(24))
-        content.addView(sectionLabel("帮助"))
-        content.addView(spacer(10))
-        content.addView(helpRow())
+        content.addView(settingsGroup("帮助", helpRow()))
     }
 
     private fun renderCustomLyricsPage(settings: ModuleSettings, snapshot: XposedServiceSnapshot) {
@@ -410,7 +321,7 @@ class SettingsActivity : ComponentActivity() {
         content.addView(customLyricsSettingsCard(settings, snapshot.isRemoteAvailable))
         content.addView(spacer(20))
         content.addView(
-            customLyricsCard(settings.customLyricsManifest, snapshot.isRemoteFileAvailable),
+            settingsGroup("自定义歌词", customLyricsCard(settings.customLyricsManifest, snapshot.isRemoteFileAvailable)),
         )
     }
 
@@ -428,366 +339,34 @@ class SettingsActivity : ComponentActivity() {
         val customLyrics = currentPage == SettingsPage.CUSTOM_LYRICS
         topBarTitle.text = if (customLyrics) "自定义歌词" else "AM++"
         topBarBackButton.visibility = if (customLyrics) View.VISIBLE else View.GONE
-        (topBarTitle.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
-            params.marginStart = dp(if (customLyrics) 52 else 12)
-            topBarTitle.layoutParams = params
-        }
     }
 
-    private fun dismissExpressiveDialog() {
-        when (val dialog = expressiveDialog) {
-            is ExpressiveSettingsDialog.DeepSeek -> expressiveDialog = dialog.editor
-            is ExpressiveSettingsDialog.DeepSeekProgress -> Unit
-            is ExpressiveSettingsDialog.LyricsEditor -> {
-                currentSongIdentityRequester.cancel()
-                expressiveDialog = null
-            }
-            else -> expressiveDialog = null
-        }
+    private fun settingsGroup(title: String, group: View): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(sectionLabel(title).apply { setPadding(dp(16), dp(12), dp(16), dp(10)) })
+        addView(group)
     }
 
-    private fun cancelExpressiveProgress() {
-        val dialog = expressiveDialog as? ExpressiveSettingsDialog.Progress ?: return
-        when (dialog.operation) {
-            ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE -> {
-                expressiveLyricsUpdateCancellation?.set(true)
-                expressiveDialog = dialog.copy(message = "正在取消更新…", cancelLabel = null)
-            }
-        }
-    }
-
-    private fun restoreLyricsExpressive(policy: CustomLyricsRestorePolicy) {
-        val dialog = expressiveDialog as? ExpressiveSettingsDialog.RestoreLyrics ?: return
-        expressiveDialog = null
-        restoreCustomLyrics(dialog.uri, policy)
-    }
-
-    private fun deleteLyricsExpressive() {
-        val dialog = expressiveDialog as? ExpressiveSettingsDialog.DeleteLyrics ?: return
-        expressiveDialog = null
-        val snapshot = ModuleApplication.serviceSnapshot
-        backgroundExecutor.execute {
-            val result = CustomLyricsManager(snapshot, store).delete(dialog.group.appleMusicIds)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                render()
-                when (result) {
-                    is CustomLyricsMutationResult.Updated -> toast("已删除歌词映射")
-                    is CustomLyricsMutationResult.Failed -> toast(result.message)
-                }
-            }
-        }
-    }
-
-    private fun showCustomLyricsEditorExpressive(
-        existing: CustomLyricsUiGroup? = null,
-        initialTtml: String = "",
-    ) {
-        val editor = ExpressiveSettingsDialog.LyricsEditor(
-            title = if (existing == null) "添加自定义歌词" else "编辑自定义歌词",
-            draft = LyricsEditorDraft(
-                appleMusicIds = existing?.appleMusicIds?.let(CustomLyricsIdParser::format).orEmpty(),
-                displayName = existing?.primary?.displayName.orEmpty(),
-                ttml = initialTtml,
-                source = existing?.primary?.source ?: CustomLyricsSources.MANUAL,
-            ),
-            replacingAppleMusicIds = existing?.appleMusicIds.orEmpty(),
-            enabled = existing?.primary?.enabled ?: true,
-            busyMessage = if (existing != null && initialTtml.isBlank()) "正在读取已保存的 TTML…" else null,
-        )
-        expressiveDialog = editor
-        if (existing != null && initialTtml.isBlank()) {
-            loadExistingCustomTtmlExpressive(existing.primary, editor.replacingAppleMusicIds)
-        }
-    }
-
-    private fun updateLyricsDraftExpressive(draft: LyricsEditorDraft) {
-        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-        expressiveDialog = editor.copy(
-            draft = draft,
-            appleMusicIdError = null,
-            ttmlError = null,
-        )
-    }
-
-    private fun chooseTtmlExpressive() {
-        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-        val editorIds = editor.replacingAppleMusicIds
-        chooseCustomTtml { imported ->
-            val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
-                ?: return@chooseCustomTtml
-            if (current.replacingAppleMusicIds != editorIds) return@chooseCustomTtml
-            expressiveDialog = current.copy(
-                draft = current.draft.copy(
-                    ttml = imported,
-                    source = CustomLyricsSources.MANUAL,
-                ),
-                ttmlError = null,
-            )
-        }
-    }
-
-    private fun requestCurrentSongExpressive() {
-        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-        if (!currentSongIdentityRequester.request { currentSong ->
-                val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
-                    ?: return@request
-                if (currentSong == null) {
-                    expressiveDialog = current.copy(busyMessage = null)
-                    toast("未获取到当前歌曲信息，请先在 Apple Music 播放一首歌")
-                    return@request
-                }
-                expressiveDialog = current.copy(
-                    draft = current.draft.copy(
-                        appleMusicIds = currentSong.appleMusicId.toString(),
-                        displayName = formatCurrentSongDisplayName(
-                            currentSong.title,
-                            currentSong.artist,
-                        ) ?: current.draft.displayName,
-                    ),
-                    busyMessage = null,
-                    appleMusicIdError = null,
-                )
-                toast("已获取当前歌曲信息")
-            }
-        ) {
-            toast("正在获取当前歌曲信息")
-            return
-        }
-        expressiveDialog = editor.copy(busyMessage = "正在获取当前歌曲信息…")
-    }
-
-    private fun importOnlineLyricsExpressive(source: String) {
-        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-        val appleMusicId = CustomLyricsIdParser.parsePrimary(editor.draft.appleMusicIds)
-        if (appleMusicId == null) {
-            expressiveDialog = editor.copy(
-                appleMusicIdError = "请输入一个或多个正整数 Apple Music ID（用逗号分隔）",
-            )
-            return
-        }
-        expressiveDialog = editor.copy(busyMessage = "正在导入 ${customLyricsSourceName(source)} 歌词…")
-        backgroundExecutor.execute {
-            val importer = onlineLyricsImporter()
-            val result = when (source) {
-                CustomLyricsSources.AMLL -> importer.importAmll(appleMusicId)
-                CustomLyricsSources.LUNABEAT -> importer.importLunabeat(appleMusicId)
-                else -> importer.importAmLyrics(appleMusicId)
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
-                    ?: return@runOnUiThread
-                when (result) {
-                    is CustomLyricsOnlineImportResult.Imported -> {
-                        expressiveDialog = current.copy(
-                            draft = current.draft.copy(ttml = result.ttml, source = result.source),
-                            busyMessage = null,
-                            ttmlError = null,
-                        )
-                        val reformatNote = if (result.reformatted) {
-                            "，已自动转为 Apple Music 格式"
-                        } else {
-                            ""
-                        }
-                        toast(
-                            "已导入 ${customLyricsSourceName(result.source)} 歌词$reformatNote，请确认后保存",
-                        )
-                    }
-                    is CustomLyricsOnlineImportResult.Failed -> {
-                        expressiveDialog = current.copy(busyMessage = null)
-                        toast(result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun saveLyricsExpressive() {
-        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-        val ids = CustomLyricsIdParser.parse(editor.draft.appleMusicIds)
-        val idError = if (ids == null) {
-            "请输入一个或多个正整数 Apple Music ID（用逗号分隔）"
-        } else {
-            null
-        }
-        val ttmlError = if (editor.draft.ttml.isBlank()) "请输入或导入 TTML" else null
-        if (idError != null || ttmlError != null) {
-            expressiveDialog = editor.copy(
-                appleMusicIdError = idError,
-                ttmlError = ttmlError,
-            )
-            return
-        }
-        val snapshot = ModuleApplication.serviceSnapshot
-        if (!snapshot.isRemoteFileAvailable) {
-            toast("libxposed remote file 服务不可用")
-            return
-        }
-        expressiveDialog = editor.copy(busyMessage = "正在保存歌词映射…")
-        backgroundExecutor.execute {
-            val result = CustomLyricsManager(snapshot, store).saveMany(
-                draft = CustomLyricsMultiIdDraft(
-                    appleMusicIds = requireNotNull(ids),
-                    displayName = editor.draft.displayName,
-                    ttml = editor.draft.ttml,
-                    source = editor.draft.source,
-                    enabled = editor.enabled,
-                ),
-                replacingAppleMusicIds = editor.replacingAppleMusicIds,
-            )
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                when (result) {
-                    is CustomLyricsBatchSaveResult.Saved -> {
-                        expressiveDialog = null
-                        render()
-                        toast("歌词映射已保存，重开 Apple Music 后生效")
-                    }
-                    is CustomLyricsBatchSaveResult.Failed -> {
-                        val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
-                        if (current != null) expressiveDialog = current.copy(busyMessage = null)
-                        toast(result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun loadExistingCustomTtmlExpressive(
-        entry: CustomLyricsEntry,
-        replacingAppleMusicIds: List<Long>,
-    ) {
-        val snapshot = ModuleApplication.serviceSnapshot
-        if (!snapshot.isRemoteFileAvailable) {
-            val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-            expressiveDialog = current.copy(busyMessage = null)
-            return
-        }
-        backgroundExecutor.execute {
-            val reader = CustomLyricsFileReader { fileId ->
-                snapshot.openRemoteFile(fileId)?.let { descriptor ->
-                    runCatching {
-                        android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).use(
-                            CustomLyricsFilePolicy::readBounded,
-                        )
-                    }.getOrNull()
-                }
-            }
-            val ttml = reader.read(entry)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                val current = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor
-                    ?: return@runOnUiThread
-                if (current.replacingAppleMusicIds != replacingAppleMusicIds) return@runOnUiThread
-                expressiveDialog = current.copy(
-                    draft = if (current.draft.ttml.isBlank() && ttml != null) {
-                        current.draft.copy(ttml = ttml)
-                    } else {
-                        current.draft
-                    },
-                    busyMessage = null,
-                )
-                if (ttml == null) toast("无法读取已保存的 TTML，请重新导入后保存")
-            }
-        }
-    }
-
-    private fun openDeepSeekExpressive() {
-        val editor = expressiveDialog as? ExpressiveSettingsDialog.LyricsEditor ?: return
-        if (editor.draft.ttml.isBlank()) {
-            expressiveDialog = editor.copy(ttmlError = "请先导入或输入 TTML")
-            return
-        }
-        val lines = AppleTtmlTranslationEditor.extractLines(editor.draft.ttml)
-        if (lines.isEmpty()) {
-            toast("没有找到可安全对齐的歌词行")
-            return
-        }
-        val configStore = AiTranslationConfigStore(this)
-        val settings = configStore.settings()
-        expressiveDialog = ExpressiveSettingsDialog.DeepSeek(
-            editor = editor,
-            apiKey = configStore.apiKey(),
-            model = settings.model,
-            thinkingEnabled = settings.thinkingEnabled,
-            targetLanguage = settings.targetLanguage,
-            lineCount = lines.size,
-        )
-    }
-
-    private fun translateDeepSeekExpressive() {
-        val dialog = expressiveDialog as? ExpressiveSettingsDialog.DeepSeek ?: return
-        val key = dialog.apiKey.trim()
-        if (key.isEmpty()) {
-            expressiveDialog = dialog.copy(apiKeyError = "请输入 API Key")
-            return
-        }
-        val settings = AiTranslationSettings(
-            model = dialog.model,
-            thinkingEnabled = dialog.thinkingEnabled,
-            targetLanguage = dialog.targetLanguage.trim(),
-        )
-        val configStore = AiTranslationConfigStore(this)
-        if (!configStore.saveApiKey(key)) {
-            toast("API Key 安全存储失败")
-            return
-        }
-        configStore.saveSettings(settings)
-        val originalTtml = dialog.editor.draft.ttml
-        val lines = AppleTtmlTranslationEditor.extractLines(originalTtml)
-        expressiveDialog = ExpressiveSettingsDialog.DeepSeekProgress(dialog.editor, lines.size)
-        backgroundExecutor.execute {
-            val result = DeepSeekTranslationClient().translate(key, lines, settings)
-            val translatedTtml = if (result is DeepSeekTranslationResult.Success) {
-                AppleTtmlTranslationEditor.withTranslations(
-                    originalTtml,
-                    result.translations,
-                    settings.targetLanguage,
-                )
-            } else {
-                null
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                when (result) {
-                    is DeepSeekTranslationResult.Success -> {
-                        expressiveDialog = dialog.editor.copy(
-                            draft = if (translatedTtml != null) {
-                                dialog.editor.draft.copy(ttml = translatedTtml)
-                            } else {
-                                dialog.editor.draft
-                            },
-                            ttmlError = null,
-                        )
-                        if (translatedTtml == null) {
-                            toast("翻译成功，但无法安全写入当前 TTML")
-                        } else {
-                            toast("AI 翻译已写入，请确认后保存")
-                        }
-                    }
-                    is DeepSeekTranslationResult.Failed -> {
-                        expressiveDialog = dialog.editor
-                        toast(result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun updateCustomLyricsExpressive() {
+    private fun updateCustomLyrics() {
         if (!ModuleApplication.serviceSnapshot.isRemoteFileAvailable) {
             toast("libxposed remote file 服务不可用")
             return
         }
+        if (lyricsUpdateCancellation != null) return
         val cancelled = AtomicBoolean(false)
-        expressiveLyricsUpdateCancellation = cancelled
-        expressiveDialog = ExpressiveSettingsDialog.Progress(
-            operation = ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE,
-            title = "更新歌词",
-            message = "正在检查远程来源…",
-            cancelLabel = "取消",
-        )
+        lyricsUpdateCancellation = cancelled
+        val progress = TextView(this).apply {
+            text = "正在检查远程来源…"
+            setTextColor(palette.onSurfaceVariant)
+            setPadding(dp(24), dp(16), dp(24), dp(16))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("更新歌词")
+            .setView(progress)
+            .setNegativeButton("取消") { _, _ -> cancelled.set(true) }
+            .create()
+        dialog.setOnCancelListener { cancelled.set(true) }
+        dialog.show()
         backgroundExecutor.execute {
             val result = runCatching {
                 CustomLyricsManager(ModuleApplication.serviceSnapshot, store).updateLyrics(
@@ -795,29 +374,18 @@ class SettingsActivity : ComponentActivity() {
                     isCancelled = cancelled::get,
                     onProgress = { update ->
                         runOnUiThread {
-                            val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
-                            if (!isFinishing && !isDestroyed && !cancelled.get() &&
-                                current?.operation == ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE
-                            ) {
-                                expressiveDialog = current.copy(
-                                    message = "已检查 ${update.checkedEntries} / " +
-                                        "${update.totalEntries} 首（更新 ${update.updatedEntries}，" +
-                                        "失败 ${update.failedEntries}）",
-                                )
+                            if (!isFinishing && !isDestroyed && dialog.isShowing) {
+                                progress.text = "已检查 ${update.checkedEntries} / ${update.totalEntries} 首" +
+                                    "（更新 ${update.updatedEntries}，失败 ${update.failedEntries}）"
                             }
                         }
                     },
                 )
-            }.getOrElse { error ->
-                CustomLyricsUpdateResult.Failed("歌词更新失败：${error.message.orEmpty()}")
-            }
+            }.getOrElse { CustomLyricsUpdateResult.Failed("歌词更新失败：${it.message.orEmpty()}") }
             runOnUiThread {
+                lyricsUpdateCancellation = null
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                expressiveLyricsUpdateCancellation = null
-                val current = expressiveDialog as? ExpressiveSettingsDialog.Progress
-                if (current?.operation == ExpressiveSettingsDialog.Progress.Operation.LYRICS_UPDATE) {
-                    expressiveDialog = null
-                }
+                dialog.dismiss()
                 when (result) {
                     is CustomLyricsUpdateResult.Updated -> toast(
                         "歌词更新完成：更新 ${result.updated}，未变 ${result.unchanged}，" +
@@ -826,7 +394,7 @@ class SettingsActivity : ComponentActivity() {
                     CustomLyricsUpdateResult.Cancelled -> toast("歌词更新已取消")
                     is CustomLyricsUpdateResult.Failed -> toast(result.message)
                 }
-                if (result is CustomLyricsUpdateResult.Updated) render()
+                render()
             }
         }
     }
@@ -838,7 +406,7 @@ class SettingsActivity : ComponentActivity() {
         setPadding(dp(16), dp(14), dp(16), dp(14))
         background = roundedDrawable(
             color = if (writable) palette.primaryContainer else palette.disabledContainer,
-            radiusDp = 18,
+            radiusDp = 16,
         )
 
         addView(iconBubble(R.drawable.ic_status_check, writable))
@@ -849,7 +417,7 @@ class SettingsActivity : ComponentActivity() {
                 text = if (writable) snapshot.status else "配置暂时只读"
                 textSize = 17f
                 setTextColor(palette.onSurface)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             })
             if (!writable) {
                 addView(TextView(this@SettingsActivity).apply {
@@ -865,16 +433,13 @@ class SettingsActivity : ComponentActivity() {
     private fun featureCard(settings: ModuleSettings, writable: Boolean): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedDrawable(palette.surface, radiusDp = 20, strokeColor = palette.outline)
-            elevation = dp(2).toFloat()
+            background = roundedDrawable(palette.surface, radiusDp = 16)
+            elevation = 0f
             clipToOutline = true
 
-            addView(sectionLabel("功能").apply {
-                setPadding(dp(16), dp(18), dp(16), dp(10))
-            })
             addView(settingRow(
                 title = "平板双栏播放器",
-                summary = "平板横屏启用双栏，同时停用 Editorial Video",
+                summary = "仅在 Apple Music 判定为平板且横屏时启用",
                 checked = settings.dualPaneEnabled,
                 enabled = writable,
             ) { enabled ->
@@ -888,6 +453,15 @@ class SettingsActivity : ComponentActivity() {
                 enabled = writable,
             ) { enabled ->
                 store.saveSettings(store.settings().copy(navigationCompensationEnabled = enabled))
+            })
+            addView(insetDivider())
+            addView(settingRow(
+                title = "平板禁用动态视频",
+                summary = "平板横屏时禁用 Editorial Video",
+                checked = settings.disableEditorialVideoOnTablet,
+                enabled = writable,
+            ) { enabled ->
+                store.saveSettings(store.settings().copy(disableEditorialVideoOnTablet = enabled))
             })
             addView(insetDivider())
             addView(settingRow(
@@ -971,7 +545,7 @@ class SettingsActivity : ComponentActivity() {
                 text = title
                 textSize = 17f
                 setTextColor(palette.onSurface)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             })
             addView(TextView(this@SettingsActivity).apply {
                 text = summary
@@ -1010,11 +584,6 @@ class SettingsActivity : ComponentActivity() {
         render()
     }
 
-    private fun selectTitleCorrectionModeExpressive(mode: TitleCorrectionMode) {
-        expressiveDialog = null
-        saveTitleCorrectionMode(mode)
-    }
-
     private fun customLyricsNavigationRow(manifest: CustomLyricsManifest): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1031,7 +600,7 @@ class SettingsActivity : ComponentActivity() {
                     text = "自定义歌词"
                     textSize = 17f
                     setTextColor(palette.onSurface)
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 })
                 addView(TextView(this@SettingsActivity).apply {
                     text = if (manifest.entries.isEmpty()) {
@@ -1055,8 +624,8 @@ class SettingsActivity : ComponentActivity() {
     private fun customLyricsSettingsCard(settings: ModuleSettings, writable: Boolean): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedDrawable(palette.surface, radiusDp = 20, strokeColor = palette.outline)
-            elevation = dp(2).toFloat()
+            background = roundedDrawable(palette.surface, radiusDp = 16)
+            elevation = 0f
             clipToOutline = true
             addView(settingRow(
                 title = "自定义歌词替换",
@@ -1083,19 +652,16 @@ class SettingsActivity : ComponentActivity() {
     private fun fontCard(manifest: LyricsFontManifest, writable: Boolean): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedDrawable(palette.surface, radiusDp = 20, strokeColor = palette.outline)
-            elevation = dp(2).toFloat()
+            background = roundedDrawable(palette.surface, radiusDp = 16)
+            elevation = 0f
             clipToOutline = true
 
-            addView(sectionLabel("歌词字体").apply {
-                setPadding(dp(16), dp(18), dp(16), dp(8))
-            })
             addView(TextView(this@SettingsActivity).apply {
                 text = if (manifest.enabled) manifest.displayName else "原字体"
                 textSize = 17f
                 setTextColor(palette.onSurface)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                setPadding(dp(16), dp(4), dp(16), 0)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                setPadding(dp(16), dp(14), dp(16), 0)
             })
             addView(TextView(this@SettingsActivity).apply {
                 text = when {
@@ -1204,13 +770,10 @@ class SettingsActivity : ComponentActivity() {
     private fun customLyricsCard(manifest: CustomLyricsManifest, writable: Boolean): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = roundedDrawable(palette.surface, radiusDp = 20, strokeColor = palette.outline)
-            elevation = dp(2).toFloat()
+            background = roundedDrawable(palette.surface, radiusDp = 16)
+            elevation = 0f
             clipToOutline = true
 
-            addView(sectionLabel("自定义歌词").apply {
-                setPadding(dp(16), dp(18), dp(16), dp(8))
-            })
             addView(TextView(this@SettingsActivity).apply {
                 text = when {
                     !writable -> "需要 libxposed API 102 remote file 服务"
@@ -1229,6 +792,7 @@ class SettingsActivity : ComponentActivity() {
                     LinearLayout.LayoutParams(0, dp(48), 1f),
                 )
             })
+            addView(fontActionButton("更新歌词", writable) { updateCustomLyrics() })
             addView(LinearLayout(this@SettingsActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(12), 0, dp(12), dp(12))
@@ -1270,7 +834,7 @@ class SettingsActivity : ComponentActivity() {
             isSingleLine = true
             setText(customLyricsSearchQuery)
             setPadding(dp(14), 0, dp(14), 0)
-            background = roundedDrawable(palette.background, radiusDp = 12)
+            background = roundedDrawable(palette.background, radiusDp = 16)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -1457,7 +1021,7 @@ class SettingsActivity : ComponentActivity() {
                         text = group.primary.displayName
                         textSize = 16f
                         setTextColor(palette.onSurface)
-                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                     })
                     addView(TextView(this@SettingsActivity).apply {
                         text = "主 ID：${group.primary.appleMusicId} · 共 ${group.entries.size} 个 ID · " +
@@ -1467,12 +1031,10 @@ class SettingsActivity : ComponentActivity() {
                         setPadding(0, dp(3), 0, 0)
                     })
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(Switch(this@SettingsActivity).apply {
+                addView(EmbeddedSettingsSwitch(this@SettingsActivity).apply {
                     isChecked = group.allEnabled
                     isEnabled = writable
                     contentDescription = "${group.primary.displayName} 自定义歌词开关"
-                    thumbTintList = switchThumbColors()
-                    trackTintList = switchTrackColors()
                     setOnCheckedChangeListener { _, checked ->
                         setCustomLyricsEnabled(group.appleMusicIds, checked)
                     }
@@ -1891,8 +1453,8 @@ class SettingsActivity : ComponentActivity() {
 
     private fun appCard(): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = roundedDrawable(palette.surface, radiusDp = 20, strokeColor = palette.outline)
-        elevation = dp(2).toFloat()
+        background = roundedDrawable(palette.surface, radiusDp = 16)
+        elevation = 0f
         clipToOutline = true
 
         addView(settingRow(
@@ -1906,7 +1468,7 @@ class SettingsActivity : ComponentActivity() {
         addView(insetDivider())
         addView(actionRow(
             title = "外观与主题",
-            summary = "原有主题、MD3 调色板、动态颜色与显示模式",
+            summary = "浅色、深色或跟随系统",
             enabled = true,
             onClick = ::openAppearanceSettings,
         ))
@@ -1925,13 +1487,10 @@ class SettingsActivity : ComponentActivity() {
         onEnableConfirmation: ((onConfirmed: () -> Unit) -> Unit)? = null,
         onChanged: (Boolean) -> Unit,
     ): View {
-        val switch = Switch(this).apply {
+        val switch = EmbeddedSettingsSwitch(this).apply {
             isChecked = checked
             isEnabled = enabled
-            showText = false
             contentDescription = title
-            thumbTintList = switchThumbColors()
-            trackTintList = switchTrackColors()
         }
         var suppressSwitchCallback = false
         var committedSwitchValue = checked
@@ -1973,7 +1532,7 @@ class SettingsActivity : ComponentActivity() {
                         text = title
                         textSize = 17f
                         setTextColor(palette.onSurface)
-                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                     })
                     badge?.let { addView(badge(it)) }
                 })
@@ -2010,7 +1569,7 @@ class SettingsActivity : ComponentActivity() {
         val valueLabel = TextView(this).apply {
             textSize = 16f
             setTextColor(palette.primary)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             text = formatBlurRadiusOffset(safeOffset)
         }
         var trackingTouch = false
@@ -2060,7 +1619,7 @@ class SettingsActivity : ComponentActivity() {
                     text = "歌词模糊半径偏移"
                     textSize = 17f
                     setTextColor(palette.onSurface)
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 addView(valueLabel)
             })
@@ -2103,7 +1662,7 @@ class SettingsActivity : ComponentActivity() {
         isFocusable = true
         setPadding(dp(16), dp(10), dp(14), dp(10))
         background = rippleDrawable(
-            roundedDrawable(palette.surface, radiusDp = 18, strokeColor = palette.outline),
+            roundedDrawable(palette.surface, radiusDp = 16),
         )
         contentDescription = "LSPosed 配置提示"
         addView(iconBubble(R.drawable.ic_help_outline, active = true, compact = true))
@@ -2147,12 +1706,12 @@ class SettingsActivity : ComponentActivity() {
     private fun sectionLabel(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 14f
-        setTextColor(palette.primary)
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        setTextColor(palette.onSurfaceVariant)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
     }
 
     private fun divider(): View = View(this).apply {
-        setBackgroundColor(palette.outline)
+        setBackgroundColor(palette.divider)
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
     }
 
@@ -2183,22 +1742,6 @@ class SettingsActivity : ComponentActivity() {
         null,
     )
 
-    private fun switchThumbColors(): ColorStateList = ColorStateList(
-        arrayOf(
-            intArrayOf(android.R.attr.state_checked),
-            intArrayOf(),
-        ),
-        intArrayOf(palette.primary, palette.switchThumbOff),
-    )
-
-    private fun switchTrackColors(): ColorStateList = ColorStateList(
-        arrayOf(
-            intArrayOf(android.R.attr.state_checked),
-            intArrayOf(),
-        ),
-        intArrayOf(palette.switchTrackOn, palette.switchTrackOff),
-    )
-
     private fun withAlpha(color: Int, alpha: Int): Int =
         Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
@@ -2215,59 +1758,4 @@ class SettingsActivity : ComponentActivity() {
         val settingsExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     }
 
-    private data class Palette(
-        val isDark: Boolean,
-        val background: Int,
-        val surface: Int,
-        val primary: Int,
-        val primaryContainer: Int,
-        val onSurface: Int,
-        val onSurfaceVariant: Int,
-        val outline: Int,
-        val disabledContainer: Int,
-        val disabledIcon: Int,
-        val switchTrackOff: Int,
-        val switchTrackOn: Int,
-        val switchThumbOff: Int,
-    ) {
-        companion object {
-            fun resolve(context: Context): Palette {
-                val dark = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-                    Configuration.UI_MODE_NIGHT_YES
-                return if (dark) {
-                    Palette(
-                        isDark = true,
-                        background = Color.rgb(22, 17, 19),
-                        surface = Color.rgb(34, 27, 30),
-                        primary = Color.rgb(255, 139, 176),
-                        primaryContainer = Color.rgb(66, 34, 45),
-                        onSurface = Color.rgb(248, 239, 242),
-                        onSurfaceVariant = Color.rgb(213, 195, 201),
-                        outline = Color.rgb(77, 62, 67),
-                        disabledContainer = Color.rgb(48, 43, 45),
-                        disabledIcon = Color.rgb(105, 95, 99),
-                        switchTrackOff = Color.rgb(94, 83, 87),
-                        switchTrackOn = Color.rgb(100, 50, 68),
-                        switchThumbOff = Color.rgb(224, 215, 218),
-                    )
-                } else {
-                    Palette(
-                        isDark = false,
-                        background = Color.rgb(255, 250, 252),
-                        surface = Color.WHITE,
-                        primary = Color.rgb(210, 56, 108),
-                        primaryContainer = Color.rgb(253, 237, 243),
-                        onSurface = Color.rgb(34, 27, 30),
-                        onSurfaceVariant = Color.rgb(113, 99, 104),
-                        outline = Color.rgb(235, 221, 226),
-                        disabledContainer = Color.rgb(241, 237, 239),
-                        disabledIcon = Color.rgb(154, 145, 148),
-                        switchTrackOff = Color.rgb(205, 198, 201),
-                        switchTrackOn = Color.rgb(247, 198, 216),
-                        switchThumbOff = Color.rgb(250, 247, 248),
-                    )
-                }
-            }
-        }
-    }
 }

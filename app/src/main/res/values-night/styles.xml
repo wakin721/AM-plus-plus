@@ -1,10 +1,10 @@
 <resources>
     <style name="Theme.AppleMusicEnhancer" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#FF8BB0</item>
-        <item name="android:navigationBarColor">#161113</item>
+        <item name="android:colorAccent">#FA233B</item>
+        <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#161113</item>
+        <item name="android:statusBarColor">#000000</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

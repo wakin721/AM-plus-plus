@@ -13,6 +13,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.widget.ImageView
+import dev.amenhancer.module.ui.theme.AppleMusicSettingsPalette
 
 internal enum class EmbeddedSettingsPage {
     MAIN,
@@ -41,21 +42,22 @@ internal object EmbeddedSettingsPalette {
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
         }
     }
-    val pageBackground: Int get() = if (dark) Color.BLACK else Color.WHITE
+    private val colors: AppleMusicSettingsPalette get() = AppleMusicSettingsPalette.forDark(dark)
+    val pageBackground: Int get() = colors.background
     val softBackground: Int get() = softSurface
-    val softSurface: Int get() = Color.parseColor(if (dark) "#1C1C1E" else "#F3F2F7")
-    val primary: Int = Color.parseColor("#FA233B")
-    val primaryPressed: Int = Color.parseColor("#D91E34")
+    val softSurface: Int get() = colors.surface
+    val primary: Int get() = colors.primary
+    val primaryPressed: Int get() = colors.primaryPressed
     val accent: Int get() = primary
     val accentPressed: Int get() = primaryPressed
-    val onSurface: Int get() = if (dark) Color.WHITE else Color.BLACK
-    val onSurfaceVariant: Int get() = Color.parseColor(if (dark) "#98989D" else "#8E8E93")
-    val outline: Int get() = Color.parseColor(if (dark) "#38383A" else "#E5E5EA")
+    val onSurface: Int get() = colors.onSurface
+    val onSurfaceVariant: Int get() = colors.onSurfaceVariant
+    val outline: Int get() = colors.outline
     val disabledSurface: Int get() = softSurface
     val disabledText: Int get() = onSurfaceVariant
-    val divider: Int get() = Color.parseColor(if (dark) "#38383A" else "#D1D1D6")
+    val divider: Int get() = colors.divider
     val switchTrackOn: Int get() = primary
-    val switchTrackOff: Int = Color.parseColor("#D5D5D5")
+    val switchTrackOff: Int get() = colors.switchTrackOff
 }
 
 /**

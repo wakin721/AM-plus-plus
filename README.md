@@ -41,7 +41,7 @@
 
 ## 项目简介
 
-设置页嵌在 Apple Music 自己的设置列表中，入口是“AM++ 模块设置”。本分支同时保留独立的 AM++ 设置应用，提供 USB Bit-Perfect / USB Direct 设置、Material 3 外观和 DeepSeek AI 歌词翻译。
+设置页嵌在 Apple Music 自己的设置列表中，入口是“AM++ 模块设置”。本分支同时保留独立的 AM++ 设置应用，提供 USB Bit-Perfect / USB Direct 设置、Apple Music 风格的设置界面和 DeepSeek AI 歌词翻译。
 
 点击软件内的 AM++ 入口后进入二级设置页面，采用 Apple Music 风格的分组列表，设置即时保存。顶部返回按钮或系统返回会逐级返回“自定义歌词 → AM++ → Apple Music 设置”。
 
