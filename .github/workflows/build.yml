@@ -92,6 +92,10 @@ jobs:
           chmod +x gradlew
           ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleDebug -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
 
+      - name: Verify USB Direct controller and background playback lifecycle
+        shell: pwsh
+        run: ./scripts/verify-usb-direct-lifecycle.ps1
+
       - name: Verify USB Direct native APK packaging
         run: |
           python3 -m unittest discover -s scripts/tests -p test_verify_native_apk.py

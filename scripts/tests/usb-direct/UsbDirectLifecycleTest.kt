@@ -23,6 +23,8 @@ class UsbDirectLifecycleTest {
         UsbDirectUacBridge.reset()
         Messenger.outgoing.clear()
         Handler.posted.clear()
+        AudioTrack.keepAliveTracks.clear()
+        AudioTrack.acceptsRouting = true
     }
 
     @After fun tearDown() {
@@ -88,6 +90,113 @@ class UsbDirectLifecycleTest {
         assertEquals(AudioTrack.PLAYSTATE_PLAYING, UsbDirectUacController.playbackState(track))
         control(track, "stop")
         assertNull(UsbDirectUacController.playbackState(track))
+    }
+
+    @Test fun frameworkPlaybackRemainsActiveWithOnlySilentNonUsbAudio() {
+        val track = activate()
+        val keeper = AudioTrack.keepAliveTracks.single()
+        assertEquals(AudioTrack.PLAYSTATE_PAUSED, track.playState)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, keeper.playState)
+        assertEquals(android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, keeper.preferredDevice!!.type)
+        assertEquals(0f, keeper.volume, 0f)
+        assertTrue(keeper.loadedSilence)
+        assertEquals(-1, keeper.loopCount)
+        assertEquals(4_800, keeper.loopFrames)
+        UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(1, 2), 0, 2))
+        assertEquals(listOf(1, 2), UsbDirectUacBridge.outputs.values.single().queued)
+    }
+
+    @Test fun silentFrameworkTrackPausesResumesAndReleasesWithTheUsbSession() {
+        val track = activate()
+        val keeper = AudioTrack.keepAliveTracks.single()
+        control(track, "pause")
+        assertEquals(AudioTrack.PLAYSTATE_PAUSED, keeper.playState)
+        UsbDirectUacController.beforePlay(context, track)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, keeper.playState)
+        assertEquals(1, AudioTrack.keepAliveTracks.size)
+        control(track, "stop")
+        assertEquals(1, keeper.releaseCalls)
+        UsbDirectUacController.configure(false)
+        assertEquals(1, keeper.releaseCalls)
+    }
+
+    @Test fun failedNativeWriteReleasesFrameworkTrackBeforeSystemFallback() {
+        val track = activate()
+        val keeper = AudioTrack.keepAliveTracks.single()
+        UsbDirectUacBridge.failWrite = true
+        assertNull(UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(1, 2), 0, 2)))
+        assertEquals(1, keeper.releaseCalls)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, track.playState)
+    }
+
+    @Test fun producerStallReleasesSilentLoopAndFallsBackButPausedSessionIsPreserved() {
+        val track = activate()
+        val keeper = AudioTrack.keepAliveTracks.single()
+        control(track, "pause")
+        UsbDirectUacController.checkPlaybackHealth(System.nanoTime() + 31_000_000_000L)
+        assertTrue(UsbDirectUacController.isActive(track))
+        assertEquals(0, keeper.releaseCalls)
+        UsbDirectUacController.beforePlay(context, track)
+        UsbDirectUacController.checkPlaybackHealth()
+        assertTrue(UsbDirectUacController.isActive(track))
+        UsbDirectUacController.checkPlaybackHealth(System.nanoTime() + 31_000_000_000L)
+        assertFalse(UsbDirectUacController.isActive(track))
+        assertEquals(1, keeper.releaseCalls)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, track.playState)
+        assertTrue(UsbDirectUacBridge.outputs.isEmpty())
+    }
+
+    @Test fun disablingDirectOutputReleasesTheFrameworkLoop() {
+        activate()
+        val keeper = AudioTrack.keepAliveTracks.single()
+        UsbDirectUacController.configure(false)
+        assertEquals(1, keeper.releaseCalls)
+        assertEquals(AudioTrack.PLAYSTATE_STOPPED, keeper.playState)
+    }
+
+    @Test fun unexpectedKeepAliveUsbRoutingClosesDirectOutputInsteadOfCompetingForTheDac() {
+        val track = activate()
+        val keeper = AudioTrack.keepAliveTracks.single()
+        keeper.routedDevice = android.media.AudioDeviceInfo(android.media.AudioDeviceInfo.TYPE_USB_DEVICE)
+        UsbDirectUacController.checkPlaybackHealth()
+        assertFalse(UsbDirectUacController.isActive(track))
+        assertEquals(1, keeper.releaseCalls)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, track.playState)
+        assertTrue(UsbDirectUacBridge.outputs.isEmpty())
+    }
+
+    @Test fun failedKeepAliveRoutingReleasesBothOutputsAndRestoresOriginalPlayback() {
+        val track = AudioTrack()
+        AudioTrack.acceptsRouting = false
+        UsbDirectUacController.configure(true)
+        observe(track)
+        reply(lastAcquire())
+        assertFalse(UsbDirectUacController.isActive(track))
+        assertTrue(UsbDirectUacBridge.outputs.isEmpty())
+        assertEquals(1, AudioTrack.keepAliveTracks.single().releaseCalls)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, track.playState)
+    }
+
+    @Test fun cancelledNativeOpenNeverCreatesAFrameworkKeepAliveTrack() {
+        val track = AudioTrack()
+        UsbDirectUacController.configure(true)
+        observe(track)
+        UsbDirectUacBridge.duringOpen = { otherThread { control(track, "pause") } }
+        reply(lastAcquire())
+        assertTrue(AudioTrack.keepAliveTracks.isEmpty())
+        assertFalse(UsbDirectUacController.isActive(track))
+    }
+
+    @Test fun internalAudioOperationsRestoreNestedThreadLocalOwnershipAfterFailure() {
+        assertFalse(UsbDirectUacController.isInternalTransition())
+        UsbDirectUacController.withInternalTransition {
+            assertTrue(UsbDirectUacController.isInternalTransition())
+            runCatching {
+                UsbDirectUacController.withInternalTransition { error("test") }
+            }
+            assertTrue(UsbDirectUacController.isInternalTransition())
+        }
+        assertFalse(UsbDirectUacController.isInternalTransition())
     }
 
     @Test fun nativeOpenWindowExposesPlayingUntilAnActualPauseCancelsIt() {

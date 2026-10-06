@@ -66,6 +66,7 @@ internal class AppleMusicUsbBitPerfectTarget(
         val play = AudioTrack::class.java.getDeclaredMethod("play")
         ModernXposedRuntime.hookMethod(play, object : ModernMethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
+                if (UsbDirectUacController.isInternalTransition()) return
                 val track = param.thisObject as? AudioTrack ?: return
                 if (UsbDirectUacController.beforePlay(application, track)) {
                     param.result = null
@@ -75,6 +76,7 @@ internal class AppleMusicUsbBitPerfectTarget(
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
+                if (UsbDirectUacController.isInternalTransition()) return
                 if (param.throwable != null) return
                 val track = param.thisObject as? AudioTrack ?: return
                 if (UsbDirectUacController.playbackState(track) != null) return
@@ -217,6 +219,7 @@ internal object UsbDirectSystemVolumeObserver {
         val poll = object : Runnable {
             override fun run() {
                 if (!polling.get()) return
+                UsbDirectUacController.checkPlaybackHealth()
                 runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
                     .getOrNull()
                     ?.let { index ->

@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal object UsbDirectUacController {
     private const val TRACK_HANDOFF_IDLE_NANOS = 1_000_000_000L
     private const val TRACK_HANDOFF_STARTUP_GRACE_NANOS = 2_000_000_000L
+    private const val PRODUCER_STALL_TIMEOUT_NANOS = 30_000_000_000L
 
     private val enabled = AtomicBoolean(false)
     private val lock = Any()
@@ -70,7 +71,36 @@ internal object UsbDirectUacController {
 
     fun isEnabled(): Boolean = enabled.get()
 
+    /** Called by the existing process-local poller; never keep orphaned silence alive. */
+    fun checkPlaybackHealth(nowRealtimeNanos: Long = System.nanoTime()) {
+        synchronized(lock) {
+            val active = session ?: return
+            val track = active.track.get()
+            if (track == null) {
+                closeSessionLocked()
+                UsbDirectDeviceClient.release(active.context, active.lease)
+                return
+            }
+            if (active.suspended) return
+            if (!active.keepAlive.hasSafeRoute()) {
+                failWrite(track, active, "系统静音轨道偏离内置扬声器，已恢复系统输出")
+                return
+            }
+            val lastPcm = active.lastWriteRealtimeNanos.takeIf { it > 0L } ?: active.ownerStartedRealtimeNanos
+            if (nowRealtimeNanos - lastPcm >= PRODUCER_STALL_TIMEOUT_NANOS) {
+                ModernXposedRuntime.log("usb_direct: PCM producer stalled; restoring system playback")
+                failWrite(track, active, "30 秒未收到新音频数据，已恢复系统输出")
+            }
+        }
+    }
+
     fun isInternalTransition(): Boolean = internalTransition.get() == true
+
+    internal fun <T> withInternalTransition(operation: () -> T): T {
+        val previous = internalTransition.get()
+        internalTransition.set(true)
+        return try { operation() } finally { internalTransition.set(previous) }
+    }
 
     fun isActive(track: AudioTrack): Boolean = synchronized(lock) {
         session?.track?.get() === track
@@ -131,7 +161,12 @@ internal object UsbDirectUacController {
             val active = session?.takeIf { it.track.get() === track }
                 ?: return pendingTransport(track) != null
             active.suspended = false
+            if (!active.keepAlive.start()) {
+                failWrite(track, active, "无法恢复系统后台播放状态")
+                return@synchronized false
+            }
             UsbDirectUacBridge.resume(active.handle)
+            active.lastWriteRealtimeNanos = System.nanoTime()
             active.playbackPower.keepAwake()
             true
         }
@@ -236,7 +271,7 @@ internal object UsbDirectUacController {
         args: Array<Any?>,
         result: Any?,
     ) {
-        if (!enabled.get()) return
+        if (!enabled.get() || isInternalTransition()) return
         if (result is Int && result != AudioTrack.SUCCESS) return
         val updated = when (operation) {
             "setVolume" -> (args.firstOrNull() as? Float)?.let { gain ->
@@ -361,6 +396,7 @@ internal object UsbDirectUacController {
                         active.suspended = true
                         active.hasWrittenPcm = false
                         UsbDirectUacBridge.suspend(active.handle)
+                        active.keepAlive.pause()
                         active.playbackPower.release()
                     }
                 }
@@ -547,11 +583,12 @@ internal object UsbDirectUacController {
 
                 is UsbDirectUacBridge.OpenResult.Opened -> {
                     val streamGain = querySystemMediaGain(manager, deviceType) ?: 0f
+                    var keepAliveFailed = false
                     val installed = synchronized(lock) {
                         if (pendingTakeover !== request || !enabled.get() || session != null) {
                             false
                         } else {
-                            session = Session(
+                            val nextSession = Session(
                                 track = WeakReference(track),
                                 handle = opened.handle,
                                 lease = lease,
@@ -561,6 +598,13 @@ internal object UsbDirectUacController {
                                 streamGainCache = UsbDirectVolumeCache(streamGain),
                                 positionBaseFrames = positionBaseFrames,
                             )
+                            if (!nextSession.keepAlive.start()) {
+                                keepAliveFailed = true
+                                pendingTakeover = null
+                                markFailure(track, "无法建立系统后台播放状态", FailureKind.OTHER)
+                                return@synchronized false
+                            }
+                            session = nextSession
                             session?.playbackPower?.keepAwake()
                             pendingTakeover = null
                             failedTrack = null
@@ -571,6 +615,12 @@ internal object UsbDirectUacController {
                     if (!installed) {
                         UsbDirectUacBridge.close(opened.handle)
                         UsbDirectDeviceClient.release(context, lease)
+                        if (keepAliveFailed) synchronized(lock) {
+                            if (enabled.get() && session == null && failedTrack?.get() === track) {
+                                runCatching { track.play() }
+                                    .onFailure { ModernXposedRuntime.log("usb_direct: keep-alive fallback play failed", it) }
+                            }
+                        }
                         return
                     }
                     ModernXposedRuntime.log(
@@ -700,6 +750,7 @@ internal object UsbDirectUacController {
 
     private fun closeSessionLocked() {
         session?.let {
+            it.keepAlive.close()
             it.playbackPower.release()
             UsbDirectUacBridge.close(it.handle)
         }
@@ -743,6 +794,7 @@ internal object UsbDirectUacController {
         val streamGainCache: UsbDirectVolumeCache,
         var positionBaseFrames: Long = 0L,
         val playbackPower: UsbDirectPlaybackPower = UsbDirectPlaybackPower(context),
+        val keepAlive: UsbDirectPlaybackKeepAlive = UsbDirectPlaybackKeepAlive(context),
         var hasWrittenPcm: Boolean = false,
         var suspended: Boolean = false,
         val ownerStartedRealtimeNanos: Long = System.nanoTime(),
