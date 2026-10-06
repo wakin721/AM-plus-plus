@@ -13,6 +13,8 @@ internal object UsbDirectUacBridge {
         var suspended = false
         var capacity = 8
         val queued = mutableListOf<Int>()
+        var renderedFrames = 0L
+        var renderedAtNanos = 0L
     }
     var duringOpen: (() -> Unit)? = null
     var failOpen = false
@@ -34,7 +36,12 @@ internal object UsbDirectUacBridge {
     fun supportsEncoding(encoding: Int) = true
     fun suspend(handle: Long) { outputs.getValue(handle).suspended = true }
     fun resume(handle: Long) { outputs.getValue(handle).suspended = false }
-    fun flush(handle: Long) { outputs.getValue(handle).queued.clear() }
+    fun flush(handle: Long) { outputs.getValue(handle).apply {
+        queued.clear(); renderedFrames = 0L; renderedAtNanos = 0L
+    } }
+    fun playbackPosition(handle: Long): LongArray? = outputs[handle]?.let {
+        longArrayOf(it.renderedFrames, it.renderedAtNanos)
+    }
     fun close(handle: Long) { outputs.remove(handle); closed.add(handle) }
     fun lastError(reason: String) = reason
     private fun enqueue(handle: Long, data: List<Int>): Int {

@@ -6,6 +6,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.AudioTimestamp
 import android.os.Build
 import dev.amenhancer.module.UsbBitPerfectStatusDetails
 import dev.amenhancer.module.UsbBitPerfectStatusProtocol
@@ -75,6 +76,39 @@ internal object UsbDirectUacController {
         session?.track?.get() === track
     }
 
+    /** The original track is internally paused; expose the transport owned by USB instead. */
+    fun playbackState(track: AudioTrack): Int? = synchronized(lock) {
+        if (isInternalTransition()) return null
+        val active = session?.takeIf { it.track.get() === track }
+        if (active == null) {
+            return if (pendingTransport(track) != null) AudioTrack.PLAYSTATE_PLAYING else null
+        }
+        if (active.suspended) AudioTrack.PLAYSTATE_PAUSED else AudioTrack.PLAYSTATE_PLAYING
+    }
+
+    fun playbackHeadPosition(track: AudioTrack): Int? = synchronized(lock) {
+        if (isInternalTransition()) return null
+        val active = session?.takeIf { it.track.get() === track }
+            ?: return pendingTransport(track)?.positionBaseFrames?.toInt()
+        val position = UsbDirectUacBridge.playbackPosition(active.handle) ?: return null
+        (active.positionBaseFrames + position[0]).toInt()
+    }
+
+    fun playbackTimestamp(track: AudioTrack, timestamp: AudioTimestamp): Boolean? = synchronized(lock) {
+        if (isInternalTransition()) return null
+        val active = session?.takeIf { it.track.get() === track }
+            ?: return if (pendingTransport(track) != null) false else null
+        val position = UsbDirectUacBridge.playbackPosition(active.handle) ?: return false
+        if (position[1] <= 0L) return false
+        timestamp.framePosition = (active.positionBaseFrames + position[0]) and 0xFFFF_FFFFL
+        timestamp.nanoTime = position[1]
+        true
+    }
+
+    /** Called only under the controller lock; cancellation immediately restores raw queries. */
+    private fun pendingTransport(track: AudioTrack): PendingTakeover? =
+        pendingTakeover?.takeIf { it.originalPaused && it.track.get() === track }
+
     /** Receives the media step selected by Android's system volume UI. */
     fun onSystemMediaVolumeChanged(volumeIndex: Int) {
         if (!enabled.get() || volumeIndex < 0) return
@@ -94,9 +128,11 @@ internal object UsbDirectUacController {
         applicationContext = context.applicationContext
         latestTrack = WeakReference(track)
         return synchronized(lock) {
-            val active = session?.takeIf { it.track.get() === track } ?: return false
+            val active = session?.takeIf { it.track.get() === track }
+                ?: return pendingTransport(track) != null
             active.suspended = false
             UsbDirectUacBridge.resume(active.handle)
+            active.playbackPower.keepAwake()
             true
         }
     }
@@ -186,6 +222,7 @@ internal object UsbDirectUacController {
                 session?.takeIf { it.track.get() === track }?.apply {
                     hasWrittenPcm = true
                     lastWriteRealtimeNanos = System.nanoTime()
+                    if (!suspended) playbackPower.keepAwake()
                 }
             }
         }
@@ -324,12 +361,14 @@ internal object UsbDirectUacController {
                         active.suspended = true
                         active.hasWrittenPcm = false
                         UsbDirectUacBridge.suspend(active.handle)
+                        active.playbackPower.release()
                     }
                 }
 
                 UsbDirectTrackHandoffAction.FLUSH -> {
                     if (active != null) {
                         active.hasWrittenPcm = false
+                        active.positionBaseFrames = 0L
                         UsbDirectUacBridge.flush(active.handle)
                     }
                 }
@@ -440,6 +479,7 @@ internal object UsbDirectUacController {
         try {
             val manager: AudioManager
             val deviceType: Int
+            val positionBaseFrames: Long
             synchronized(lock) {
                 if (pendingTakeover !== request || !enabled.get() || session != null ||
                     failedTrack?.get() === track ||
@@ -458,6 +498,8 @@ internal object UsbDirectUacController {
                 deviceType = runCatching { track.routedDevice?.type }
                     .getOrNull()
                     ?: AudioDeviceInfo.TYPE_USB_DEVICE
+                positionBaseFrames = runCatching { track.playbackHeadPosition.toLong() and 0xFFFF_FFFFL }
+                    .getOrDefault(0L)
                 val paused = runCatching {
                     track.pause()
                     true
@@ -474,6 +516,8 @@ internal object UsbDirectUacController {
                     UsbDirectDeviceClient.release(context, lease)
                     return
                 }
+                request.positionBaseFrames = positionBaseFrames
+                request.originalPaused = true
                 runCatching { track.flush() }
             }
 
@@ -515,7 +559,9 @@ internal object UsbDirectUacController {
                                 audioManager = manager,
                                 deviceType = deviceType,
                                 streamGainCache = UsbDirectVolumeCache(streamGain),
+                                positionBaseFrames = positionBaseFrames,
                             )
+                            session?.playbackPower?.keepAwake()
                             pendingTakeover = null
                             failedTrack = null
                             lastFailure = null
@@ -653,7 +699,10 @@ internal object UsbDirectUacController {
     }
 
     private fun closeSessionLocked() {
-        session?.let { UsbDirectUacBridge.close(it.handle) }
+        session?.let {
+            it.playbackPower.release()
+            UsbDirectUacBridge.close(it.handle)
+        }
         session = null
     }
 
@@ -692,6 +741,8 @@ internal object UsbDirectUacController {
         val audioManager: AudioManager,
         val deviceType: Int,
         val streamGainCache: UsbDirectVolumeCache,
+        var positionBaseFrames: Long = 0L,
+        val playbackPower: UsbDirectPlaybackPower = UsbDirectPlaybackPower(context),
         var hasWrittenPcm: Boolean = false,
         var suspended: Boolean = false,
         val ownerStartedRealtimeNanos: Long = System.nanoTime(),
@@ -699,7 +750,10 @@ internal object UsbDirectUacController {
     )
 
     /** Identity survives the broker response until nativeOpen commits or is cancelled. */
-    private class PendingTakeover(val track: WeakReference<AudioTrack>)
+    private class PendingTakeover(val track: WeakReference<AudioTrack>) {
+        var originalPaused = false
+        var positionBaseFrames = 0L
+    }
 
     private data class StereoGain(val left: Float, val right: Float) {
         companion object {

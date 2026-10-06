@@ -1,4 +1,17 @@
 package android.os
+class PowerManager {
+ val locks = mutableListOf<WakeLock>()
+ fun newWakeLock(level: Int, tag: String) = WakeLock().also { locks += it }
+ class WakeLock {
+  var isHeld=false
+  var acquisitions=0
+  var timeout=0L
+  fun setReferenceCounted(value: Boolean) {}
+  fun acquire(timeout: Long) { this.timeout=timeout; isHeld=true; acquisitions++ }
+  fun release() { isHeld=false }
+ }
+ companion object { const val PARTIAL_WAKE_LOCK=1 }
+}
 object Build {
  object VERSION { const val SDK_INT = 37 }
  object VERSION_CODES { const val P=28; const val Q=29; const val TIRAMISU=33 }

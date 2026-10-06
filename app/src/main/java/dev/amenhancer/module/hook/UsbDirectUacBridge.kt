@@ -158,6 +158,9 @@ internal object UsbDirectUacBridge {
 
     fun supportsEncoding(encoding: Int): Boolean = formatCode(encoding) != null
 
+    fun playbackPosition(handle: Long): LongArray? =
+        runCatching { nativePlaybackPosition(handle) }.getOrNull()
+
     private fun formatCode(encoding: Int): Int? = when (encoding) {
         AudioFormat.ENCODING_PCM_16BIT -> FORMAT_I16
         AudioFormat.ENCODING_PCM_FLOAT -> FORMAT_FLOAT
@@ -237,4 +240,7 @@ internal object UsbDirectUacBridge {
 
     @JvmStatic
     private external fun nativeLastError(): String
+
+    @JvmStatic
+    private external fun nativePlaybackPosition(handle: Long): LongArray?
 }

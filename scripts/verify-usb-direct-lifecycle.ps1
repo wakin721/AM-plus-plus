@@ -37,6 +37,7 @@ try {
         ($hook + 'UsbDirectVolumePolicy.kt'), ($hook + 'UsbDirectWriteFailurePolicy.kt'),
         ($hook + 'UsbDirectTrackHandoffPolicy.kt'),
         ($hook + 'UsbDirectNativeLibraryLoader.kt'),
+        ($hook + 'UsbDirectPlaybackPower.kt'),
         'app/src/main/java/dev/amenhancer/module/UsbDirectIpc.kt',
         'app/src/main/java/dev/amenhancer/module/UsbBitPerfectStatusProtocol.kt',
         'app/src/main/java/dev/amenhancer/module/usb/UsbAudioDescriptorParser.kt',

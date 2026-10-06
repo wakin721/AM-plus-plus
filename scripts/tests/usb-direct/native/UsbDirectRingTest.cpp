@@ -36,11 +36,41 @@ int main() {
             std::array<uint8_t, 4>{1, 2, 3, 4}));
     assert(session->ringCount == 0);
 
+    IsoSlot slot;
+    slot.urbStorage.resize(sizeof(usbdevfs_urb) + kIsoPacketsPerUrb * sizeof(usbdevfs_iso_packet_desc));
+    slot.urb = reinterpret_cast<usbdevfs_urb*>(slot.urbStorage.data());
+    slot.buffer.resize(4 * 96);
+    session->maxPacketSize = 96;
+    session->packetScheduler.updateFeedback(usb_feedback::nominalFeedbackQ16(48000, 1000));
+    assert(enqueueTarget(session.get(), output, sizeof(output), false) == 4);
+    assert(fillAudioSlot(session.get(), &slot));
+    assert(session->renderedFrames == 0); // Enqueue/submit is not playback completion.
+    assert(slot.pcmFrames[0] == 2);
+    recordAudioCompletion(session.get(), &slot);
+    assert(session->renderedFrames == 2 && session->renderedAtNanos > 0);
+    assert(fillAudioSlot(session.get(), &slot));
+    recordAudioCompletion(session.get(), &slot);
+    assert(session->renderedFrames == 2); // Underrun silence does not advance source PCM.
+    assert(enqueueTarget(session.get(), first, sizeof(first), false) == 2);
+    Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeSuspend(nullptr, nullptr, handle);
+    assert(fillAudioSlot(session.get(), &slot));
+    recordAudioCompletion(session.get(), &slot);
+    assert(session->renderedFrames == 2 && session->ringCount == 2);
+    Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeResume(nullptr, nullptr, handle);
+    assert(fillAudioSlot(session.get(), &slot));
+    slot.urb->status = -1;
+    recordAudioCompletion(session.get(), &slot);
+    assert(session->renderedFrames == 2); // Failed transfers are not played PCM.
+    slot.urb->status = 0;
+
     assert(enqueueTarget(session.get(), first, sizeof(first), false) == 2);
     Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeFlush(nullptr, nullptr, handle);
     assert(session->ringCount == 0);
     assert(session->ringRead == 0 && session->ringWrite == 0);
+    recordAudioCompletion(session.get(), &slot);
+    assert(session->renderedFrames == 0 && session->renderedAtNanos == 0);
+    // The previous slot's completion belongs to the timeline before flush.
     Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeClose(nullptr, nullptr, handle);
     assert(findSession(handle) == nullptr);
-    std::cout << "PASS: native pause retains PCM, resume preserves order, full ring applies backpressure, flush clears PCM\n";
+    std::cout << "PASS: PCM retention/backpressure and USB completion clock, silence/pause/failure/flush epochs\n";
 }

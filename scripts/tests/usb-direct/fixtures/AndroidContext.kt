@@ -15,7 +15,9 @@ open class Context {
  var bindingSucceeds = true
  val applicationContext: Context get() = this
  val packageManager = PackageManager()
- fun <T> getSystemService(type: Class<T>): T? = type.cast(AudioManager())
+ val powerManager = PowerManager()
+ fun <T> getSystemService(type: Class<T>): T? = type.cast(
+  if (type == PowerManager::class.java) powerManager else AudioManager())
  fun bindService(intent: Intent, connection: ServiceConnection, flags: Int): Boolean {
   connections.add(connection)
   if (!bindingSucceeds) return false

@@ -79,6 +79,8 @@ struct IsoSlot {
     std::vector<uint8_t> urbStorage;
     std::vector<uint8_t> buffer;
     usbdevfs_urb* urb = nullptr;
+    std::array<uint64_t, kIsoPacketsPerUrb> pcmFrames{};
+    std::array<uint64_t, kIsoPacketsPerUrb> positionEpochs{};
 };
 
 struct Session {
@@ -121,6 +123,9 @@ struct Session {
     size_t ringWrite = 0;
     size_t ringCount = 0;
     std::mutex ringMutex;
+    uint64_t renderedFrames = 0;
+    uint64_t positionEpoch = 0;
+    int64_t renderedAtNanos = 0;
     std::condition_variable spaceAvailable;
     std::mutex lifecycleMutex;
 
@@ -387,11 +392,12 @@ int framesForNextInterval(Session* session) {
     return session->packetScheduler.nextFrames(session->outputServiceTicks);
 }
 
-void copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes) {
+size_t copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes, uint64_t* epoch = nullptr) {
     std::unique_lock<std::mutex> lock(session->ringMutex);
+    if (epoch != nullptr) *epoch = session->positionEpoch;
     if (session->suspended.load()) {
         std::memset(destination, 0, bytes);
-        return;
+        return 0;
     }
     size_t copied = 0;
     while (copied < bytes && session->ringCount > 0) {
@@ -410,6 +416,26 @@ void copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes)
     }
     lock.unlock();
     session->spaceAvailable.notify_all();
+    return copied;
+}
+
+// Account only successfully completed PCM, excluding generated underrun/pause silence.
+// Epochs keep URBs queued before flush from advancing the new playback timeline.
+void recordAudioCompletion(Session* session, const IsoSlot* slot) {
+    if (slot->urb->status != 0 || slot->urb->error_count != 0) return;
+    std::lock_guard<std::mutex> lock(session->ringMutex);
+    uint64_t frames = 0;
+    for (int packet = 0; packet < kIsoPacketsPerUrb; ++packet) {
+        if (slot->positionEpochs[packet] == session->positionEpoch &&
+            slot->urb->iso_frame_desc[packet].status == 0) {
+            frames += slot->pcmFrames[packet];
+        }
+    }
+    if (frames > 0) {
+        session->renderedFrames += frames;
+        session->renderedAtNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
 }
 
 bool fillAudioSlot(Session* session, IsoSlot* slot) {
@@ -433,8 +459,11 @@ bool fillAudioSlot(Session* session, IsoSlot* slot) {
         urb->iso_frame_desc[packet].length = static_cast<unsigned int>(packetBytes);
         urb->iso_frame_desc[packet].actual_length = 0;
         urb->iso_frame_desc[packet].status = 0;
+        slot->pcmFrames[packet] = 0;
         if (packetBytes > 0) {
-            copyFromRingOrSilence(session, slot->buffer.data() + totalBytes, packetBytes);
+            slot->pcmFrames[packet] = copyFromRingOrSilence(
+                session, slot->buffer.data() + totalBytes, packetBytes,
+                &slot->positionEpochs[packet]) / session->targetFrameBytes;
             totalBytes += packetBytes;
         }
     }
@@ -586,6 +615,7 @@ void directWorker(Session* session) {
                 );
                 session->failed.store(true);
             } else if (session->running.load()) {
+                recordAudioCompletion(session, slot);
                 resubmitted = submitAudioSlot(session, slot);
             }
         }
@@ -1177,6 +1207,9 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeFlush(
         session->ringRead = 0;
         session->ringWrite = 0;
         session->ringCount = 0;
+        ++session->positionEpoch;
+        session->renderedFrames = 0;
+        session->renderedAtNanos = 0;
     }
     session->spaceAvailable.notify_all();
 }
@@ -1199,4 +1232,21 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeLastError(
 ) {
     const std::string error = getError();
     return env->NewStringUTF(error.c_str());
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativePlaybackPosition(
+    JNIEnv* env, jclass, jlong handle
+) {
+    auto session = findSession(handle);
+    if (session == nullptr || session->closing.load() || session->failed.load()) return nullptr;
+    jlong values[2];
+    {
+        std::lock_guard<std::mutex> lock(session->ringMutex);
+        values[0] = static_cast<jlong>(session->renderedFrames);
+        values[1] = session->renderedAtNanos;
+    }
+    auto result = env->NewLongArray(2);
+    if (result != nullptr) env->SetLongArrayRegion(result, 0, 2, values);
+    return result;
 }

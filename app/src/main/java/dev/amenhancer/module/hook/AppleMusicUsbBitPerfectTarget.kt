@@ -12,6 +12,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioMixerAttributes
 import android.media.AudioTrack
+import android.media.AudioTimestamp
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -37,6 +38,31 @@ internal class AppleMusicUsbBitPerfectTarget(
         }
         UsbDirectSystemVolumeObserver.register(application)
 
+        // Queries must describe the USB transport, not the internally paused Android track.
+        ModernXposedRuntime.hookMethod(AudioTrack::class.java.getDeclaredMethod("getPlayState"),
+            object : ModernMethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val track = param.thisObject as? AudioTrack ?: return
+                    UsbDirectUacController.playbackState(track)?.let { param.result = it }
+                }
+            })
+        ModernXposedRuntime.hookMethod(AudioTrack::class.java.getDeclaredMethod("getPlaybackHeadPosition"),
+            object : ModernMethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val track = param.thisObject as? AudioTrack ?: return
+                    UsbDirectUacController.playbackHeadPosition(track)?.let { param.result = it }
+                }
+            })
+        ModernXposedRuntime.hookMethod(
+            AudioTrack::class.java.getDeclaredMethod("getTimestamp", AudioTimestamp::class.java),
+            object : ModernMethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val track = param.thisObject as? AudioTrack ?: return
+                    val timestamp = param.args.firstOrNull() as? AudioTimestamp ?: return
+                    UsbDirectUacController.playbackTimestamp(track, timestamp)?.let { param.result = it }
+                }
+            })
+
         val play = AudioTrack::class.java.getDeclaredMethod("play")
         ModernXposedRuntime.hookMethod(play, object : ModernMethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
@@ -51,7 +77,7 @@ internal class AppleMusicUsbBitPerfectTarget(
             override fun afterHookedMethod(param: MethodHookParam) {
                 if (param.throwable != null) return
                 val track = param.thisObject as? AudioTrack ?: return
-                if (UsbDirectUacController.isActive(track)) return
+                if (UsbDirectUacController.playbackState(track) != null) return
                 UsbBitPerfectController.tryApply(application, track, afterStart = true)
             }
         })

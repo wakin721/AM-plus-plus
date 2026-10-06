@@ -8,6 +8,7 @@ class AudioTrack(val format: AudioFormat=AudioFormat()) {
  val audioAttributes=AudioAttributes()
  val routedDevice=AudioDeviceInfo()
  var playState=PLAYSTATE_PLAYING
+ var playbackHeadPosition=0
  var playCalls=0
  fun pause() { playState=PLAYSTATE_PAUSED }
  fun flush() {}
@@ -15,6 +16,7 @@ class AudioTrack(val format: AudioFormat=AudioFormat()) {
  fun stop() { playState=PLAYSTATE_STOPPED }
  companion object { const val SUCCESS=0; const val PLAYSTATE_PLAYING=3; const val PLAYSTATE_PAUSED=2; const val PLAYSTATE_STOPPED=1; const val WRITE_NON_BLOCKING=1; const val WRITE_BLOCKING=0 }
 }
+class AudioTimestamp { var framePosition=0L; var nanoTime=0L }
 class AudioManager {
  fun getStreamMaxVolume(stream: Int)=15
  fun getStreamVolume(stream: Int)=15

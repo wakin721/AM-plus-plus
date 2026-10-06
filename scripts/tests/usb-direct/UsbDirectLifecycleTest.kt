@@ -3,6 +3,7 @@ package dev.amenhancer.module.hook
 import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.AudioTimestamp
 import android.os.*
 import dev.amenhancer.module.UsbDirectIpc as Ipc
 import java.nio.ByteBuffer
@@ -74,6 +75,91 @@ class UsbDirectLifecycleTest {
         thread.join(2_000)
         assertFalse("Transport must remain responsive during nativeOpen", thread.isAlive)
         error.get()?.let { throw it }
+    }
+
+    @Test fun ownedTrackReportsDirectTransportState() {
+        val track = activate()
+        assertEquals(AudioTrack.PLAYSTATE_PAUSED, track.playState)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, UsbDirectUacController.playbackState(track))
+        assertNull(UsbDirectUacController.playbackState(AudioTrack()))
+        control(track, "pause")
+        assertEquals(AudioTrack.PLAYSTATE_PAUSED, UsbDirectUacController.playbackState(track))
+        assertTrue(UsbDirectUacController.beforePlay(context, track))
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, UsbDirectUacController.playbackState(track))
+        control(track, "stop")
+        assertNull(UsbDirectUacController.playbackState(track))
+    }
+
+    @Test fun nativeOpenWindowExposesPlayingUntilAnActualPauseCancelsIt() {
+        val track = AudioTrack().apply { playbackHeadPosition = 123 }
+        UsbDirectUacController.configure(true)
+        observe(track)
+        UsbDirectUacBridge.duringOpen = {
+            otherThread {
+                assertEquals(AudioTrack.PLAYSTATE_PLAYING, UsbDirectUacController.playbackState(track))
+                assertEquals(123, UsbDirectUacController.playbackHeadPosition(track))
+                assertEquals(false, UsbDirectUacController.playbackTimestamp(track, AudioTimestamp()))
+                assertTrue(UsbDirectUacController.beforePlay(context, track))
+                control(track, "pause")
+                assertNull(UsbDirectUacController.playbackState(track))
+            }
+        }
+        reply(lastAcquire())
+        assertFalse(UsbDirectUacController.isActive(track))
+        assertEquals(0, track.playCalls)
+    }
+
+    @Test fun directClockUsesCompletedUsbFramesAndResetsAfterFlush() {
+        val track = activate(AudioTrack().apply { playbackHeadPosition = 1_234 })
+        val output = UsbDirectUacBridge.outputs.values.single()
+        val timestamp = AudioTimestamp()
+        assertEquals(false, UsbDirectUacController.playbackTimestamp(track, timestamp))
+        output.renderedFrames = 4_800
+        output.renderedAtNanos = 123_456_789
+        assertEquals(6_034, UsbDirectUacController.playbackHeadPosition(track))
+        assertEquals(true, UsbDirectUacController.playbackTimestamp(track, timestamp))
+        assertEquals(6_034L, timestamp.framePosition)
+        assertEquals(123_456_789L, timestamp.nanoTime)
+        control(track, "pause")
+        assertEquals(6_034, UsbDirectUacController.playbackHeadPosition(track))
+        control(track, "flush")
+        assertEquals(0, UsbDirectUacController.playbackHeadPosition(track))
+        assertEquals(false, UsbDirectUacController.playbackTimestamp(track, timestamp))
+        control(track, "release")
+        assertNull(UsbDirectUacController.playbackTimestamp(track, timestamp))
+    }
+
+    @Test fun playbackHeadKeepsUnsigned32BitWrapSemantics() {
+        val track = activate(AudioTrack().apply { playbackHeadPosition = -2 })
+        UsbDirectUacBridge.outputs.values.single().apply {
+            renderedFrames = 5; renderedAtNanos = 1
+        }
+        assertEquals(3, UsbDirectUacController.playbackHeadPosition(track))
+        val timestamp = AudioTimestamp()
+        assertEquals(true, UsbDirectUacController.playbackTimestamp(track, timestamp))
+        assertEquals(3L, timestamp.framePosition)
+    }
+
+    @Test fun directWakeLockReleasesOnPauseStopAndFailure() {
+        val track = activate()
+        val wake = context.powerManager.locks.single()
+        assertTrue(wake.isHeld)
+        assertEquals(30_000L, wake.timeout)
+        control(track, "pause")
+        assertFalse(wake.isHeld)
+        UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(1, 2), 0, 2))
+        assertFalse("Paused writes must not reacquire power", wake.isHeld)
+        UsbDirectUacController.beforePlay(context, track)
+        assertTrue(wake.isHeld)
+        UsbDirectUacBridge.failWrite = true
+        UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(1, 2), 0, 2))
+        assertFalse(wake.isHeld)
+        UsbDirectUacBridge.failWrite = false
+        val other = activate()
+        val second = context.powerManager.locks.last()
+        assertTrue(second.isHeld)
+        control(other, "stop")
+        assertFalse(second.isHeld)
     }
 
     @Test fun releaseAcknowledgementAndOldAcquisitionCannotConsumeNewRequest() {

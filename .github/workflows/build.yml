@@ -37,6 +37,12 @@ jobs:
           python3 scripts/verify-architecture.py
           python3 scripts/verify-profile-data.py
 
+      - name: Verify USB Direct PCM and playback clock
+        run: |
+          mkdir -p build/usb-direct-native
+          g++ -std=c++17 -pthread -I "$JAVA_HOME/include" -I "$JAVA_HOME/include/linux" scripts/tests/usb-direct/native/UsbDirectRingTest.cpp -o build/usb-direct-native/ring-test
+          build/usb-direct-native/ring-test
+
       - name: Prepare release signing
         id: release_signing
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
