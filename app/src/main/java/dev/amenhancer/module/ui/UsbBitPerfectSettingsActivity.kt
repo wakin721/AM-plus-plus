@@ -136,7 +136,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         })
         addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
             text = "USB 音频输出"
-            textSize = 20f
+            textSize = 18f
             setTextColor(palette.onSurface)
             gravity = Gravity.CENTER
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -159,7 +159,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(92)
-            setPadding(dp(16), dp(14), dp(10), dp(14))
+            setPadding(dp(20), dp(20), dp(16), dp(20))
             addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
@@ -170,7 +170,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
                     text = "Android 14+ · USB DAC · 修改后需重启 Apple Music"
-                    textSize = 13.5f
+                    textSize = 14f
                     setTextColor(palette.onSurfaceVariant)
                     setPadding(0, dp(4), dp(8), 0)
                 })
@@ -191,7 +191,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     mixerValue.text = "等待 Apple Music 重启"
                 }
             }
-            addView(toggle, LinearLayout.LayoutParams(dp(64), dp(48)))
+            addView(toggle, LinearLayout.LayoutParams(dp(56), dp(48)).apply { marginStart = dp(12) })
             setOnClickListener { if (toggle.isEnabled) toggle.isChecked = !toggle.isChecked }
         })
 
@@ -201,7 +201,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(124)
-            setPadding(dp(16), dp(14), dp(10), dp(14))
+            setPadding(dp(20), dp(20), dp(16), dp(20))
             addView(LinearLayout(this@UsbBitPerfectSettingsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
@@ -211,8 +211,8 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
                 })
                 addView(TextView(this@UsbBitPerfectSettingsActivity).apply {
-                    text = "Android USB Host 授权 → claim AudioStreaming interface → native usbfs isochronous；支持 UAC1/UAC2 标准显式 feedback，隐式 feedback/厂商私有格式仍会回退"
-                    textSize = 13.5f
+                    text = "独占使用 USB DAC，绕过系统混音。支持常见 UAC1/UAC2 设备；不支持时自动恢复系统输出。"
+                    textSize = 14f
                     setTextColor(palette.onSurfaceVariant)
                     setPadding(0, dp(4), dp(8), 0)
                 })
@@ -239,7 +239,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
                     }
                 }
             }
-            addView(directToggle, LinearLayout.LayoutParams(dp(64), dp(48)))
+            addView(directToggle, LinearLayout.LayoutParams(dp(56), dp(48)).apply { marginStart = dp(12) })
             setOnClickListener {
                 if (directToggle.isEnabled) directToggle.isChecked = !directToggle.isChecked
             }
@@ -254,7 +254,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         addView(
             bufferRangeRow(
                 title = "音频缓冲区",
-                summary = "PCM ring · 10–100 ms · 修改后需重启 Apple Music",
+                summary = "10–100 ms · 较大的缓冲有助于减少断音 · 修改后需重启 Apple Music",
                 minValue = ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS,
                 maxValue = ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS,
                 stepValue = ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS,
@@ -268,7 +268,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         addView(
             bufferPresetRow(
                 title = "USB 传输缓冲",
-                summary = "usbfs ISO URB 预队列 · 修改后需重启 Apple Music",
+                summary = "选择自动或固定传输缓冲 · 修改后需重启 Apple Music",
                 values = listOf(0, 2, 4, 8, 16),
                 selected = { store.settings().usbDirectTransferBufferMs },
                 label = { if (it == 0) "自动" else "$it ms" },
@@ -290,7 +290,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
     ): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         minimumHeight = dp(96)
-        setPadding(dp(16), dp(12), dp(16), dp(12))
+        setPadding(dp(20), dp(18), dp(20), dp(18))
         val safeValue = ModuleSettings.normalizeUsbDirectPcmBufferMs(selected())
         val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
             textSize = 14f
@@ -351,7 +351,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dp(84)
-        setPadding(dp(16), dp(12), dp(16), dp(12))
+        setPadding(dp(20), dp(18), dp(20), dp(18))
         val valueView = TextView(this@UsbBitPerfectSettingsActivity).apply {
             textSize = 14f
             setTextColor(palette.primary)
@@ -374,6 +374,10 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             })
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         addView(valueView)
+        addView(ImageView(this@UsbBitPerfectSettingsActivity).apply {
+            setImageDrawable(EmbeddedGlyphDrawable(EmbeddedGlyphKind.ChevronRight, palette.onSurfaceVariant))
+            contentDescription = null
+        }, LinearLayout.LayoutParams(dp(16), dp(20)).apply { marginStart = dp(12) })
         isClickable = true
         isFocusable = true
         bufferControls.add(this)
@@ -381,9 +385,12 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
             if (!isEnabled) return@setOnClickListener
             val current = selected()
             val index = values.indexOf(current).takeIf { it >= 0 } ?: 0
-            val next = values[(index + 1) % values.size]
-            save(next)
-            valueView.text = label(next)
+            showAppleMusicChoiceDialog(this@UsbBitPerfectSettingsActivity, title,
+                values.map(label), index) { chosen ->
+                val next = values[chosen]
+                save(next)
+                valueView.text = label(next)
+            }
         }
     }
 
@@ -431,7 +438,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
 
         statusMessage = TextView(this@UsbBitPerfectSettingsActivity).apply {
             text = "正在向 Apple Music 进程读取实时 AudioTrack / USB Direct 状态"
-            textSize = 13.5f
+            textSize = 14f
             setTextColor(palette.onSurfaceVariant)
             setPadding(0, dp(14), 0, 0)
         }
@@ -707,7 +714,9 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
 
     private fun divider(): View = View(this).apply {
         setBackgroundColor(palette.divider)
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1))
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+            marginStart = dp(20)
+        }
     }
 
     private fun spacer(heightDp: Int): View = View(this).apply {

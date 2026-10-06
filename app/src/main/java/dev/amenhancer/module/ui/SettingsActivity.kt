@@ -274,7 +274,7 @@ class SettingsActivity : ComponentActivity() {
             },
         )
         topBarTitle = TextView(this@SettingsActivity).apply {
-            textSize = 20f
+            textSize = 18f
             setTextColor(palette.onSurface)
             gravity = Gravity.CENTER
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -343,7 +343,7 @@ class SettingsActivity : ComponentActivity() {
 
     private fun settingsGroup(title: String, group: View): View = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        addView(sectionLabel(title).apply { setPadding(dp(16), dp(12), dp(16), dp(10)) })
+        addView(sectionLabel(title).apply { setPadding(dp(20), dp(12), dp(20), dp(10)) })
         addView(group)
     }
 
@@ -538,7 +538,7 @@ class SettingsActivity : ComponentActivity() {
         isFocusable = enabled
         alpha = if (enabled) 1f else 0.58f
         background = rippleDrawable()
-        setPadding(dp(16), dp(12), dp(14), dp(12))
+        setPadding(dp(20), dp(18), dp(20), dp(18))
         addView(LinearLayout(this@SettingsActivity).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(this@SettingsActivity).apply {
@@ -549,7 +549,7 @@ class SettingsActivity : ComponentActivity() {
             })
             addView(TextView(this@SettingsActivity).apply {
                 text = summary
-                textSize = 13.5f
+                textSize = 14f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(0, dp(4), dp(8), 0)
             })
@@ -565,15 +565,10 @@ class SettingsActivity : ComponentActivity() {
     private fun showTitleCorrectionModePicker() {
         val modes = TitleCorrectionMode.values()
         val current = store.settings().titleCorrectionMode
-        val labels = modes.map(TitleCorrectionMode::displayName).toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("歌曲名修正模式")
-            .setSingleChoiceItems(labels, modes.indexOf(current)) { dialog, which ->
-                modes.getOrNull(which)?.let(::saveTitleCorrectionMode)
-                dialog.dismiss()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        showAppleMusicChoiceDialog(this, "歌曲名修正模式",
+            modes.map(TitleCorrectionMode::displayName), modes.indexOf(current)) { which ->
+            modes.getOrNull(which)?.let(::saveTitleCorrectionMode)
+        }
     }
 
     private fun saveTitleCorrectionMode(mode: TitleCorrectionMode) {
@@ -593,7 +588,7 @@ class SettingsActivity : ComponentActivity() {
             isFocusable = true
             contentDescription = "自定义歌词"
             background = rippleDrawable()
-            setPadding(dp(16), dp(12), dp(14), dp(12))
+            setPadding(dp(20), dp(18), dp(20), dp(18))
             addView(LinearLayout(this@SettingsActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(TextView(this@SettingsActivity).apply {
@@ -608,7 +603,7 @@ class SettingsActivity : ComponentActivity() {
                     } else {
                         "已配置 ${manifest.entries.size} 首歌词"
                     }
-                    textSize = 13.5f
+                    textSize = 14f
                     setTextColor(palette.onSurfaceVariant)
                     setPadding(0, dp(4), dp(8), 0)
                 })
@@ -669,7 +664,7 @@ class SettingsActivity : ComponentActivity() {
                     manifest.enabled -> "仅覆盖播放器歌词 · 重开 Apple Music 后生效"
                     else -> "导入 TTF/OTF · 重开 Apple Music 后生效"
                 }
-                textSize = 13.5f
+                textSize = 14f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(dp(16), dp(4), dp(16), dp(12))
             })
@@ -780,7 +775,7 @@ class SettingsActivity : ComponentActivity() {
                     manifest.entries.isEmpty() -> "按 Apple Music ID 手动添加 TTML；不会在播放时联网识歌"
                     else -> "已配置 ${manifest.entries.size} 首；更改后重开 Apple Music 生效"
                 }
-                textSize = 13.5f
+                textSize = 14f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(dp(16), dp(4), dp(16), dp(12))
             })
@@ -860,7 +855,7 @@ class SettingsActivity : ComponentActivity() {
         if (state.totalCount == 0) {
             region.addView(TextView(this).apply {
                 text = "没有匹配的歌词"
-                textSize = 13.5f
+                textSize = 14f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(dp(16), dp(8), dp(16), dp(12))
             })
@@ -1521,7 +1516,7 @@ class SettingsActivity : ComponentActivity() {
             isFocusable = enabled
             alpha = if (enabled) 1f else 0.58f
             background = rippleDrawable()
-            setPadding(dp(16), dp(12), dp(10), dp(12))
+            setPadding(dp(20), dp(18), dp(16), dp(18))
 
             addView(LinearLayout(this@SettingsActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1538,12 +1533,12 @@ class SettingsActivity : ComponentActivity() {
                 })
                 addView(TextView(this@SettingsActivity).apply {
                     text = summary
-                    textSize = 13.5f
+                    textSize = 14f
                     setTextColor(palette.onSurfaceVariant)
                     setPadding(0, dp(4), dp(8), 0)
                 })
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(switch, LinearLayout.LayoutParams(dp(64), dp(48)))
+            addView(switch, LinearLayout.LayoutParams(dp(56), dp(48)).apply { marginStart = dp(12) })
             setOnClickListener { switch.isChecked = !switch.isChecked }
         }
     }
@@ -1625,7 +1620,7 @@ class SettingsActivity : ComponentActivity() {
             })
             addView(TextView(this@SettingsActivity).apply {
                 text = "统一调整非高亮歌词 · 更改后需重开 Apple Music"
-                textSize = 13.5f
+                textSize = 14f
                 setTextColor(palette.onSurfaceVariant)
                 setPadding(0, dp(4), 0, dp(2))
             })
@@ -1716,8 +1711,8 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun insetDivider(): View = divider().apply {
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
-            marginStart = dp(16)
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+            marginStart = dp(20)
         }
     }
 

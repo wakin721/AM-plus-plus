@@ -17,7 +17,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import dev.amenhancer.module.R
 import dev.amenhancer.module.ui.theme.AppAppearanceSettings
 import dev.amenhancer.module.ui.theme.AppThemeMode
 import dev.amenhancer.module.ui.theme.AppleMusicSettingsPalette
@@ -77,7 +76,7 @@ class AppearanceSettingsActivity : ComponentActivity() {
         })
         addView(TextView(this@AppearanceSettingsActivity).apply {
             text = "外观与主题"
-            textSize = 20f
+            textSize = 18f
             setTextColor(colors.onSurface)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
@@ -98,7 +97,7 @@ class AppearanceSettingsActivity : ComponentActivity() {
             text = "显示模式"
             textSize = 14f
             setTextColor(colors.onSurfaceVariant)
-            setPadding(dp(16), dp(12), dp(16), dp(10))
+            setPadding(dp(20), dp(12), dp(20), dp(10))
         })
         addView(LinearLayout(this@AppearanceSettingsActivity).apply {
             orientation = LinearLayout.VERTICAL
@@ -110,8 +109,8 @@ class AppearanceSettingsActivity : ComponentActivity() {
             AppThemeMode.entries.forEachIndexed { index, mode ->
                 if (index > 0) addView(View(this@AppearanceSettingsActivity).apply {
                     setBackgroundColor(colors.divider)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxOf(1, dp(1))).apply {
-                    marginStart = dp(16)
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+                    marginStart = dp(20)
                 })
                 addView(modeRow(mode))
             }
@@ -120,15 +119,15 @@ class AppearanceSettingsActivity : ComponentActivity() {
             text = "自动模式跟随系统的浅色或深色设置。"
             textSize = 13f
             setTextColor(colors.onSurfaceVariant)
-            setPadding(dp(16), dp(10), dp(16), 0)
+            setPadding(dp(20), dp(12), dp(20), 0)
         })
     }
 
     private fun modeRow(mode: AppThemeMode): View = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(52)
-        setPadding(dp(16), dp(12), dp(16), dp(12))
+        minimumHeight = dp(68)
+        setPadding(dp(20), dp(20), dp(20), dp(20))
         isClickable = true
         isFocusable = true
         isSelected = mode == appearance.mode
@@ -139,9 +138,8 @@ class AppearanceSettingsActivity : ComponentActivity() {
             setTextColor(colors.onSurface)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         addView(ImageView(this@AppearanceSettingsActivity).apply {
-            setImageResource(R.drawable.ic_status_check)
-            imageTintList = ColorStateList.valueOf(colors.primary)
-            visibility = if (mode == appearance.mode) View.VISIBLE else View.INVISIBLE
+            setImageDrawable(AppleMusicSelectionDrawable(mode == appearance.mode,
+                if (mode == appearance.mode) colors.primary else colors.switchTrackOff))
             contentDescription = null
         }, LinearLayout.LayoutParams(dp(24), dp(24)))
         for (index in 0 until childCount) {

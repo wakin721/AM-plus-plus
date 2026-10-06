@@ -216,9 +216,9 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
         }
         setPadding(
             dp(activity, horizontalPadding),
+            dp(activity, 18),
             dp(activity, 16),
-            dp(activity, 16),
-            dp(activity, 16),
+            dp(activity, 18),
         )
         val labels = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -243,7 +243,7 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
                 setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
                 setSingleLine(false)
 
-                setPadding(0, dp(activity, 2), 0, 0)
+                setPadding(0, dp(activity, 4), 0, 0)
             }, matchWidthWrapContent())
         }
         addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -549,15 +549,10 @@ internal fun EmbeddedSettingsHost.showEmbeddedTitleCorrectionModePicker(
     ) {
         val modes = TitleCorrectionMode.values()
         val current = controller.currentSettings().titleCorrectionMode
-        val labels = modes.map(TitleCorrectionMode::displayName).toTypedArray()
-        AlertDialog.Builder(activity)
-            .setTitle("歌曲名修正模式")
-            .setSingleChoiceItems(labels, modes.indexOf(current)) { dialog, which ->
-                modes.getOrNull(which)?.let(onSelected)
-                dialog.dismiss()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        showAppleMusicChoiceDialog(activity, "歌曲名修正模式",
+            modes.map(TitleCorrectionMode::displayName), modes.indexOf(current)) { which ->
+            modes.getOrNull(which)?.let(onSelected)
+        }
     }
 
 
@@ -586,9 +581,9 @@ internal fun EmbeddedSettingsHost.embeddedNavigationRow(
         contentDescription = title
         setPadding(
             dp(activity, horizontalPadding),
+            dp(activity, 18),
             dp(activity, 16),
-            dp(activity, 16),
-            dp(activity, 16),
+            dp(activity, 18),
         )
         if (clickable) setOnClickListener { onClick() }
         addView(LinearLayout(activity).apply {
@@ -608,7 +603,7 @@ internal fun EmbeddedSettingsHost.embeddedNavigationRow(
                     setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
                     setSingleLine(false)
 
-                    setPadding(0, dp(activity, 2), 0, 0)
+                    setPadding(0, dp(activity, 4), 0, 0)
                 }, matchWidthWrapContent())
             }
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -1102,10 +1097,9 @@ internal fun EmbeddedSettingsHost.embeddedDivider(activity: Activity): View = Vi
         setBackgroundColor(EmbeddedSettingsPalette.divider)
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(activity, 1),
+            1,
         ).apply {
             marginStart = dp(activity, 20)
-            marginEnd = dp(activity, 20)
         }
     }
 
@@ -1316,11 +1310,11 @@ internal fun EmbeddedSettingsHost.embeddedFeatureIconSize(activity: Activity): I
 
 
 internal fun EmbeddedSettingsHost.embeddedSettingRowHeight(activity: Activity, compactWide: Boolean = false): Int =
-        dp(activity, if (isEmbeddedPhone(activity)) 72 else if (compactWide) 68 else 56)
+        dp(activity, if (isEmbeddedPhone(activity)) 84 else if (compactWide) 68 else 56)
 
 
 internal fun EmbeddedSettingsHost.embeddedNavigationRowHeight(activity: Activity, compactWide: Boolean = false): Int =
-        dp(activity, if (isEmbeddedPhone(activity)) 72 else if (compactWide) 60 else 52)
+        dp(activity, if (isEmbeddedPhone(activity)) 84 else if (compactWide) 60 else 52)
 
 
 internal fun EmbeddedSettingsHost.embeddedSearchFieldHeight(activity: Activity): Int =

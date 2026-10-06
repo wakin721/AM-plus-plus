@@ -56,6 +56,12 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
         val onVariant = colors.onSurfaceVariant
 
         content.addView(View(activity), LinearLayout.LayoutParams(1, dp(24)))
+        content.addView(TextView(activity).apply {
+            text = "音频"
+            textSize = 14f
+            setTextColor(onVariant)
+            setPadding(dp(20), dp(12), dp(20), dp(10))
+        })
         content.addView(LinearLayout(activity).apply {
             tag = CARD_TAG
             orientation = LinearLayout.VERTICAL
@@ -67,14 +73,6 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
             elevation = 0f
             clipToOutline = true
 
-            addView(TextView(activity).apply {
-                text = "音频"
-                textSize = 14f
-                setTextColor(onVariant)
-                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-                setPadding(dp(16), dp(18), dp(16), dp(8))
-            })
-
             addView(LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -82,7 +80,7 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
                 isClickable = true
                 isFocusable = true
                 contentDescription = "USB Bit-Perfect 设置"
-                setPadding(dp(16), dp(10), dp(14), dp(14))
+                setPadding(dp(20), dp(18), dp(20), dp(18))
                 addView(LinearLayout(activity).apply {
                     orientation = LinearLayout.VERTICAL
                     addView(TextView(activity).apply {
@@ -93,7 +91,7 @@ internal object UsbBitPerfectSettingsInjector : Application.ActivityLifecycleCal
                     })
                     addView(TextView(activity).apply {
                         text = "查看总开关、实时状态与 AudioTrack → Mixer → USB DAC 音频链路"
-                        textSize = 13.5f
+                        textSize = 14f
                         setTextColor(onVariant)
                         setPadding(0, dp(4), dp(8), 0)
                     })

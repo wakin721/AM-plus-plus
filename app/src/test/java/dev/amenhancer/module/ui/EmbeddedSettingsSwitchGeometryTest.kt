@@ -10,15 +10,17 @@ class EmbeddedSettingsSwitchGeometryTest {
         for (density in listOf(1f, 1.5f, 2.625f, 3f, 4f)) {
             for (checked in listOf(false, true)) {
                 val shape = embeddedSwitchGeometry(56f * density, 44f * density, density, checked, false)
-                assertEquals(14f * density, shape.thumbRadius, 0.001f)
-                assertEquals(2f * density, shape.thumbY - shape.thumbRadius - shape.top, 0.001f)
-                assertEquals(2f * density, shape.bottom - shape.thumbY - shape.thumbRadius, 0.001f)
+                val radius = if (checked) 13f else 8.5f
+                val inset = 17f - radius
+                assertEquals(radius * density, shape.thumbRadius, 0.001f)
+                assertEquals(inset * density, shape.thumbY - shape.thumbRadius - shape.top, 0.001f)
+                assertEquals(inset * density, shape.bottom - shape.thumbY - shape.thumbRadius, 0.001f)
                 val endInset = if (checked) {
                     shape.right - shape.thumbX - shape.thumbRadius
                 } else {
                     shape.thumbX - shape.thumbRadius - shape.left
                 }
-                assertEquals(2f * density, endInset, 0.001f)
+                assertEquals(inset * density, endInset, 0.001f)
             }
         }
     }
@@ -46,7 +48,8 @@ class EmbeddedSettingsSwitchGeometryTest {
                 assertTrue(shape.thumbX + shape.thumbRadius < shape.right)
                 assertTrue(shape.thumbY - shape.thumbRadius > shape.top)
                 assertTrue(shape.thumbY + shape.thumbRadius < shape.bottom)
-                assertEquals((shape.bottom - shape.top) * 14f / 32f, shape.thumbRadius, 0.001f)
+                val radius = if (checked) 13f else 8.5f
+                assertEquals((shape.bottom - shape.top) * radius / 34f, shape.thumbRadius, 0.001f)
             }
         }
     }

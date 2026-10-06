@@ -61,17 +61,17 @@ internal fun embeddedSwitchGeometry(
     checked: Boolean,
     rtl: Boolean,
 ): EmbeddedSwitchGeometry {
-    val scale = minOf(density, width / 56f, height / 44f).coerceAtLeast(0f)
-    val left = (width - 56f * scale) / 2f
-    val top = (height - 32f * scale) / 2f
+    val scale = minOf(density, width / 54f, height / 44f).coerceAtLeast(0f)
+    val left = (width - 54f * scale) / 2f
+    val top = (height - 34f * scale) / 2f
     return EmbeddedSwitchGeometry(
         left = left,
         top = top,
-        right = left + 56f * scale,
-        bottom = top + 32f * scale,
-        trackRadius = 16f * scale,
-        thumbX = left + (if (checked != rtl) 40f else 16f) * scale,
+        right = left + 54f * scale,
+        bottom = top + 34f * scale,
+        trackRadius = 17f * scale,
+        thumbX = left + (if (checked != rtl) 37f else 17f) * scale,
         thumbY = height / 2f,
-        thumbRadius = 14f * scale,
+        thumbRadius = (if (checked) 13f else 8.5f) * scale,
     )
 }

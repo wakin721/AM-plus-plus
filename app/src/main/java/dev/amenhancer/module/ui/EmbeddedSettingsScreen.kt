@@ -36,7 +36,7 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     }
     val topBar = FrameLayout(activity)
     val title = TextView(activity).apply {
-        textSize = 20f
+        textSize = 18f
         gravity = Gravity.CENTER
         setTextColor(EmbeddedSettingsPalette.onSurface)
         setTypeface(typeface, Typeface.BOLD)
