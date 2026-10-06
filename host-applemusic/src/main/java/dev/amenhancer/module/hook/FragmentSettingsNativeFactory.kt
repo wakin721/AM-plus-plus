@@ -223,7 +223,7 @@ internal class FragmentSettingsRuntime(
         val activity = getActivity?.invoke(fragment) as? Activity ?: return
         if (mainClass?.isInstance(activity) != true || activity.packageName != ModuleConstants.TARGET_PACKAGE ||
             activity.isFinishing || activity.isDestroyed) return
-        // EmbeddedSettingsHost supplies its existing complete controller, dialog and SAF router here.
+        // EmbeddedSettingsHost supplies its complete controller, secondary page and SAF router here.
         onOpen?.invoke(activity)
     }
 

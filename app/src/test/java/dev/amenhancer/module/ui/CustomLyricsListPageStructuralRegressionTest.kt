@@ -83,7 +83,7 @@ class CustomLyricsListPageStructuralRegressionTest {
         assertTrue(embeddedSearch.contains("inputType = InputType.TYPE_CLASS_TEXT"))
         assertTrue(embeddedSearch.contains("imeOptions = EditorInfo.IME_ACTION_SEARCH"))
         assertTrue(embeddedSearch.contains("showSoftInputOnFocus = true"))
-        assertTrue(embeddedHost.contains("clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)"))
+        assertTrue(embeddedHost.contains("class EmbeddedSettingsPageSurface"))
         assertTrue(embeddedHost.contains("setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)"))
     }
 

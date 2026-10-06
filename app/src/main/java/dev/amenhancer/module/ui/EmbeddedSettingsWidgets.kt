@@ -124,34 +124,36 @@ internal fun EmbeddedSettingsHost.embeddedFontCard(
 internal fun EmbeddedSettingsHost.embeddedCard(
         activity: Activity,
         title: String?,
-        outlined: Boolean = true,
         content: LinearLayout.() -> Unit,
     ): LinearLayout = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        background = GradientDrawable().apply {
-            setColor(if (outlined) Color.WHITE else Color.TRANSPARENT)
-            if (outlined) setStroke(dp(activity, 1), EmbeddedSettingsPalette.outline)
-            cornerRadius = embeddedCardCornerRadius(activity)
-        }
         elevation = 0f
         title?.let { section -> addView(embeddedSectionLabel(activity, section)) }
-        content()
+        addView(LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                setColor(EmbeddedSettingsPalette.softSurface)
+                cornerRadius = embeddedCardCornerRadius(activity)
+            }
+            clipToOutline = true
+            content()
+        }, matchWidthWrapContent())
     }
 
 
 internal fun EmbeddedSettingsHost.embeddedSectionLabel(activity: Activity, text: String): TextView =
         TextView(activity).apply {
             this.text = text
-            textSize = embeddedTextSize(activity, 14f, 14f)
-            setTextColor(EmbeddedSettingsPalette.accent)
-            setTypeface(typeface, Typeface.BOLD)
+            textSize = 14f
+            setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
+            setTypeface(typeface, Typeface.NORMAL)
             setSingleLine(false)
-            val horizontalPadding = dp(activity, if (isEmbeddedPhone(activity)) 12 else 6)
+            val horizontalPadding = dp(activity, 20)
             setPadding(
                 horizontalPadding,
-                dp(activity, if (isEmbeddedPhone(activity)) 10 else 8),
+                dp(activity, 20),
                 horizontalPadding,
-                dp(activity, if (isEmbeddedPhone(activity)) 4 else 6),
+                dp(activity, 10),
             )
         }
 
@@ -211,22 +213,16 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
         isEnabled = enabled
         alpha = if (enabled) 1f else 0.58f
         val horizontalPadding = when {
-            isEmbeddedPhone(activity) -> 12
+            isEmbeddedPhone(activity) -> 20
             compactWidePadding -> 8
-            else -> 12
+            else -> 20
         }
         setPadding(
             dp(activity, horizontalPadding),
-            dp(activity, if (isEmbeddedPhone(activity)) 6 else 4),
-            dp(activity, if (isEmbeddedPhone(activity)) 8 else 8),
-            dp(activity, if (isEmbeddedPhone(activity)) 6 else 4),
+            dp(activity, 16),
+            dp(activity, 16),
+            dp(activity, 16),
         )
-        val resolvedIcon = iconDrawable
-            ?: iconRes?.let { activity.getDrawable(it) }
-            ?: EmbeddedGlyphDrawable(EmbeddedGlyphKind.Document, iconTint)
-        addView(embeddedFeatureIcon(activity, resolvedIcon, iconTint), LinearLayout.LayoutParams(embeddedFeatureIconSize(activity), embeddedFeatureIconSize(activity)).apply {
-            marginEnd = dp(activity, if (isEmbeddedPhone(activity)) 8 else 12)
-        })
         val labels = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             addView(LinearLayout(activity).apply {
@@ -234,7 +230,7 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
                 gravity = Gravity.CENTER_VERTICAL
                 addView(TextView(activity).apply {
                     text = title
-                    textSize = embeddedTextSize(activity, 16f, 14f)
+                    textSize = embeddedTextSize(activity, 17f, 17f)
                     setTextColor(EmbeddedSettingsPalette.onSurface)
                     setTypeface(typeface, Typeface.NORMAL)
                     setSingleLine(false)
@@ -246,13 +242,10 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
             }, matchWidthWrapContent())
             addView(TextView(activity).apply {
                 text = summary
-                textSize = embeddedTextSize(activity, 13f, 12f)
+                textSize = embeddedTextSize(activity, 14f, 14f)
                 setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
                 setSingleLine(false)
-                maxLines = if (isEmbeddedPhone(activity)) 2 else 2
-                if (isEmbeddedPhone(activity)) {
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                }
+
                 setPadding(0, dp(activity, 2), 0, 0)
             }, matchWidthWrapContent())
         }
@@ -262,6 +255,19 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
             isEnabled = enabled
             minimumWidth = dp(activity, 44)
             minimumHeight = dp(activity, 44)
+            thumbDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.WHITE)
+                setSize(dp(activity, 28), dp(activity, 28))
+            }
+            trackDrawable = GradientDrawable().apply {
+                cornerRadius = dp(activity, 16).toFloat()
+                setColor(EmbeddedSettingsPalette.switchTrackOff)
+                setSize(dp(activity, 56), dp(activity, 32))
+            }
+            splitTrack = false
+            showText = false
+            switchMinWidth = dp(activity, 56)
             thumbTintList = embeddedSwitchThumbColors()
             trackTintList = embeddedSwitchTrackColors()
         }
@@ -295,7 +301,7 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
                 ).apply { marginEnd = dp(activity, 4) })
             }
             addView(toggle, LinearLayout.LayoutParams(
-                dp(activity, if (isEmbeddedPhone(activity)) 48 else 46),
+                dp(activity, 56),
                 dp(activity, if (isEmbeddedPhone(activity)) 44 else 44),
             ))
         }
@@ -501,7 +507,6 @@ internal fun EmbeddedSettingsHost.embeddedDpiOverrideRow(
             EmbeddedGlyphKind.VideoDisplay,
             EmbeddedSettingsPalette.accent,
         ),
-        inlineSummary = true,
         onClick = { showEmbeddedDpiOverrideDialog(activity, value, onChanged) },
     )
 
@@ -583,31 +588,25 @@ internal fun EmbeddedSettingsHost.embeddedNavigationRow(
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = embeddedNavigationRowHeight(activity, compactWidePadding)
         val horizontalPadding = when {
-            isEmbeddedPhone(activity) -> 12
+            isEmbeddedPhone(activity) -> 20
             compactWidePadding -> 8
-            else -> 12
+            else -> 20
         }
         isClickable = clickable
         isFocusable = clickable
         contentDescription = title
         setPadding(
             dp(activity, horizontalPadding),
-            dp(activity, if (isEmbeddedPhone(activity)) 6 else 4),
-            dp(activity, if (isEmbeddedPhone(activity)) 8 else 8),
-            dp(activity, if (isEmbeddedPhone(activity)) 6 else 4),
+            dp(activity, 16),
+            dp(activity, 16),
+            dp(activity, 16),
         )
         if (clickable) setOnClickListener { onClick() }
-        val resolvedIcon = iconDrawable
-            ?: iconRes?.let { activity.getDrawable(it) }
-            ?: EmbeddedGlyphDrawable(EmbeddedGlyphKind.Document, iconTint)
-        addView(embeddedFeatureIcon(activity, resolvedIcon, iconTint), LinearLayout.LayoutParams(embeddedFeatureIconSize(activity), embeddedFeatureIconSize(activity)).apply {
-            marginEnd = dp(activity, if (isEmbeddedPhone(activity)) 8 else 12)
-        })
         addView(LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             addView(TextView(activity).apply {
                 text = title
-                textSize = embeddedTextSize(activity, 16f, 14f)
+                textSize = embeddedTextSize(activity, 17f, 17f)
                 setTextColor(EmbeddedSettingsPalette.onSurface)
                 setTypeface(typeface, Typeface.NORMAL)
                 setSingleLine(false)
@@ -616,13 +615,10 @@ internal fun EmbeddedSettingsHost.embeddedNavigationRow(
             if (!inlineSummary) {
                 addView(TextView(activity).apply {
                     text = summary
-                    textSize = embeddedTextSize(activity, 13f, 12f)
+                    textSize = embeddedTextSize(activity, 14f, 14f)
                     setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
                     setSingleLine(false)
-                    maxLines = if (isEmbeddedPhone(activity)) 2 else 2
-                    if (isEmbeddedPhone(activity)) {
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                    }
+
                     setPadding(0, dp(activity, 2), 0, 0)
                 }, matchWidthWrapContent())
             }
@@ -630,7 +626,7 @@ internal fun EmbeddedSettingsHost.embeddedNavigationRow(
         if (inlineSummary) {
             addView(TextView(activity).apply {
                 text = summary
-                textSize = embeddedTextSize(activity, 13f, 12f)
+                textSize = embeddedTextSize(activity, 14f, 14f)
                 setTextColor(EmbeddedSettingsPalette.onSurfaceVariant)
                 gravity = Gravity.CENTER_VERTICAL or Gravity.END
                 setSingleLine(true)
@@ -1304,29 +1300,6 @@ internal fun EmbeddedSettingsHost.isEmbeddedPhone(activity: Activity): Boolean =
 internal fun EmbeddedSettingsHost.embeddedTextSize(activity: Activity, phone: Float, wide: Float): Float =
         if (isEmbeddedPhone(activity)) phone else wide
 
-    /**
-     * The supplied reference is a 1280dp-wide tablet composition: 626dp for
-     * the main panel and 503dp for the lyrics page.  Phones keep Android's
-     * normal dialog sizing so text and touch targets remain usable.
-     */
-
-internal fun EmbeddedSettingsHost.embeddedDialogWidth(activity: Activity, page: EmbeddedSettingsPage): Int? {
-        if (isEmbeddedPhone(activity)) return null
-        // AlertDialog applies a 16dp inset on each side. These fractions target
-        // the visible white panel after that inset, not the outer window.
-        val fraction = if (page == EmbeddedSettingsPage.CUSTOM_LYRICS) 0.418f else 0.514f
-        return (activity.resources.displayMetrics.widthPixels * fraction).toInt()
-    }
-
-
-internal fun EmbeddedSettingsHost.embeddedDialogContentHeight(activity: Activity, page: EmbeddedSettingsPage): Int {
-        val height = activity.resources.displayMetrics.heightPixels
-        if (isEmbeddedPhone(activity)) return (height * 0.70f).toInt()
-        val fraction = if (page == EmbeddedSettingsPage.CUSTOM_LYRICS) 0.888f else 0.837f
-        return (height * fraction).toInt()
-    }
-
-
 internal fun EmbeddedSettingsHost.embeddedLyricsEditorDialogWidth(activity: Activity): Int {
         val targetWidthDp = embeddedWidthDp(activity) *
             if (isEmbeddedPhone(activity)) 0.88f else 0.62f
@@ -1335,7 +1308,7 @@ internal fun EmbeddedSettingsHost.embeddedLyricsEditorDialogWidth(activity: Acti
 
 
 internal fun EmbeddedSettingsHost.embeddedLyricsEditorDialogHeight(activity: Activity): Int =
-        embeddedDialogContentHeight(activity, EmbeddedSettingsPage.CUSTOM_LYRICS)
+        (activity.resources.displayMetrics.heightPixels * if (isEmbeddedPhone(activity)) 0.70f else 0.888f).toInt()
 
 
 internal fun EmbeddedSettingsHost.embeddedTopBarHeight(activity: Activity): Int =
@@ -1379,7 +1352,7 @@ internal fun EmbeddedSettingsHost.embeddedSwitchThumbColors(): ColorStateList = 
             intArrayOf(android.R.attr.state_checked),
             intArrayOf(),
         ),
-        intArrayOf(EmbeddedSettingsPalette.primary, EmbeddedSettingsPalette.disabledText),
+        intArrayOf(Color.WHITE, Color.WHITE),
     )
 
 
@@ -1397,7 +1370,7 @@ internal fun EmbeddedSettingsHost.dp(activity: Activity, value: Int): Int =
 
 
 internal fun EmbeddedSettingsHost.embeddedCardCornerRadius(activity: Activity): Float =
-        dp(activity, 8).toFloat()
+        dp(activity, 16).toFloat()
 
 
 internal fun EmbeddedSettingsHost.matchWidthWrapContent(): LinearLayout.LayoutParams =
@@ -1405,4 +1378,3 @@ internal fun EmbeddedSettingsHost.matchWidthWrapContent(): LinearLayout.LayoutPa
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         )
-

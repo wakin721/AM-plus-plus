@@ -20,6 +20,8 @@ interface SettingsViewBridge {
     fun refreshNativePreferenceAdapter(root: ViewGroup?)
 }
 interface SettingsEntryObserver {
+    fun hasSettingsPage(activity: Activity): Boolean = false
+    fun onSettingsBackPressed(activity: Activity): Boolean = false
     fun onSettingsPreferencesReady(fragment: Any, activity: Activity)
     fun onSettingsFragmentViewCreated(fragment: Any, activity: Activity, view: View?)
     fun onSettingsFragmentResumed(fragment: Any, activity: Activity)

@@ -27,7 +27,7 @@ class EmbeddedSettingsDraftTest {
     }
 
     @Test
-    fun `save button retries all changes when the cellular toggle also fails to save`() {
+    fun `leaving the page retries all changes when the cellular toggle also fails to save`() {
         var stored = ModuleSettings()
         var writable = false
         val draft = EmbeddedSettingsDraft(stored) { next ->
@@ -44,6 +44,23 @@ class EmbeddedSettingsDraftTest {
         writable = true
         assertTrue(draft.save())
         assertEquals(pending.copy(forceCellularDataEntryEnabled = true), stored)
+    }
+
+    @Test
+    fun `refresh cannot discard pending writes and reloads external changes after retry`() {
+        var writable = false
+        val draft = EmbeddedSettingsDraft(ModuleSettings()) { writable }
+        val pending = draft.settings.copy(futureBlurEnabled = false)
+        assertFalse(draft.update(pending))
+        assertTrue(draft.hasUnsavedChanges)
+        draft.reload(ModuleSettings())
+        assertEquals(pending, draft.settings)
+        writable = true
+        assertTrue(draft.save())
+        assertFalse(draft.hasUnsavedChanges)
+        val external = pending.copy(customLyricsEnabled = true)
+        draft.reload(external)
+        assertEquals(external, draft.settings)
     }
 
     @Test

@@ -2,9 +2,7 @@ package dev.amenhancer.module.ui
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.Dialog
 import android.content.Context
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
@@ -13,14 +11,12 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
-import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -28,279 +24,6 @@ import dev.amenhancer.glass.GlassPolicy
 import dev.amenhancer.module.CurrentSongDetails
 import dev.amenhancer.module.model.CustomLyricsSources
 import dev.amenhancer.module.model.ModuleSettings
-import java.lang.ref.WeakReference
-
-internal fun EmbeddedSettingsHost.showSettingsDialog(activity: Activity) {
-        val currentDialog = dialogReference?.get()
-        if (currentDialog?.isShowing == true) return
-
-        val initialSettings = runCatching { controller.currentSettings() }.getOrElse {
-            Toast.makeText(activity, "无法读取 AM++ 设置", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val draft = EmbeddedSettingsDraft(initialSettings, controller::saveOrdinarySettings)
-        var page = EmbeddedSettingsPage.MAIN
-        var dialogReady = false
-        lateinit var dialog: AlertDialog
-
-        val panelBackground = GradientDrawable().apply {
-            setColor(EmbeddedSettingsPalette.pageBackground)
-            cornerRadius = embeddedCardCornerRadius(activity)
-        }
-        val pageHost = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            val hostInset = dp(activity, if (isEmbeddedPhone(activity)) 0 else 8)
-            setPadding(hostInset, 0, hostInset, 0)
-            setBackgroundColor(EmbeddedSettingsPalette.pageBackground)
-        }
-        val topBar = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = embeddedTopBarHeight(activity)
-            val phoneHeaderInset = dp(activity, if (isEmbeddedPhone(activity)) 8 else 0)
-            setPadding(phoneHeaderInset, 0, phoneHeaderInset, 0)
-        }
-        val backButton = ImageView(activity).apply {
-            setImageDrawable(
-                embeddedSvgDrawable(EmbeddedSvgIcon.Back) ?: EmbeddedGlyphDrawable(
-                    EmbeddedGlyphKind.BackArrow,
-                    EmbeddedSettingsPalette.primary,
-                    strokeWidthFraction = 0.055f,
-                ),
-            )
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            contentDescription = "返回"
-            isClickable = true
-            isFocusable = true
-            setPadding(dp(activity, 8), dp(activity, 8), dp(activity, 8), dp(activity, 8))
-        }
-        val moduleIcon = ImageView(activity).apply {
-            setImageDrawable(EmbeddedAmppBrandDrawable())
-            contentDescription = "AM++"
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setPadding(0, 0, 0, 0)
-        }
-        val pageTitle = TextView(activity).apply {
-            textSize = embeddedTextSize(activity, 19f, 18f)
-            setTextColor(EmbeddedSettingsPalette.onSurface)
-            setTypeface(typeface, if (isEmbeddedPhone(activity)) Typeface.BOLD else Typeface.NORMAL)
-            setSingleLine(false)
-            maxLines = 2
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val saveButton = TextView(activity).apply {
-            text = "保存"
-            textSize = embeddedTextSize(activity, 15f, 14f)
-            gravity = Gravity.CENTER
-            setTextColor(EmbeddedSettingsPalette.primary)
-            isClickable = true
-            isFocusable = true
-            setPadding(dp(activity, 12), dp(activity, 8), dp(activity, 8), dp(activity, 8))
-            contentDescription = "保存 AM++ 设置"
-        }
-        topBar.addView(backButton, LinearLayout.LayoutParams(dp(activity, 44), embeddedTopBarHeight(activity)))
-        topBar.addView(moduleIcon, LinearLayout.LayoutParams(embeddedHeaderIconSize(activity), embeddedHeaderIconSize(activity)).apply {
-            marginStart = dp(activity, if (isEmbeddedPhone(activity)) 0 else 8)
-            marginEnd = dp(activity, 8)
-        })
-        topBar.addView(pageTitle)
-        topBar.addView(saveButton, LinearLayout.LayoutParams(dp(activity, 56), embeddedTopBarHeight(activity)))
-        pageHost.addView(topBar, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            embeddedTopBarHeight(activity),
-        ))
-        val headerDivider = View(activity).apply {
-            setBackgroundColor(EmbeddedSettingsPalette.divider)
-            visibility = View.GONE
-        }
-        pageHost.addView(headerDivider, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(activity, 1),
-        ))
-        val pageContent = FrameLayout(activity)
-        pageHost.addView(pageContent, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            0,
-            1f,
-        ))
-
-        // Keep the close action inside our content tree.  AlertDialog's default
-        // button panel adds theme-dependent padding that made the phone layout
-        // look like it had an oversized blank footer.
-        val closeBar = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            setBackgroundColor(EmbeddedSettingsPalette.pageBackground)
-            val horizontalPadding = dp(activity, if (isEmbeddedPhone(activity)) 16 else 12)
-            setPadding(horizontalPadding, 0, horizontalPadding, 0)
-        }
-        val closeButton = TextView(activity).apply {
-            text = "关闭"
-            textSize = embeddedTextSize(activity, 16f, 14f)
-            gravity = Gravity.CENTER
-            setTextColor(EmbeddedSettingsPalette.primary)
-            isClickable = true
-            isFocusable = true
-            contentDescription = "关闭 AM++ 设置"
-            setOnClickListener { dialog.dismiss() }
-        }
-        closeBar.addView(closeButton, LinearLayout.LayoutParams(
-            dp(activity, if (isEmbeddedPhone(activity)) 64 else 56),
-            dp(activity, if (isEmbeddedPhone(activity)) 56 else 48),
-        ))
-
-        val root = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            background = panelBackground
-            clipToOutline = true
-            addView(pageHost, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f,
-            ))
-            addView(closeBar, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(activity, if (isEmbeddedPhone(activity)) 56 else 48),
-            ))
-        }
-
-        fun saveDraft(close: Boolean) {
-            if (draft.save()) {
-                Toast.makeText(activity, "已保存；需要重启的设置请重开 Apple Music。", Toast.LENGTH_LONG).show()
-                if (close) dialog.dismiss()
-            } else {
-                Toast.makeText(activity, "保存 AM++ 设置失败", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        fun updateDraft(next: ModuleSettings) {
-            if (!draft.update(next)) {
-                Toast.makeText(activity, "保存 AM++ 设置失败", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        fun syncBottomCloseButton() {
-            closeBar.visibility = if (page == EmbeddedSettingsPage.MAIN) View.VISIBLE else View.GONE
-        }
-
-        fun syncDialogLayout() {
-            if (!dialogReady || !dialog.isShowing) return
-            embeddedDialogWidth(activity, page)?.let { width ->
-                dialog.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
-        }
-
-        fun renderPage() {
-            root.minimumHeight = embeddedDialogContentHeight(activity, page)
-            pageContent.removeAllViews()
-            val scroll = ScrollView(activity).apply {
-                isFillViewport = true
-                isVerticalScrollBarEnabled = false
-        val horizontalInset = if (page == EmbeddedSettingsPage.CUSTOM_LYRICS) 4 else 8
-                setPadding(
-                    dp(activity, horizontalInset),
-                    0,
-                    dp(activity, horizontalInset),
-                    dp(activity, if (page == EmbeddedSettingsPage.CUSTOM_LYRICS) 8 else 12),
-                )
-            }
-            val content = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-            }
-            scroll.addView(content)
-            pageContent.addView(scroll, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ))
-
-            val customLyricsPage = page == EmbeddedSettingsPage.CUSTOM_LYRICS
-            pageTitle.text = if (customLyricsPage) "自定义歌词" else "AM++"
-            (pageTitle.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
-                params.marginStart = dp(activity, if (customLyricsPage && !isEmbeddedPhone(activity)) 20 else 0)
-                pageTitle.layoutParams = params
-            }
-            backButton.visibility = if (customLyricsPage) View.VISIBLE else View.GONE
-            moduleIcon.visibility = if (customLyricsPage) View.GONE else View.VISIBLE
-            headerDivider.visibility = if (customLyricsPage) View.VISIBLE else View.GONE
-            if (customLyricsPage) {
-                renderEmbeddedCustomLyricsPage(
-                    activity = activity,
-                    parent = content,
-                    settings = draft.settings,
-                    song = controller.currentSongDetails(),
-                    onSettingsChanged = ::updateDraft,
-                )
-            } else {
-                renderEmbeddedMainPage(
-                    activity = activity,
-                    parent = content,
-                    settings = draft.settings,
-                    lyricsCount = runCatching { controller.lyricsEntries().size }.getOrDefault(0),
-                    onSettingsChanged = ::updateDraft,
-                    onCellularDataEntryChanged = { enabled ->
-                        if (!draft.updateCellularDataEntry(enabled)) {
-                            Toast.makeText(activity, "保存 AM++ 设置失败", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onOpenCustomLyrics = {
-                        page = EmbeddedSettingsPage.CUSTOM_LYRICS
-                        renderPage()
-                    },
-                    onChooseFont = {
-                        launchSafPicker(
-                            activity,
-                            EmbeddedSafOperation.Font,
-                            "*/*",
-                            EMBEDDED_FONT_MIME_TYPES,
-                        )
-                    },
-                    onClearFont = { runAsync(activity, controller::clearFont) },
-                )
-            }
-            syncBottomCloseButton()
-            syncDialogLayout()
-        }
-
-        backButton.setOnClickListener {
-            if (page == EmbeddedSettingsPage.CUSTOM_LYRICS) {
-                page = EmbeddedSettingsPage.MAIN
-                renderPage()
-            } else {
-                dialog.dismiss()
-            }
-        }
-        saveButton.setOnClickListener { saveDraft(close = true) }
-        dialog = AlertDialog.Builder(activity)
-            .setView(root)
-            .create()
-        dialog.setOnShowListener {
-            dialogReady = true
-            dialog.window?.let { window ->
-                // Apple Music's host window marks injected AlertDialogs as
-                // ALT_FOCUSABLE_IM. That leaves the search EditText focused
-                // while InputMethodManager keeps serving the host RecyclerView.
-                // Let this dialog participate in IME focus and resize for the
-                // keyboard instead of relying on the host's window policy.
-                window.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
-                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-                window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            }
-            syncBottomCloseButton()
-            syncDialogLayout()
-        }
-        val weakDialog = WeakReference<Dialog>(dialog)
-        dialog.setOnDismissListener {
-            if (dialogReference?.get() === weakDialog.get()) {
-                dialogReference = null
-                pageRefresh = null
-            }
-        }
-        dialogReference = weakDialog
-        pageRefresh = { renderPage() }
-        renderPage()
-        dialog.show()
-    }
-
 
 internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
         activity: Activity,
@@ -313,7 +36,7 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
         onChooseFont: () -> Unit,
         onClearFont: () -> Unit,
     ) {
-        parent.addView(embeddedCard(activity, "功能", outlined = false) {
+        parent.addView(embeddedCard(activity, "功能") {
             addView(embeddedSettingRow(
                 activity,
                 "平板双栏播放器",
@@ -480,8 +203,9 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
             onClearFont = onClearFont,
         ))
         parent.addView(embeddedSpacer(activity, 20))
-        parent.addView(embeddedSectionLabel(activity, "应用"))
-        parent.addView(embeddedNavigationRow(activity, "插件", "导入 ZIP、管理启用状态与冲突", onClick = { showPluginManagement(activity) }))
+        parent.addView(embeddedCard(activity, "应用") {
+            addView(embeddedNavigationRow(activity, "插件", "导入 ZIP、管理启用状态与冲突", onClick = { showPluginManagement(activity) }))
+        })
         parent.addView(embeddedInfoCard(
             activity,
             "配置保存在 Apple Music 私有目录中",
@@ -506,35 +230,37 @@ internal fun EmbeddedSettingsHost.renderEmbeddedCustomLyricsPage(
         val entries = runCatching { controller.lyricsEntries() }.getOrDefault(emptyList())
         customLyricsListState.update(entries, customLyricsSearchQuery)
 
-        parent.addView(embeddedSettingRow(
-            activity,
-            "自定义歌词替换",
-            "按 Apple Music ID 注入，更改后重开 Apple Music 生效",
-            settings.customLyricsEnabled,
-            iconDrawable = EmbeddedGlyphDrawable(
-                EmbeddedGlyphKind.Exchange,
-                EmbeddedSettingsPalette.accent,
-            ),
-            compactWidePadding = true,
-        ) {
-            onSettingsChanged(settings.copy(customLyricsEnabled = it))
-            // Re-render so the dependent automatic-lyrics switch changes its
-            // enabled state without leaving the custom-lyrics page.
-            pageRefresh?.invoke()
+        parent.addView(embeddedCard(activity, "歌词") {
+            addView(embeddedSettingRow(
+                activity,
+                "自定义歌词替换",
+                "按 Apple Music ID 注入，更改后重开 Apple Music 生效",
+                settings.customLyricsEnabled,
+                iconDrawable = EmbeddedGlyphDrawable(
+                    EmbeddedGlyphKind.Exchange,
+                    EmbeddedSettingsPalette.accent,
+                ),
+                compactWidePadding = true,
+            ) {
+                onSettingsChanged(settings.copy(customLyricsEnabled = it))
+                // Re-render so the dependent automatic-lyrics switch changes its
+                // enabled state without leaving the custom-lyrics page.
+                pageRefresh?.invoke()
+            })
+            addView(embeddedDivider(activity))
+            addView(embeddedSettingRow(
+                activity,
+                "自动实时补全",
+                "非逐字歌词自动查找 AMLL、Lunabeat 和我的仓库，关闭后仅使用已配置歌词",
+                settings.automaticLyricsEnabled,
+                enabled = settings.customLyricsEnabled,
+                iconDrawable = EmbeddedGlyphDrawable(
+                    EmbeddedGlyphKind.Exchange,
+                    EmbeddedSettingsPalette.accent,
+                ),
+                compactWidePadding = true,
+            ) { onSettingsChanged(settings.copy(automaticLyricsEnabled = it)) })
         })
-        parent.addView(embeddedSpacer(activity, if (isEmbeddedPhone(activity)) 10 else 14))
-        parent.addView(embeddedSettingRow(
-            activity,
-            "自动实时补全",
-            "非逐字歌词自动查找 AMLL、Lunabeat 和我的仓库，关闭后仅使用已配置歌词",
-            settings.automaticLyricsEnabled,
-            enabled = settings.customLyricsEnabled,
-            iconDrawable = EmbeddedGlyphDrawable(
-                EmbeddedGlyphKind.Exchange,
-                EmbeddedSettingsPalette.accent,
-            ),
-            compactWidePadding = true,
-        ) { onSettingsChanged(settings.copy(automaticLyricsEnabled = it)) })
         parent.addView(embeddedSpacer(activity, if (isEmbeddedPhone(activity)) 10 else 14))
 
         val lyricsContent = LinearLayout(activity).apply {
@@ -727,7 +453,7 @@ internal fun EmbeddedSettingsHost.embeddedCustomLyricsEntryRow(
         // plus symmetric card padding is the complete intrinsic height.
         minimumHeight = dp(activity, if (isEmbeddedPhone(activity)) 60 else 56)
         background = GradientDrawable().apply {
-            setColor(Color.WHITE)
+            setColor(EmbeddedSettingsPalette.softSurface)
             setStroke(dp(activity, 1), EmbeddedSettingsPalette.outline)
             cornerRadius = dp(activity, 8).toFloat()
         }
@@ -854,4 +580,3 @@ internal fun EmbeddedSettingsHost.embeddedCustomLyricsSourceName(source: String)
         CustomLyricsSources.LUNABEAT -> "Lunabeat"
         else -> "手动 TTML"
     }
-

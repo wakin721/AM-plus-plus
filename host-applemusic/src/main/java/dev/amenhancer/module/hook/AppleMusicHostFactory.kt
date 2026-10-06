@@ -26,9 +26,15 @@ object AppleMusicHostFactory {
     fun settingsViewBridge(context: android.content.Context, onOpen: (android.app.Activity)->Unit): SettingsViewBridge =
         if (fragmentFamily(context)) FragmentSettingsNativeFactory.viewBridge(context,onOpen)
         else LegacySettingsViewBridge(context,onOpen)
-    fun installSettingsEntry(context: android.content.Context, loader: ClassLoader, observer: SettingsEntryObserver) =
+    fun installSettingsEntry(context: android.content.Context, loader: ClassLoader, observer: SettingsEntryObserver) {
+        val names = settingsNames(context)
+        SettingsPageBackInstaller.install(loader, listOfNotNull(
+            names.optString("mainActivity").takeIf { it.isNotBlank() },
+            names.optString("playerActivity").takeIf { it.isNotBlank() },
+        ), observer)
         if (fragmentFamily(context)) { FragmentSettingsNativeFactory.install(context,loader,observer); Unit }
         else LegacySettingsEntryInstaller(context).install(loader,observer)
+    }
 
     fun bindChrome(activity: android.app.Activity): ChromeHostBinding = LegacyChromeHostBinding(activity)
     fun installChromeHooks(loader: ClassLoader, build: TargetBuild, observer: ChromeHookObserver): HostSubscription =

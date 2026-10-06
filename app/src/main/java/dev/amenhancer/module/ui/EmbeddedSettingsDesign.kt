@@ -26,26 +26,35 @@ internal data class EmbeddedLyricsEditorAction(
 )
 
 /**
- * Embedded settings use the same warm AM++ accent family as the standalone
- * settings screen.  Keep these values in one place so host/system accent
- * colours (notably Apple Music's blue) cannot leak into the injected UI.
+ * Apple Music's grouped settings: neutral surfaces and a red control accent.
+ * Resolve brightness from the host theme whenever a page opens.
  */
 internal object EmbeddedSettingsPalette {
-    val pageBackground: Int = Color.parseColor("#FBFAFB")
-    val softBackground: Int = Color.parseColor("#FBF4F6")
-    val softSurface: Int = Color.parseColor("#FAF3F5")
-    val primary: Int = Color.parseColor("#EE3B4F")
-    val primaryPressed: Int = Color.parseColor("#F65A6B")
-    val accent: Int = Color.parseColor("#A6537C")
-    val accentPressed: Int = Color.parseColor("#9D466E")
-
-    val onSurface: Int = Color.rgb(48, 35, 42)
-    val onSurfaceVariant: Int = Color.rgb(112, 89, 101)
-    val outline: Int = Color.rgb(238, 233, 234)
-    val disabledSurface: Int = Color.rgb(244, 237, 240)
-    val disabledText: Int = Color.rgb(158, 140, 149)
-    val divider: Int = Color.rgb(238, 233, 234)
-    val switchTrackOn: Int = Color.parseColor("#F497A1")
+    private var dark = false
+    fun update(context: Context) {
+        val color = android.util.TypedValue()
+        dark = if (context.theme.resolveAttribute(android.R.attr.colorBackground, color, true) &&
+            color.type in android.util.TypedValue.TYPE_FIRST_COLOR_INT..android.util.TypedValue.TYPE_LAST_COLOR_INT) {
+            Color.red(color.data) + Color.green(color.data) + Color.blue(color.data) < 384
+        } else {
+            context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+    }
+    val pageBackground: Int get() = if (dark) Color.BLACK else Color.WHITE
+    val softBackground: Int get() = softSurface
+    val softSurface: Int get() = Color.parseColor(if (dark) "#1C1C1E" else "#F3F2F7")
+    val primary: Int = Color.parseColor("#FA233B")
+    val primaryPressed: Int = Color.parseColor("#D91E34")
+    val accent: Int get() = primary
+    val accentPressed: Int get() = primaryPressed
+    val onSurface: Int get() = if (dark) Color.WHITE else Color.BLACK
+    val onSurfaceVariant: Int get() = Color.parseColor(if (dark) "#98989D" else "#8E8E93")
+    val outline: Int get() = Color.parseColor(if (dark) "#38383A" else "#E5E5EA")
+    val disabledSurface: Int get() = softSurface
+    val disabledText: Int get() = onSurfaceVariant
+    val divider: Int get() = Color.parseColor(if (dark) "#38383A" else "#D1D1D6")
+    val switchTrackOn: Int get() = primary
     val switchTrackOff: Int = Color.parseColor("#D5D5D5")
 }
 
@@ -709,4 +718,3 @@ internal class EmbeddedArrowFallbackDrawable : android.graphics.drawable.Drawabl
 
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
-

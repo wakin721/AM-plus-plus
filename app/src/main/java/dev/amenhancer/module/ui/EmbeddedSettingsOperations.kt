@@ -192,7 +192,7 @@ internal fun EmbeddedSettingsHost.runAsync(activity: Activity, action: () -> Emb
                     if (result is EmbeddedActionResult.Done) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
                 ).show()
                 if (result is EmbeddedActionResult.Done) {
-                    pageRefresh?.invoke() ?: dismissDialog()
+                    pageRefresh?.invoke() ?: dismissSettingsPage()
                 }
             }
         }

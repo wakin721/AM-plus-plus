@@ -30,7 +30,7 @@ class CombinedSettingsArtifactStructuralRegressionTest {
         assertTrue(entry.contains("EmbeddedSettingsHost.install("))
         assertTrue(entry.contains("EmbeddedRuntimeSettingsController("))
         assertTrue(host.contains("Application.ActivityLifecycleCallbacks"))
-        assertTrue(host.contains("showSettingsDialog(activity)"))
+        assertTrue(host.contains("showSettingsPage(activity)"))
     }
 
     @Test

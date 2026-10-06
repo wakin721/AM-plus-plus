@@ -32,10 +32,10 @@ internal class EmbeddedSettingsHost private constructor(
     internal val activityMatcher: dev.amenhancer.module.hook.SettingsActivityMatcher,
     nativeBridgeFactory: ((Activity)->Unit)->dev.amenhancer.module.hook.SettingsViewBridge,
 ) : Application.ActivityLifecycleCallbacks, dev.amenhancer.module.hook.SettingsEntryObserver {
-    internal val nativeBridge = nativeBridgeFactory(::showSettingsDialog)
+    internal val nativeBridge = nativeBridgeFactory(::showSettingsPage)
     internal val lifecycleState = EmbeddedSettingsLifecycleState()
     internal var activityReference: WeakReference<Activity>? = null
-    internal var dialogReference: WeakReference<Dialog>? = null
+    internal var settingsPageSurface: EmbeddedSettingsPageSurface? = null
     internal var pageRefresh: (() -> Unit)? = null
     internal var plugins: dev.amenhancer.plugin.runtime.PluginManager? = null
     internal val pluginDialogs = mutableListOf<WeakReference<Dialog>>()
@@ -80,7 +80,7 @@ internal class EmbeddedSettingsHost private constructor(
         val previousActivity = activityReference?.get()
         if (previousActivity !== activity) {
             removeInjectedViews(previousActivity)
-            dismissDialog()
+            dismissSettingsPage()
         }
         activityReference = WeakReference(activity)
         activeActivityId = activityKey(activity)
@@ -94,11 +94,17 @@ internal class EmbeddedSettingsHost private constructor(
 
     override fun onActivityPaused(activity: Activity) = Unit
 
+    override fun hasSettingsPage(activity: Activity): Boolean = settingsPageSurface?.activity === activity
+
+    override fun onSettingsBackPressed(activity: Activity): Boolean =
+        settingsPageSurface?.takeIf { it.activity === activity }?.handleBack() ?: false
+
     override fun onActivityStopped(activity: Activity) = Unit
 
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
 
     override fun onActivityDestroyed(activity: Activity) {
+        if (hasSettingsPage(activity)) dismissSettingsPage()
         val destroyedActivityId = activityKey(activity)
         val wasCurrent = activeActivityId == destroyedActivityId
         lifecycleState.onActivityDestroyed(destroyedActivityId)
@@ -110,7 +116,7 @@ internal class EmbeddedSettingsHost private constructor(
         }
         removeInjectedViews(activity)
         if (!wasCurrent) return
-        dismissDialog()
+        dismissSettingsPage()
         activityReference = null
         activeActivityId = null
         activeActivityRole = null
@@ -155,7 +161,10 @@ internal class EmbeddedSettingsHost private constructor(
         if (!registered || activity.packageName != ModuleConstants.TARGET_PACKAGE) return
         val activityId = activityKey(activity)
         val previousActivity = activityReference?.get()
-        if (previousActivity !== activity) removeInjectedViews(previousActivity)
+        if (previousActivity !== activity) {
+            removeInjectedViews(previousActivity)
+            dismissSettingsPage()
+        }
         activityReference = WeakReference(activity)
         activeActivityId = activityId
         activeActivityRole = EmbeddedHostActivityRole.Settings
@@ -191,7 +200,10 @@ internal class EmbeddedSettingsHost private constructor(
             role = EmbeddedHostActivityRole.Settings,
         )
         val previousActivity = activityReference?.get()
-        if (previousActivity !== activity) removeInjectedViews(previousActivity)
+        if (previousActivity !== activity) {
+            removeInjectedViews(previousActivity)
+            dismissSettingsPage()
+        }
         activityReference = WeakReference(activity)
         activeActivityId = activityId
         activeActivityRole = EmbeddedHostActivityRole.Settings
@@ -231,7 +243,10 @@ internal class EmbeddedSettingsHost private constructor(
             role = EmbeddedHostActivityRole.Settings,
         )
         val previousActivity = activityReference?.get()
-        if (previousActivity !== activity) removeInjectedViews(previousActivity)
+        if (previousActivity !== activity) {
+            removeInjectedViews(previousActivity)
+            dismissSettingsPage()
+        }
         activityReference = WeakReference(activity)
         activeActivityId = activityId
         activeActivityRole = EmbeddedHostActivityRole.Settings
@@ -294,7 +309,7 @@ internal class EmbeddedSettingsHost private constructor(
         application.unregisterActivityLifecycleCallbacks(this)
         removeMainContentLayoutObserver()
         removeInjectedViews(activityReference?.get())
-        dismissDialog()
+        dismissSettingsPage()
         activityReference = null
         activeActivityId = null
         activeActivityRole = null
@@ -343,6 +358,7 @@ internal class EmbeddedSettingsHost private constructor(
     internal fun onMainContentLayout(activity: Activity) {
         if (!nativeBridge.supportsViewFallback) return
         if (!registered || activityReference?.get() !== activity) return
+        if (hasSettingsPage(activity)) return
         val decor = activity.window?.decorView ?: return
         val activityId = activityKey(activity)
         if (!EmbeddedSettingsTextPolicy.containsSettingsTitle(decor, SETTINGS_OPTION_TAG)) {
@@ -351,7 +367,7 @@ internal class EmbeddedSettingsHost private constructor(
             if (activeActivityRole == EmbeddedHostActivityRole.Settings) {
                 activeActivityRole = EmbeddedHostActivityRole.MainContent
                 removeSettingsOption(activity)
-                dismissDialog()
+                dismissSettingsPage()
             }
             return
         }
@@ -394,7 +410,7 @@ internal class EmbeddedSettingsHost private constructor(
                 setColor(EmbeddedSettingsPalette.primary)
             }
             elevation = 4f * density
-            setOnClickListener { showSettingsDialog(activity) }
+            setOnClickListener { showSettingsPage(activity) }
         }
         val size = (56f * density).toInt()
         val margin = (16f * density).toInt()
@@ -430,7 +446,7 @@ internal class EmbeddedSettingsHost private constructor(
             setPadding(dp(activity, 20), dp(activity, 12), dp(activity, 20), dp(activity, 12))
             setBackgroundColor(Color.TRANSPARENT)
             contentDescription = "打开 AM++ 模块设置"
-            setOnClickListener { showSettingsDialog(activity) }
+            setOnClickListener { showSettingsPage(activity) }
             addView(TextView(activity).apply {
                 text = "AM++ 模块设置"
                 textSize = 16f
@@ -546,12 +562,12 @@ internal class EmbeddedSettingsHost private constructor(
         removeSettingsOption(activity)
     }
 
-    internal fun dismissDialog() {
+    internal fun dismissSettingsPage() {
         pluginDialogs.toList().forEach { it.get()?.dismiss() }
         pluginDialogs.clear()
         pendingTtmlImport = null
-        dialogReference?.get()?.dismiss()
-        dialogReference = null
+        settingsPageSurface?.close()
+        settingsPageSurface = null
         pageRefresh = null
     }
 

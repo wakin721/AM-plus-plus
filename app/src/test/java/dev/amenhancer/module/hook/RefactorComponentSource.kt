@@ -18,6 +18,7 @@ internal fun File.readRefactorComponent(): String {
             "CatalogResponseSnapshotAccess.kt").map { catalog+it }
         "EmbeddedSettingsHost.kt" -> listOf("EmbeddedSettingsDesign.kt","EmbeddedSettingsState.kt","EmbeddedSafRouter.kt",
             "EmbeddedSettingsController.kt","EmbeddedSettingsHost.kt","EmbeddedSettingsPages.kt","EmbeddedSettingsWidgets.kt",
+            "EmbeddedSettingsScreen.kt","EmbeddedSettingsPageSurface.kt",
             "EmbeddedLyricsEditor.kt","EmbeddedSettingsOperations.kt").map { ui+it }
         "UsbBitPerfectFeature.kt" -> listOf("UsbBitPerfectFeature.kt", "AppleMusicUsbBitPerfectTarget.kt").map { "app/src/main/java/dev/amenhancer/module/hook/"+it }
         else -> return readText()
