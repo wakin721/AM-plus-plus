@@ -27,7 +27,11 @@ internal object UsbDirectUacBridge {
         }.getOrDefault(false)
     }
 
-    fun open(lease: UsbDirectDeviceClient.Lease): OpenResult {
+    fun open(
+        lease: UsbDirectDeviceClient.Lease,
+        pcmBufferMs: Int,
+        transferBufferMs: Int,
+    ): OpenResult {
         val inputFormatCode = formatCode(lease.encoding)
             ?: return OpenResult.Failed("当前 AudioTrack PCM encoding 不受 USB Direct 原型支持")
         if (!loaded) return OpenResult.Failed(loadFailure ?: "native USB Direct bridge unavailable")
@@ -37,6 +41,12 @@ internal object UsbDirectUacBridge {
                 lease.sampleRate,
                 inputFormatCode,
                 lease.channels,
+                lease.interfaceNumber,
+                lease.alternateSetting,
+                lease.audioControlInterface,
+                lease.clockSourceId,
+                lease.fixedSampleRateMatch,
+                lease.protocol,
                 lease.endpointAddress,
                 lease.maxPacketSize,
                 lease.interval,
@@ -45,6 +55,8 @@ internal object UsbDirectUacBridge {
                 lease.feedbackInterval,
                 lease.subslotBytes,
                 lease.bitResolution,
+                pcmBufferMs,
+                transferBufferMs,
             )
         }.getOrElse { error ->
             return OpenResult.Failed(error.message ?: error.javaClass.simpleName)
@@ -92,6 +104,24 @@ internal object UsbDirectUacBridge {
         nativeWriteBytes(handle, data, offset, size, blocking, gainLeft, gainRight)
     }.getOrElse { -1 }
 
+    fun suspend(handle: Long) {
+        if (!loaded || handle == 0L) return
+        runCatching { nativeSuspend(handle) }
+            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native suspend failed", error) }
+    }
+
+    fun resume(handle: Long) {
+        if (!loaded || handle == 0L) return
+        runCatching { nativeResume(handle) }
+            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native resume failed", error) }
+    }
+
+    fun flush(handle: Long) {
+        if (!loaded || handle == 0L) return
+        runCatching { nativeFlush(handle) }
+            .onFailure { error -> ModernXposedRuntime.log("usb_direct: native flush failed", error) }
+    }
+
     fun close(handle: Long) {
         if (!loaded || handle == 0L) return
         runCatching { nativeClose(handle) }
@@ -124,6 +154,12 @@ internal object UsbDirectUacBridge {
         sampleRate: Int,
         inputFormatCode: Int,
         channels: Int,
+        interfaceNumber: Int,
+        alternateSetting: Int,
+        audioControlInterface: Int,
+        clockSourceId: Int,
+        fixedSampleRateMatch: Boolean,
+        protocol: Int,
         endpointAddress: Int,
         maxPacketSize: Int,
         interval: Int,
@@ -132,6 +168,8 @@ internal object UsbDirectUacBridge {
         feedbackInterval: Int,
         targetSubslotBytes: Int,
         targetBitResolution: Int,
+        pcmBufferMs: Int,
+        transferBufferMs: Int,
     ): Long
 
     @JvmStatic
@@ -166,6 +204,15 @@ internal object UsbDirectUacBridge {
         gainLeft: Float,
         gainRight: Float,
     ): Int
+
+    @JvmStatic
+    private external fun nativeSuspend(handle: Long)
+
+    @JvmStatic
+    private external fun nativeResume(handle: Long)
+
+    @JvmStatic
+    private external fun nativeFlush(handle: Long)
 
     @JvmStatic
     private external fun nativeClose(handle: Long)

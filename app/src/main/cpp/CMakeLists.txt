@@ -5,6 +5,8 @@ add_library(
     ampp_audio
     SHARED
     UsbDirectUac.cpp
+    UsbDirectBufferSizingCompileTest.cpp
+    UsbDirectUacControlCompileTest.cpp
     UsbFeedbackClockCompileTest.cpp
     UsbPcmPackingCompileTest.cpp
 )

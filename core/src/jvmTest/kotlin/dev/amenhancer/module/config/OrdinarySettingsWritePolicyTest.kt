@@ -109,6 +109,8 @@ class OrdinarySettingsWritePolicyTest {
                 "usb_bit_perfect_enabled" to true,
                 "usb_direct_uac_enabled" to true,
                 "apple_music_dpi_override_dpi" to 0,
+                "usb_direct_pcm_buffer_ms" to 100,
+                "usb_direct_transfer_buffer_ms" to 0,
                 "title_correction_enabled" to false,
                 "title_correction_mode" to "original_hyper",
                 "custom_lyrics_enabled" to false,

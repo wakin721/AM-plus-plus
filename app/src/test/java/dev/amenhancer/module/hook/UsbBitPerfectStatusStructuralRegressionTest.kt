@@ -29,6 +29,23 @@ class UsbBitPerfectStatusStructuralRegressionTest {
     }
 
     @Test
+    fun `live status responder is process wide and does not gate audio hook installation`() {
+        val entry = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/HookEntry.kt",
+        )
+        val hook = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/UsbBitPerfectFeature.kt",
+        )
+
+        assertTrue(entry.contains("UsbBitPerfectStatusRequestResponder.register(application)"))
+        assertTrue(hook.contains("internal object UsbBitPerfectStatusRequestResponder"))
+        assertTrue(hook.contains("private val registered = AtomicBoolean(false)"))
+        assertTrue(hook.contains("if (registered.get()) return true"))
+        assertTrue(hook.contains("live status receiver unavailable; continuing audio hook install"))
+        assertFalse(hook.contains("USB Bit-Perfect status request receiver could not be registered"))
+    }
+
+    @Test
     fun `status query is package scoped and signature protected`() {
         val requester = projectFile(
             "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectStatusRequester.kt",
@@ -42,8 +59,10 @@ class UsbBitPerfectStatusStructuralRegressionTest {
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
 
         assertTrue(requester.contains("setPackage(ModuleConstants.TARGET_PACKAGE)"))
+        assertTrue(requester.contains("Intent.FLAG_RECEIVER_FOREGROUND"))
         assertTrue(requester.contains("ResultReceiver"))
-        assertTrue(requester.contains("TIMEOUT_MILLIS"))
+        assertTrue(requester.contains("TIMEOUT_MILLIS = 3_000L"))
+        assertTrue(requester.contains("responder 在 3 秒内未响应"))
         assertTrue(hook.contains("UsbBitPerfectStatusProtocol.REQUEST_PERMISSION"))
         assertTrue(protocol.contains("REQUEST_USB_BIT_PERFECT_STATUS"))
         assertTrue(manifest.contains("REQUEST_USB_BIT_PERFECT_STATUS"))

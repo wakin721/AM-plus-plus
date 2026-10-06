@@ -24,6 +24,10 @@ data class ModuleSettings(
     val usbDirectUacEnabled: Boolean = false,
     /** Fixed logical density for Apple Music; 0 follows the system density. */
     val appleMusicDpiOverrideDpi: Int = FOLLOW_SYSTEM_APPLE_MUSIC_DPI,
+    /** PCM ring-buffer duration used by USB Direct. */
+    val usbDirectPcmBufferMs: Int = DEFAULT_USB_DIRECT_PCM_BUFFER_MS,
+    /** Target queued usbfs ISO duration. Zero keeps the compatibility/auto depth. */
+    val usbDirectTransferBufferMs: Int = DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS,
     val titleCorrectionEnabled: Boolean = false,
     /** Selected metadata profile; ignored while [titleCorrectionEnabled] is false. */
     val titleCorrectionMode: TitleCorrectionMode = TitleCorrectionMode.ORIGINAL_HYPER,
@@ -56,6 +60,30 @@ data class ModuleSettings(
 
         fun normalizePhoneLiquidGlassPanelBlurDp(value: Int): Int =
             value.coerceIn(MIN_PHONE_LIQUID_GLASS_PANEL_BLUR_DP, MAX_PHONE_LIQUID_GLASS_PANEL_BLUR_DP)
+
+        const val MIN_USB_DIRECT_PCM_BUFFER_MS = 10
+        const val MAX_USB_DIRECT_PCM_BUFFER_MS = 100
+        const val USB_DIRECT_PCM_BUFFER_STEP_MS = 10
+        const val DEFAULT_USB_DIRECT_PCM_BUFFER_MS = 100
+        const val DEFAULT_USB_DIRECT_TRANSFER_BUFFER_MS = 0
+        val USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS = setOf(0, 2, 4, 8, 16)
+
+        fun normalizeUsbDirectPcmBufferMs(value: Int): Int {
+            val clamped = value.coerceIn(
+                MIN_USB_DIRECT_PCM_BUFFER_MS,
+                MAX_USB_DIRECT_PCM_BUFFER_MS,
+            )
+            val offset = clamped - MIN_USB_DIRECT_PCM_BUFFER_MS
+            val roundedSteps =
+                (offset + USB_DIRECT_PCM_BUFFER_STEP_MS / 2) / USB_DIRECT_PCM_BUFFER_STEP_MS
+            return (
+                MIN_USB_DIRECT_PCM_BUFFER_MS +
+                    roundedSteps * USB_DIRECT_PCM_BUFFER_STEP_MS
+            ).coerceIn(
+                MIN_USB_DIRECT_PCM_BUFFER_MS,
+                MAX_USB_DIRECT_PCM_BUFFER_MS,
+            )
+        }
     }
 }
 
