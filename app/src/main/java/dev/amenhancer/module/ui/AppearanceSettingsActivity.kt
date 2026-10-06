@@ -48,6 +48,7 @@ class AppearanceSettingsActivity : ComponentActivity() {
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         }
         setContentView(root)
+        if (savedInstanceState == null) SettingsPageMotion(root.getChildAt(1)).enter(1)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             root.setOnApplyWindowInsetsListener { view, insets ->
                 val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())

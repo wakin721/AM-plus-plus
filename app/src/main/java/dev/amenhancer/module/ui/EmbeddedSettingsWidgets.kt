@@ -248,6 +248,7 @@ internal fun EmbeddedSettingsHost.embeddedSettingRow(
         }
         addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val toggle = EmbeddedSettingsSwitch(activity).apply {
+            motionKey = title
             isChecked = checked
             isEnabled = enabled
             contentDescription = "$title，$summary"

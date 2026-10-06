@@ -500,6 +500,7 @@ internal fun EmbeddedSettingsHost.embeddedCustomLyricsEntryRow(
                 marginEnd = dp(activity, 4)
             })
             addView(EmbeddedSettingsSwitch(activity).apply {
+                motionKey = "lyrics:${entry.appleMusicId}"
                 isChecked = group.allEnabled
                 contentDescription = "${entry.displayName} 自定义歌词开关"
                 setOnCheckedChangeListener { _, checked ->

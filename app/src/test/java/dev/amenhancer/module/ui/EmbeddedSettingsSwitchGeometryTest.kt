@@ -6,6 +6,33 @@ import org.junit.Test
 
 class EmbeddedSettingsSwitchGeometryTest {
     @Test
+    fun `animated thumb remains inside the track throughout forward and reverse motion`() {
+        for (density in listOf(1f, 2.625f, 4f)) {
+            for ((width, height) in listOf(56f to 44f, 48f to 44f, 56f to 30f)) {
+                for (step in (0..100) + (100 downTo 0)) {
+                    val progress = step / 100f
+                    val ltr = embeddedSwitchGeometry(width * density, height * density, density, progress, false)
+                    val rtl = embeddedSwitchGeometry(width * density, height * density, density, progress, true)
+                    assertTrue(ltr.thumbX - ltr.thumbRadius > ltr.left)
+                    assertTrue(ltr.thumbX + ltr.thumbRadius < ltr.right)
+                    assertTrue(ltr.thumbY - ltr.thumbRadius > ltr.top)
+                    assertTrue(ltr.thumbY + ltr.thumbRadius < ltr.bottom)
+                    assertEquals(width * density, ltr.thumbX + rtl.thumbX, 0.001f)
+                    assertEquals(ltr.thumbRadius, rtl.thumbRadius, 0.001f)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `out of range animation values clamp to the checked and unchecked endpoints`() {
+        assertEquals(embeddedSwitchGeometry(56f, 44f, 1f, false, false),
+            embeddedSwitchGeometry(56f, 44f, 1f, -0.1f, false))
+        assertEquals(embeddedSwitchGeometry(56f, 44f, 1f, true, true),
+            embeddedSwitchGeometry(56f, 44f, 1f, 1.1f, true))
+    }
+
+    @Test
     fun `thumb stays circular and inset at both ends across display densities`() {
         for (density in listOf(1f, 1.5f, 2.625f, 3f, 4f)) {
             for (checked in listOf(false, true)) {

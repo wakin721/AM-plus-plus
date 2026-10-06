@@ -78,6 +78,8 @@ class SettingsActivity : ComponentActivity() {
     private lateinit var launcherIconController: LauncherIconController
     private lateinit var content: LinearLayout
     private lateinit var settingsScroll: ScrollView
+    private lateinit var pageMotion: SettingsPageMotion
+    private var renderedPage: SettingsPage? = null
     private lateinit var palette: AppleMusicSettingsPalette
     private lateinit var currentSongIdentityRequester: CurrentSongIdentityRequester
     private lateinit var topBarTitle: TextView
@@ -122,6 +124,8 @@ class SettingsActivity : ComponentActivity() {
         setContentView(root)
         applySystemBarInsets(root)
         render()
+        pageMotion = SettingsPageMotion(settingsScroll)
+        if (savedInstanceState == null) pageMotion.enter()
     }
 
     override fun onResume() {
@@ -140,6 +144,7 @@ class SettingsActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::pageMotion.isInitialized) pageMotion.cancel()
         if (::currentSongIdentityRequester.isInitialized) currentSongIdentityRequester.cancel()
         lyricsUpdateCancellation?.set(true)
         super.onDestroy()
@@ -290,6 +295,7 @@ class SettingsActivity : ComponentActivity() {
     }
 
     private fun render(snapshot: XposedServiceSnapshot = ModuleApplication.serviceSnapshot) {
+        val motion = if (renderedPage == currentPage) captureSettingsSwitchMotion(content) else emptyMap()
         content.removeAllViews()
         val settings = store.settingsWithCustomLyrics(snapshot)
         updateTopBar()
@@ -297,6 +303,8 @@ class SettingsActivity : ComponentActivity() {
             SettingsPage.MAIN -> renderMainPage(settings, snapshot)
             SettingsPage.CUSTOM_LYRICS -> renderCustomLyricsPage(settings, snapshot)
         }
+        renderedPage = currentPage
+        restoreSettingsSwitchMotion(content, motion)
     }
 
     private fun renderMainPage(settings: ModuleSettings, snapshot: XposedServiceSnapshot) {
@@ -332,6 +340,7 @@ class SettingsActivity : ComponentActivity() {
         render()
         if (::settingsScroll.isInitialized) {
             settingsScroll.post { settingsScroll.scrollTo(0, 0) }
+            pageMotion.enter(if (page == SettingsPage.MAIN) -1 else 1)
         }
     }
 
@@ -1027,6 +1036,7 @@ class SettingsActivity : ComponentActivity() {
                     })
                 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 addView(EmbeddedSettingsSwitch(this@SettingsActivity).apply {
+                    motionKey = "lyrics:${group.primary.appleMusicId}"
                     isChecked = group.allEnabled
                     isEnabled = writable
                     contentDescription = "${group.primary.displayName} 自定义歌词开关"
@@ -1483,6 +1493,7 @@ class SettingsActivity : ComponentActivity() {
         onChanged: (Boolean) -> Unit,
     ): View {
         val switch = EmbeddedSettingsSwitch(this).apply {
+            motionKey = title
             isChecked = checked
             isEnabled = enabled
             contentDescription = title

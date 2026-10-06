@@ -109,4 +109,5 @@ internal fun showAppleMusicChoiceDialog(
         setColor(colors.background); cornerRadius = dp(24).toFloat()
     })
     dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(colors.primary)
+    SettingsPageMotion(body).enter()
 }

@@ -65,8 +65,11 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(activity, 64)))
     val pageContent = FrameLayout(activity)
     root.addView(pageContent, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+    val pageMotion = SettingsPageMotion(pageContent)
 
     fun renderPage() {
+        val pageChanged = renderedPage != navigation.page
+        val switchMotion = if (pageChanged) emptyMap() else scroll?.let(::captureSettingsSwitchMotion).orEmpty()
         scroll?.let { scrollPositions[renderedPage] = it.scrollY }
         renderedPage = navigation.page
         pageContent.removeAllViews()
@@ -104,7 +107,10 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
                 onClearFont = { runAsync(activity, controller::clearFont) },
             )
         }
-        nextScroll.post { nextScroll.scrollTo(0, scrollPositions[navigation.page] ?: 0) }
+        restoreSettingsSwitchMotion(nextScroll, switchMotion)
+        val targetScroll = scrollPositions[navigation.page] ?: 0
+        nextScroll.post { nextScroll.scrollTo(0, targetScroll) }
+        if (pageChanged) pageMotion.enter(if (navigation.page == EmbeddedSettingsPage.MAIN) -1 else 1)
         if (Build.VERSION.SDK_INT >= 28) root.accessibilityPaneTitle = title.text
     }
 
@@ -129,7 +135,7 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
                 Toast.makeText(activity, "保存 AM++ 设置失败，请重试", Toast.LENGTH_SHORT).show()
             }
         },
-        onClosed = { settingsPageSurface = null; pageRefresh = null },
+        onClosed = { pageMotion.cancel(); settingsPageSurface = null; pageRefresh = null },
     )
     back.setOnClickListener { surface.handleBack() }
     settingsPageSurface = surface
@@ -142,5 +148,7 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     if (!surface.attach()) {
         dismissSettingsPage()
         Toast.makeText(activity, "无法打开 AM++ 设置页面", Toast.LENGTH_SHORT).show()
+    } else {
+        pageMotion.enter(1)
     }
 }

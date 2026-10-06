@@ -68,6 +68,7 @@ class UsbBitPerfectSettingsActivity : ComponentActivity() {
         configureSystemBars()
         val root = buildScreen()
         setContentView(root)
+        if (savedInstanceState == null) SettingsPageMotion((root as ViewGroup).getChildAt(1)).enter(1)
         applySystemBarInsets(root)
         updateToggles(ModuleApplication.serviceSnapshot)
     }
