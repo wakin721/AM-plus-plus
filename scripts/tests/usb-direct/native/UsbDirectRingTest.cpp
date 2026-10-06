@@ -1,6 +1,6 @@
 // Compile the production engine into this test translation unit, replacing
 // only Linux syscall declarations on Windows. No device or JVM is needed.
-#include "../../../../../app/src/main/cpp/UsbDirectUac.cpp"
+#include "../../../../app/src/main/cpp/UsbDirectUac.cpp"
 #include <cassert>
 #include <iostream>
 
