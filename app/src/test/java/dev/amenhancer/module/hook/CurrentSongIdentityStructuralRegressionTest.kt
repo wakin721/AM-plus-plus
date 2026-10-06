@@ -98,7 +98,7 @@ class CurrentSongIdentityStructuralRegressionTest {
     }
 
     @Test
-    fun `embedded settings shares the in-process cache without a broadcast bridge`() {
+    fun `embedded settings shares the cache while standalone settings uses protected IPC`() {
         val target = projectFile(
             "host-applemusic/src/main/java/dev/amenhancer/module/hook/AppleMusicCurrentSongIdentityTarget.kt",
         )
@@ -107,13 +107,19 @@ class CurrentSongIdentityStructuralRegressionTest {
         )
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
         val entry = projectFile("app/src/main/java/dev/amenhancer/module/hook/HookEntry.kt")
+        val responder = projectFile(
+            "app/src/main/java/dev/amenhancer/module/hook/CurrentSongIdentityRequestResponder.kt",
+        )
 
         assertTrue(entry.contains("currentSong = { currentSong.current()?.details }"))
         assertTrue(entry.contains("EmbeddedRuntimeSettingsController"))
         assertTrue(details.contains("data class CurrentSongDetails"))
         assertFalse(target.contains("BroadcastReceiver"))
         assertFalse(target.contains("registerRequestResponder"))
-        assertFalse(manifest.contains("android:protectionLevel=\"signature\""))
-        assertFalse(manifest.contains("permission.REQUEST_CURRENT_SONG_ID"))
+        assertTrue(manifest.contains("android:protectionLevel=\"signature\""))
+        assertTrue(manifest.contains("permission.REQUEST_CURRENT_SONG_ID"))
+        assertTrue(entry.contains("CurrentSongIdentityRequestResponder(application, currentSong,"))
+        assertTrue(responder.contains("CurrentSongIdentityProtocol.REQUEST_PERMISSION"))
+        assertTrue(responder.contains("val details = cache.current()?.details"))
     }
 }
