@@ -33,7 +33,7 @@ internal class SharedEmbeddedConfigurationStorage(
 
     private val shared = object : EmbeddedConfigurationStorage {
         override fun values(): Map<String, *> {
-            val result = resolver.call(authority, "read", null, null)
+            val result = resolver.call(uri, "read", null, null)
             check(result?.getBoolean("available") == true) { "共享设置服务尚未连接" }
             return SettingsSyncWire.decode(result).filterKeys { it != "available" }
         }
@@ -55,7 +55,7 @@ internal class SharedEmbeddedConfigurationStorage(
             true
         }.getOrDefault(false)
         override fun deleteFile(name: String): Boolean = runCatching {
-            resolver.call(authority, "delete-file", name, null)?.getBoolean("success") == true
+            resolver.call(uri, "delete-file", name, null)?.getBoolean("success") == true
         }.getOrDefault(false)
     }
 
@@ -103,7 +103,8 @@ internal class SharedEmbeddedConfigurationStorage(
     }
 
     private fun mutate(method: String, values: Map<String, Any>): Boolean = runCatching {
-        val result = resolver.call(authority, method, null, SettingsSyncWire.encode(values))
+        // The Uri overload is API 11; the authority String overload requires API 29.
+        val result = resolver.call(uri, method, null, SettingsSyncWire.encode(values))
         if (result?.getBoolean("success") != true) return@runCatching false
         cachedValues = SettingsSyncWire.decode(result).filterKeys { it != "success" && it != "available" }
         true
