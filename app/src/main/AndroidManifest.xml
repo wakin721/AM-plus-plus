@@ -37,6 +37,11 @@
           injected Apple Music process so it can bind the exported USB broker.
         -->
         <provider
+            android:name=".config.SettingsSyncProvider"
+            android:authorities="${applicationId}.settings-sync"
+            android:exported="true" />
+
+        <provider
             android:name=".usb.UsbDirectVisibilityProvider"
             android:authorities="${applicationId}.usb-direct-visibility"
             android:exported="false"

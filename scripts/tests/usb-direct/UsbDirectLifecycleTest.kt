@@ -16,6 +16,7 @@ import org.junit.Test
 /** Runs the real client/controller with deterministic Android/Binder/native boundary fixtures. */
 class UsbDirectLifecycleTest {
     private val context = Context()
+    private val requestTracks = mutableMapOf<Long, AudioTrack>()
 
     @Before fun setUp() {
         UsbDirectUacController.configure(false)
@@ -25,6 +26,7 @@ class UsbDirectLifecycleTest {
         Handler.posted.clear()
         AudioTrack.keepAliveTracks.clear()
         AudioTrack.acceptsRouting = true
+        requestTracks.clear()
     }
 
     @After fun tearDown() {
@@ -35,7 +37,8 @@ class UsbDirectLifecycleTest {
     private fun lastAcquire() = Messenger.outgoing.last { it.what == Ipc.WHAT_ACQUIRE }
 
     private fun reply(request: Message, fd: ParcelFileDescriptor? = ParcelFileDescriptor(42),
-        id: Long = request.data.getLong(Ipc.KEY_REQUEST_ID), success: Boolean = true) {
+        id: Long = request.data.getLong(Ipc.KEY_REQUEST_ID), success: Boolean = true,
+        writeBoundary: Boolean = true) {
         request.replyTo!!.send(Message.obtain(null, Ipc.WHAT_RESULT).apply {
             data = Bundle().apply {
                 putLong(Ipc.KEY_REQUEST_ID, id)
@@ -47,10 +50,15 @@ class UsbDirectLifecycleTest {
                 putInt(Ipc.KEY_CHANNELS, request.data.getInt(Ipc.KEY_CHANNELS))
             }
         })
+        if (writeBoundary) requestTracks[id]?.let(UsbDirectUacController::beforeWrite)
     }
 
     private fun observe(track: AudioTrack) {
+        val previous = Messenger.outgoing.lastOrNull { it.what == Ipc.WHAT_ACQUIRE }
         UsbDirectUacController.afterOriginalWrite(context, track, arrayOf(shortArrayOf(1, 2), 0, 2), 2)
+        Messenger.outgoing.lastOrNull { it.what == Ipc.WHAT_ACQUIRE }?.takeIf { it !== previous }?.let {
+            requestTracks[it.data.getLong(Ipc.KEY_REQUEST_ID)] = track
+        }
     }
 
     private fun activate(track: AudioTrack = AudioTrack()): AudioTrack {
@@ -90,6 +98,33 @@ class UsbDirectLifecycleTest {
         assertEquals(AudioTrack.PLAYSTATE_PLAYING, UsbDirectUacController.playbackState(track))
         control(track, "stop")
         assertNull(UsbDirectUacController.playbackState(track))
+    }
+
+    @Test fun brokerResponseDoesNotPauseAnInFlightOriginalWriteAndNextPcmWriteStartsUsb() {
+        val track = AudioTrack()
+        UsbDirectUacController.configure(true)
+        observe(track)
+        track.writeInFlight = true
+        reply(lastAcquire(), writeBoundary = false)
+        assertEquals(AudioTrack.PLAYSTATE_PLAYING, track.playState)
+        assertFalse(UsbDirectUacController.isActive(track))
+        assertTrue(UsbDirectUacBridge.outputs.isEmpty())
+        track.writeInFlight = false
+        assertEquals(2, UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(7, 8), 0, 2)))
+        assertTrue(UsbDirectUacController.isActive(track))
+        assertEquals(listOf(7, 8), UsbDirectUacBridge.outputs.values.single().queued)
+    }
+
+    @Test fun pauseBeforeTheNextWriteCancelsThePreparedLeaseWithoutClaimingUsb() {
+        val track = AudioTrack()
+        UsbDirectUacController.configure(true)
+        observe(track)
+        val fd = ParcelFileDescriptor(76)
+        reply(lastAcquire(), fd, writeBoundary = false)
+        control(track, "pause")
+        assertTrue(fd.closed)
+        assertNull(UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(7, 8), 0, 2)))
+        assertTrue(UsbDirectUacBridge.outputs.isEmpty())
     }
 
     @Test fun frameworkPlaybackRemainsActiveWithOnlySilentNonUsbAudio() {

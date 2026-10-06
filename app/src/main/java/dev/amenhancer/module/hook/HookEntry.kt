@@ -7,6 +7,7 @@ import dev.amenhancer.module.config.EmbeddedConfigurationMigration
 import dev.amenhancer.module.config.EmbeddedConfigurationMigrationResult
 import dev.amenhancer.module.config.EmbeddedConfigurationSession
 import dev.amenhancer.module.config.HostPrivateEmbeddedStorage
+import dev.amenhancer.module.config.SharedEmbeddedConfigurationStorage
 import dev.amenhancer.module.config.TargetConfigClient
 import dev.amenhancer.module.settings.EmbeddedRuntimeSettingsController
 import dev.amenhancer.module.ui.EmbeddedSettingsHost
@@ -32,6 +33,9 @@ class HookEntry : XposedModule() {
 
     @Volatile
     private var embeddedSession: EmbeddedConfigurationSession? = null
+
+    private var sharedStorage: SharedEmbeddedConfigurationStorage? = null
+    private val refreshSettingsPage = Runnable { settingsHost?.pageRefresh?.invoke() }
 
     @Volatile
     private var processName: String = ""
@@ -99,7 +103,13 @@ class HookEntry : XposedModule() {
                         if (!resourcePreparationStarted.compareAndSet(false, true)) return
                         try {
                             val storage = HostPrivateEmbeddedStorage(application)
-                            val migrationDeferred = migrateRemoteConfiguration(storage) is
+                            val remote = if (frameworkProperties.and(XposedService.PROP_CAP_REMOTE) != 0L)
+                                runCatching { getRemotePreferences(ModuleConstants.REMOTE_PREFERENCES_GROUP) }.getOrNull()
+                                else null
+                            // An existing host is authoritative for the initial merge.
+                            // Only an empty host needs the legacy remote-to-host migration.
+                            val migrationDeferred = (if (!EmbeddedConfigurationMigration.destinationAlreadyInitialized(storage))
+                                migrateRemoteConfiguration(storage) else null) is
                                 EmbeddedConfigurationMigrationResult.Failed
                             if (migrationDeferred) {
                                 // Keep the host runtime fail-open when the legacy
@@ -110,8 +120,16 @@ class HookEntry : XposedModule() {
                                     "embedded configuration migration deferred; continuing read-only",
                                 )
                             }
+                            val synchronizedStorage = remote?.let {
+                                SharedEmbeddedConfigurationStorage(application, storage, it, { name -> openRemoteFile(name) }) {
+                                    settingsHost?.let { host ->
+                                        host.mainHandler.removeCallbacks(refreshSettingsPage)
+                                        host.mainHandler.post(refreshSettingsPage)
+                                    }
+                                }.also { sharedStorage = it }
+                            }
                             val session = EmbeddedConfigurationSession(
-                                storage = storage,
+                                storage = synchronizedStorage ?: storage,
                                 writable = !migrationDeferred,
                             )
                             if (!bootstrap.bind(build, session)) {
@@ -178,6 +196,7 @@ class HookEntry : XposedModule() {
                             nativeBridgeFactory = { onOpen -> AppleMusicHostFactory.settingsViewBridge(application, onOpen) },
                         )
                         settingsHost = host
+                        sharedStorage?.startSynchronization()
                         AppleMusicHostFactory.installSettingsEntry(application, targetClassLoader, host)
                         runCatching {
                             val plugins = dev.amenhancer.plugin.runtime.PluginManager(application, targetClassLoader)

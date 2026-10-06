@@ -17,11 +17,12 @@ class ConfigStore(context: Context) {
     )
     @Volatile
     private var cachedIndex: CachedIndex? = null
+    private var settingsBaseline: ModuleSettings? = null
     fun settings(): ModuleSettings = settings(ModuleApplication.serviceSnapshot)
 
     internal fun settings(snapshot: XposedServiceSnapshot): ModuleSettings {
         val preferences = snapshot.preferences ?: legacyPreferences
-        return ModuleSettingsSchema.decode(preferences.all)
+        return ModuleSettingsSchema.decode(preferences.all).also { settingsBaseline = it }
     }
 
     internal fun settingsWithCustomLyrics(snapshot: XposedServiceSnapshot): ModuleSettings {
@@ -46,7 +47,7 @@ class ConfigStore(context: Context) {
                 if (state.canCommit) cachedIndex = CachedIndex(cacheKey, state.manifest)
                 state.manifest
             }
-        return base.copy(customLyricsManifest = manifest)
+        return base.copy(customLyricsManifest = manifest).also { settingsBaseline = it }
     }
 
     /** Current index state (pointer + resolved manifest) for settings-process mutations. */
@@ -59,11 +60,16 @@ class ConfigStore(context: Context) {
 
     fun saveSettings(settings: ModuleSettings): Boolean {
         val preferences = ModuleApplication.serviceSnapshot.preferences ?: return false
-        return writeValues(
-            preferences,
-            ModuleSettingsSchema.encodeOrdinarySettings(settings),
-            synchronous = false,
+        val patch = SettingsSynchronizationPolicy.ordinaryPatch(
+            settingsBaseline ?: ModuleSettingsSchema.decode(preferences.all), settings,
         )
+        val saved = patch.isEmpty() || writeValues(
+            preferences,
+            patch,
+            synchronous = true,
+        )
+        if (saved) settingsBaseline = settings
+        return saved
     }
 
     internal fun saveFontManifest(

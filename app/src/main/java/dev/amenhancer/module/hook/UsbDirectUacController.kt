@@ -175,6 +175,7 @@ internal object UsbDirectUacController {
     /** Intercept a Java AudioTrack.write only after the direct usbfs engine owns the track. */
     fun interceptWrite(track: AudioTrack, args: Array<Any?>): Int? {
         if (!enabled.get() || isInternalTransition()) return null
+        beforeWrite(track)
         val active = synchronized(lock) {
             session?.takeIf { it.track.get() === track }
         } ?: return null
@@ -262,6 +263,19 @@ internal object UsbDirectUacController {
             }
         }
         return written
+    }
+
+    /** Commit a prepared lease on the PCM producer thread, between original writes. */
+    internal fun beforeWrite(track: AudioTrack) {
+        if (!enabled.get() || isInternalTransition()) return
+        val prepared = synchronized(lock) {
+            val request = pendingTakeover?.takeIf { it.track.get() === track && !it.opening } ?: return
+            val lease = request.lease ?: return
+            val context = applicationContext ?: return
+            request.opening = true
+            Triple(context, lease, request)
+        }
+        hotTakeover(prepared.first, track, prepared.second, prepared.third)
     }
 
     /** Mirrors AudioTrack's app-level fades after the original track is paused. */
@@ -366,13 +380,15 @@ internal object UsbDirectUacController {
                         }
                     }
                     is UsbDirectDeviceClient.AcquireResult.Acquired -> {
-                        if (currentTrack == null) {
-                            synchronized(lock) {
+                        synchronized(lock) {
+                            if (currentTrack == null || pendingTakeover !== request || !enabled.get()) {
                                 if (pendingTakeover === request) pendingTakeover = null
+                                UsbDirectDeviceClient.release(context, resultValue.lease)
+                            } else {
+                                // The callback can arrive while AudioTrack.write blocks.
+                                // Pausing it here strands that write and its PCM producer.
+                                request.lease = resultValue.lease
                             }
-                            UsbDirectDeviceClient.release(context, resultValue.lease)
-                        } else {
-                            hotTakeover(context, currentTrack, resultValue.lease, request)
                         }
                     }
                 }
@@ -803,6 +819,8 @@ internal object UsbDirectUacController {
 
     /** Identity survives the broker response until nativeOpen commits or is cancelled. */
     private class PendingTakeover(val track: WeakReference<AudioTrack>) {
+        var lease: UsbDirectDeviceClient.Lease? = null
+        var opening = false
         var originalPaused = false
         var positionBaseFrames = 0L
     }

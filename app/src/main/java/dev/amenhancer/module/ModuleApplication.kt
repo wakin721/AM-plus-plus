@@ -1,6 +1,9 @@
 package dev.amenhancer.module
 
 import android.app.Application
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import dev.amenhancer.module.config.ConfigStore
 import dev.amenhancer.module.ui.UsbBitPerfectSettingsInjector
 import dev.amenhancer.module.usb.UsbDirectVisibilityGrant
@@ -10,9 +13,21 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicReference
 
 class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
+    private var observedPreferences: SharedPreferences? = null
+    private val changeHandler = Handler(Looper.getMainLooper())
+    private val notifySettingsChanged = Runnable {
+        val snapshot = serviceSnapshot
+        listeners.forEach { it(snapshot) }
+    }
+    private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        changeHandler.removeCallbacks(notifySettingsChanged)
+        changeHandler.post(notifySettingsChanged)
+    }
     override fun onCreate() {
         super.onCreate()
         UsbBitPerfectSettingsInjector.register(this)
+        // Also makes the settings bridge visible to the injected host on Android 11+.
+        UsbDirectVisibilityGrant.grantToAppleMusic(this)
         XposedServiceHelper.registerListener(this)
     }
 
@@ -25,6 +40,9 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
         }
         val preferences = service.getRemotePreferences(ModuleConstants.REMOTE_PREFERENCES_GROUP)
         ConfigStore.migrateLegacyPreferences(this, preferences)
+        observedPreferences?.unregisterOnSharedPreferenceChangeListener(preferenceListener)
+        observedPreferences = preferences
+        preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
         publish(XposedServiceSnapshot.connected(
             preferences = preferences,
             frameworkName = service.frameworkName,
@@ -39,6 +57,8 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
     }
 
     override fun onServiceDied(service: XposedService) {
+        observedPreferences?.unregisterOnSharedPreferenceChangeListener(preferenceListener)
+        observedPreferences = null
         publish(XposedServiceSnapshot.disconnected())
     }
 

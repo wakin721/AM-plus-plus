@@ -90,6 +90,7 @@ internal class EmbeddedSettingsHost private constructor(
             EmbeddedHostActivityRole.MainContent -> installMainContentLayoutObserver(activity)
             EmbeddedHostActivityRole.Settings -> injectSettingsOptionIfNeeded(activity)
         }
+        if (hasSettingsPage(activity)) pageRefresh?.invoke()
     }
 
     override fun onActivityPaused(activity: Activity) = Unit

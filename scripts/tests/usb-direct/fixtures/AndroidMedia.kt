@@ -14,6 +14,7 @@ class AudioTrack(val format: AudioFormat=AudioFormat()) {
  var playState=PLAYSTATE_PLAYING
  var playbackHeadPosition=0
  var playCalls=0
+ var writeInFlight=false
  var releaseCalls=0
  var volume=1f
  var preferredDevice: AudioDeviceInfo?=null
@@ -25,7 +26,7 @@ class AudioTrack(val format: AudioFormat=AudioFormat()) {
  fun write(data: ByteArray, offset: Int, size: Int): Int { loadedSilence=data.sliceArray(offset until offset+size).all { it == 0.toByte() }; return size }
  fun setLoopPoints(start: Int, end: Int, loops: Int): Int { loopFrames=end-start; loopCount=loops; return SUCCESS }
  fun release() { releaseCalls++; playState=PLAYSTATE_STOPPED }
- fun pause() { playState=PLAYSTATE_PAUSED }
+ fun pause() { check(!writeInFlight) { "Cannot interrupt original PCM write" }; playState=PLAYSTATE_PAUSED }
  fun flush() {}
  fun play() { playCalls++; playState=PLAYSTATE_PLAYING }
  fun stop() { playState=PLAYSTATE_STOPPED }

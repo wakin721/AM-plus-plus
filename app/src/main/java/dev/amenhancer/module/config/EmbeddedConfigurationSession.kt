@@ -77,12 +77,22 @@ internal class EmbeddedConfigurationSession(
         deleteRemoteFile = { storage.deleteFile(it) },
     )
 
-    fun settings(): ModuleSettings = ModuleSettingsSchema.decode(storage.values())
+    private var settingsBaseline: ModuleSettings? = null
+    private var settingsSavePending = false
 
-    fun saveSettings(settings: ModuleSettings): Boolean = writable && storage.writeValues(
-        ModuleSettingsSchema.encodeOrdinarySettings(settings),
-        synchronous = true,
-    )
+    fun settings(): ModuleSettings = ModuleSettingsSchema.decode(storage.values()).also {
+        if (!settingsSavePending) settingsBaseline = it
+    }
+
+    fun saveSettings(settings: ModuleSettings): Boolean {
+        if (!writable) return false
+        val baseline = settingsBaseline ?: ModuleSettingsSchema.decode(storage.values())
+        val patch = SettingsSynchronizationPolicy.ordinaryPatch(baseline, settings)
+        val saved = patch.isEmpty() || storage.writeValues(patch, synchronous = true)
+        settingsSavePending = !saved
+        if (saved) settingsBaseline = settings
+        return saved
+    }
 
     fun saveFontManifest(manifest: LyricsFontManifest): Boolean = writable && storage.writeValues(
         ModuleSettingsSchema.encodeFontManifest(manifest),
