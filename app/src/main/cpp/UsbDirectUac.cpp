@@ -388,11 +388,11 @@ int framesForNextInterval(Session* session) {
 }
 
 void copyFromRingOrSilence(Session* session, uint8_t* destination, size_t bytes) {
+    std::unique_lock<std::mutex> lock(session->ringMutex);
     if (session->suspended.load()) {
         std::memset(destination, 0, bytes);
         return;
     }
-    std::unique_lock<std::mutex> lock(session->ringMutex);
     size_t copied = 0;
     while (copied < bytes && session->ringCount > 0) {
         const size_t contiguous = std::min({
@@ -1149,6 +1149,7 @@ Java_dev_amenhancer_module_hook_UsbDirectUacBridge_nativeSuspend(
 ) {
     auto session = findSession(handle);
     if (session == nullptr || session->closing.load()) return;
+    std::lock_guard<std::mutex> lock(session->ringMutex);
     session->suspended.store(true);
 }
 

@@ -49,6 +49,7 @@ internal object UsbDirectDeviceClient {
     )
 
     private data class PendingAcquire(
+        val id: Long,
         val context: Context,
         val format: AudioFormat,
         val callback: (AcquireResult) -> Unit,
@@ -60,6 +61,7 @@ internal object UsbDirectDeviceClient {
     private var serviceConnection: ServiceConnection? = null
     private var pending: PendingAcquire? = null
     private var activeLease: Lease? = null
+    private var nextRequestId = 0L
 
     private val replyMessenger = Messenger(Handler(Looper.getMainLooper()) { message ->
         if (message.what == UsbDirectIpc.WHAT_RESULT) {
@@ -78,7 +80,7 @@ internal object UsbDirectDeviceClient {
         val application = context.applicationContext
         synchronized(lock) {
             if (activeLease != null || pending != null) return false
-            pending = PendingAcquire(application, format, callback)
+            pending = PendingAcquire(++nextRequestId, application, format, callback)
             val messenger = serviceMessenger
             if (messenger != null) {
                 sendAcquireLocked(messenger)
@@ -88,6 +90,7 @@ internal object UsbDirectDeviceClient {
                 override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                     val messenger = service?.let(::Messenger)
                     synchronized(lock) {
+                        if (serviceConnection !== this) return
                         serviceMessenger = messenger
                         if (messenger == null) {
                             failPendingLocked("USB Direct broker returned no Binder")
@@ -99,6 +102,7 @@ internal object UsbDirectDeviceClient {
 
                 override fun onServiceDisconnected(name: ComponentName?) {
                     synchronized(lock) {
+                        if (serviceConnection !== this) return
                         serviceMessenger = null
                         if (pending != null) failPendingLocked("USB Direct broker disconnected")
                     }
@@ -106,6 +110,7 @@ internal object UsbDirectDeviceClient {
 
                 override fun onBindingDied(name: ComponentName?) {
                     synchronized(lock) {
+                        if (serviceConnection !== this) return
                         serviceMessenger = null
                         if (pending != null) failPendingLocked("USB Direct broker binding died")
                     }
@@ -113,6 +118,7 @@ internal object UsbDirectDeviceClient {
 
                 override fun onNullBinding(name: ComponentName?) {
                     synchronized(lock) {
+                        if (serviceConnection !== this) return
                         serviceMessenger = null
                         failPendingLocked("USB Direct broker refused binding")
                     }
@@ -140,16 +146,24 @@ internal object UsbDirectDeviceClient {
                     },
                 )
             }
-            return bound
+            // Even a failed bind has accepted this request and posted its failure
+            // callback. Only an occupied client returns false without a callback.
+            return true
         }
     }
 
-    fun release(context: Context) {
+    fun release(context: Context, expectedLease: Lease? = null) {
         val application = context.applicationContext
         val lease: Lease?
         val messenger: Messenger?
         val connection: ServiceConnection?
         synchronized(lock) {
+            // A cancelled takeover may finish after another acquisition has begun.
+            // It can close its own PFD, but must not cancel or release the new owner.
+            if (expectedLease != null && activeLease !== expectedLease) {
+                runCatching { expectedLease.fd.close() }
+                return
+            }
             lease = activeLease
             activeLease = null
             pending = null
@@ -162,9 +176,7 @@ internal object UsbDirectDeviceClient {
         if (messenger != null) {
             runCatching {
                 messenger.send(
-                    Message.obtain(null, UsbDirectIpc.WHAT_RELEASE).apply {
-                        replyTo = replyMessenger
-                    },
+                    Message.obtain(null, UsbDirectIpc.WHAT_RELEASE),
                 )
             }
         }
@@ -178,6 +190,7 @@ internal object UsbDirectDeviceClient {
         val message = Message.obtain(null, UsbDirectIpc.WHAT_ACQUIRE).apply {
             replyTo = replyMessenger
             data = Bundle().apply {
+                putLong(UsbDirectIpc.KEY_REQUEST_ID, request.id)
                 putInt(UsbDirectIpc.KEY_SAMPLE_RATE, request.format.sampleRate)
                 putInt(UsbDirectIpc.KEY_ENCODING, request.format.encoding)
                 putInt(UsbDirectIpc.KEY_CHANNELS, request.format.channelCount)
@@ -190,12 +203,22 @@ internal object UsbDirectDeviceClient {
     }
 
     private fun handleResult(data: Bundle) {
-        val request: PendingAcquire
-        synchronized(lock) {
-            request = pending ?: return
-            pending = null
+        @Suppress("DEPRECATION")
+        val fd = data.getParcelable(UsbDirectIpc.KEY_FD) as? ParcelFileDescriptor
+        val requestId = data.getLong(UsbDirectIpc.KEY_REQUEST_ID)
+        val request = synchronized(lock) {
+            pending?.takeIf { it.id == requestId }
+        }
+        if (request == null) {
+            runCatching { fd?.close() }
+            return
         }
         if (data.getInt(UsbDirectIpc.KEY_RESULT) != UsbDirectIpc.RESULT_OK) {
+            runCatching { fd?.close() }
+            synchronized(lock) {
+                if (pending !== request) return
+                pending = null
+            }
             request.callback(
                 AcquireResult.Failed(
                     data.getString(UsbDirectIpc.KEY_ERROR)?.takeIf(String::isNotBlank)
@@ -204,9 +227,11 @@ internal object UsbDirectDeviceClient {
             )
             return
         }
-        @Suppress("DEPRECATION")
-        val fd = data.getParcelable(UsbDirectIpc.KEY_FD) as? ParcelFileDescriptor
         if (fd == null) {
+            synchronized(lock) {
+                if (pending !== request) return
+                pending = null
+            }
             request.callback(AcquireResult.Failed("USB Direct broker response contained no file descriptor"))
             return
         }
@@ -233,7 +258,14 @@ internal object UsbDirectDeviceClient {
             vendorId = data.getInt(UsbDirectIpc.KEY_VENDOR_ID),
             productId = data.getInt(UsbDirectIpc.KEY_PRODUCT_ID),
         )
-        synchronized(lock) { activeLease = lease }
+        synchronized(lock) {
+            if (pending !== request) {
+                runCatching { fd.close() }
+                return
+            }
+            pending = null
+            activeLease = lease
+        }
         request.callback(AcquireResult.Acquired(lease))
     }
 

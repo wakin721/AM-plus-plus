@@ -12,6 +12,7 @@ internal object UsbDirectIpc {
     const val RESULT_ERROR = 0
 
     const val KEY_RESULT = "result"
+    const val KEY_REQUEST_ID = "request_id"
     const val KEY_ERROR = "error"
     const val KEY_FD = "fd"
     const val KEY_SAMPLE_RATE = "sample_rate"

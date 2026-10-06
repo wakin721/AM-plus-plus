@@ -178,6 +178,7 @@ class UsbDirectDeviceBrokerService : Service() {
             data = payload ?: Bundle().apply {
                 putInt(UsbDirectIpc.KEY_RESULT, UsbDirectIpc.RESULT_OK)
             }
+            data.putLong(UsbDirectIpc.KEY_REQUEST_ID, message.data.getLong(UsbDirectIpc.KEY_REQUEST_ID))
         }
         runCatching { replyTo.send(result) }
     }
@@ -187,6 +188,7 @@ class UsbDirectDeviceBrokerService : Service() {
         val result = Message.obtain(null, UsbDirectIpc.WHAT_RESULT).apply {
             data = Bundle().apply {
                 putInt(UsbDirectIpc.KEY_RESULT, UsbDirectIpc.RESULT_ERROR)
+                putLong(UsbDirectIpc.KEY_REQUEST_ID, message.data.getLong(UsbDirectIpc.KEY_REQUEST_ID))
                 putString(UsbDirectIpc.KEY_ERROR, error)
             }
         }

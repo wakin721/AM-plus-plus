@@ -2,6 +2,34 @@
 
 These scripts are optional device regressions used while adapting Apple Music 6.5.0. They are not part of the Gradle build.
 
+## USB Direct lifecycle verification (no device required)
+
+`verify-usb-direct-lifecycle.ps1` compiles the current USB Direct controller and IPC client
+with deterministic Android/Binder/native boundary fixtures. It exercises stale responses,
+pause prefill/backpressure, explicit flush, and cancellation during native open, together
+with the existing USB policy/descriptor/source-contract JUnit tests. Fixtures are isolated
+under `scripts/tests/usb-direct` and are not packaged in the Android app.
+
+```powershell
+.\scripts\verify-usb-direct-lifecycle.ps1 -JavaHome "C:\path\to\jdk"
+```
+
+Requires PowerShell, Java 17+, and Gradle-cached Kotlin compiler/stdlib/script-runtime 2.3.10,
+reflect 2.2.10, coroutines 1.8.0, annotations 13.0, JUnit 4.13.2, and Hamcrest 1.3. The script
+does not download dependencies. Boundary fixtures do not establish real USB hardware compatibility.
+
+`verify-usb-direct-native.ps1` compiles the production C++ engine into a ring-buffer test:
+pause emits silence without consuming PCM, resume preserves PCM order, full buffers apply
+backpressure, and explicit flush clears the ring. Run it in a Visual Studio Developer
+PowerShell with MSVC and a JDK:
+
+```powershell
+.\scripts\verify-usb-direct-native.ps1 -JavaHome "C:\path\to\jdk"
+```
+
+This test substitutes Linux syscall declarations on Windows and disables the USB worker;
+it verifies the actual native ring functions but does not issue USB ioctls or validate URB I/O.
+
 ## Requirements
 
 - PowerShell 7 and ADB

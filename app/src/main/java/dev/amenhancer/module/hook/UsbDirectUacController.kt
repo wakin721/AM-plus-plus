@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * The controller is intentionally fail-open. Apple Music keeps using its
  * original AudioTrack until a supported Java write path has been observed and
- * the AM++ broker has successfully claimed a permission-backed UAC streaming
+ * the native engine has successfully claimed a permission-backed UAC streaming
  * interface. Any broker/native/write failure releases the USB interface and
  * resumes the original AudioTrack so Android's normal audio path can continue.
  */
@@ -34,7 +34,7 @@ internal object UsbDirectUacController {
     private var session: Session? = null
     private var latestTrack: WeakReference<AudioTrack>? = null
     private var observedTrack: WeakReference<AudioTrack>? = null
-    private var pendingTrack: WeakReference<AudioTrack>? = null
+    private var pendingTakeover: PendingTakeover? = null
     private var failedTrack: WeakReference<AudioTrack>? = null
     private var lastFailure: Failure? = null
     private var applicationContext: Context? = null
@@ -48,21 +48,21 @@ internal object UsbDirectUacController {
         pcmBufferMs: Int = 500,
         transferBufferMs: Int = 0,
     ) {
-        enabled.set(isEnabled)
-        this.pcmBufferMs = pcmBufferMs
-        this.transferBufferMs = transferBufferMs
-        if (!isEnabled) {
-            val context = applicationContext
-            synchronized(lock) {
+        synchronized(lock) {
+            enabled.set(isEnabled)
+            this.pcmBufferMs = pcmBufferMs
+            this.transferBufferMs = transferBufferMs
+            if (!isEnabled) {
+                val context = applicationContext
+                pendingTakeover = null
                 closeSessionLocked()
                 trackVolumes.clear()
+                if (context != null) UsbDirectDeviceClient.release(context)
+                observedTrack = null
+                failedTrack = null
+                lastFailure = null
+                applicationContext = null
             }
-            if (context != null) UsbDirectDeviceClient.release(context)
-            pendingTrack = null
-            observedTrack = null
-            failedTrack = null
-            lastFailure = null
-            applicationContext = null
         }
         UsbDirectSystemVolumeObserver.syncPolling()
     }
@@ -93,14 +93,12 @@ internal object UsbDirectUacController {
         if (!track.isMediaTrack()) return false
         applicationContext = context.applicationContext
         latestTrack = WeakReference(track)
-        val resumeHandle = synchronized(lock) {
-            session?.takeIf { it.track.get() === track }?.let { active ->
-                active.suspended = false
-                active.handle
-            }
-        } ?: return false
-        UsbDirectUacBridge.resume(resumeHandle)
-        return true
+        return synchronized(lock) {
+            val active = session?.takeIf { it.track.get() === track } ?: return false
+            active.suspended = false
+            UsbDirectUacBridge.resume(active.handle)
+            true
+        }
     }
 
     /** Intercept a Java AudioTrack.write only after the direct usbfs engine owns the track. */
@@ -109,7 +107,8 @@ internal object UsbDirectUacController {
         val active = synchronized(lock) {
             session?.takeIf { it.track.get() === track }
         } ?: return null
-        if (active.suspended) return consumeSuspendedWrite(args)
+        // The native ring retains writes while suspended and applies its normal
+        // capacity/backpressure. Reporting success here without queuing loses PCM.
         val gains = effectiveGains(active)
 
         val written = when (val data = args.firstOrNull()) {
@@ -250,8 +249,8 @@ internal object UsbDirectUacController {
         if (track.playState != AudioTrack.PLAYSTATE_PLAYING) return
 
         val now = System.nanoTime()
-        var handoffContext: Context? = null
         synchronized(lock) {
+            if (!enabled.get() || pendingTakeover != null) return
             val active = session
             if (active != null) {
                 val existingTrack = active.track.get()
@@ -272,45 +271,42 @@ internal object UsbDirectUacController {
                 ) {
                     return
                 }
-                handoffContext = active.context
                 closeSessionLocked()
+                UsbDirectDeviceClient.release(active.context, active.lease)
             }
-            if (pendingTrack?.get() === track) return
-            pendingTrack = WeakReference(track)
-        }
-        handoffContext?.let { UsbDirectDeviceClient.release(it) }
-        val weakTrack = WeakReference(track)
-        val started = UsbDirectDeviceClient.acquire(context, track.format) { resultValue ->
-            val currentTrack = weakTrack.get()
-            synchronized(lock) {
-                if (pendingTrack?.get() === currentTrack) pendingTrack = null
-            }
-            if (currentTrack == null || !enabled.get()) {
-                UsbDirectDeviceClient.release(context)
-                return@acquire
-            }
-            when (resultValue) {
-                is UsbDirectDeviceClient.AcquireResult.Failed -> {
-                    markFailure(
-                        currentTrack,
-                        resultValue.reason,
-                        classifyFailure(resultValue.reason),
-                    )
-                    ModernXposedRuntime.log("usb_direct: broker acquire failed: ${resultValue.reason}")
-                }
-
-                is UsbDirectDeviceClient.AcquireResult.Acquired -> {
-                    if (currentTrack.playState != AudioTrack.PLAYSTATE_PLAYING) {
-                        UsbDirectDeviceClient.release(context)
-                        return@acquire
+            val request = PendingTakeover(WeakReference(track))
+            pendingTakeover = request
+            // Serialize acquisition and cancellation with transport controls.
+            // Broker callbacks run outside the client's lock.
+            val started = UsbDirectDeviceClient.acquire(context, track.format) { resultValue ->
+                val currentTrack = request.track.get()
+                when (resultValue) {
+                    is UsbDirectDeviceClient.AcquireResult.Failed -> synchronized(lock) {
+                        if (pendingTakeover !== request) return@acquire
+                        pendingTakeover = null
+                        if (currentTrack != null && enabled.get()) {
+                            markFailure(
+                                currentTrack,
+                                resultValue.reason,
+                                classifyFailure(resultValue.reason),
+                            )
+                            ModernXposedRuntime.log("usb_direct: broker acquire failed: ${resultValue.reason}")
+                        }
                     }
-                    hotTakeover(context, currentTrack, resultValue.lease)
+                    is UsbDirectDeviceClient.AcquireResult.Acquired -> {
+                        if (currentTrack == null) {
+                            synchronized(lock) {
+                                if (pendingTakeover === request) pendingTakeover = null
+                            }
+                            UsbDirectDeviceClient.release(context, resultValue.lease)
+                        } else {
+                            hotTakeover(context, currentTrack, resultValue.lease, request)
+                        }
+                    }
                 }
             }
-        }
-        if (!started) {
-            synchronized(lock) {
-                if (pendingTrack?.get() === track) pendingTrack = null
+            if (!started && pendingTakeover === request) {
+                pendingTakeover = null
             }
         }
     }
@@ -318,68 +314,54 @@ internal object UsbDirectUacController {
     fun onTransportControl(context: Context, track: AudioTrack, operation: String) {
         if (isInternalTransition()) return
 
-        var suspendHandle = 0L
-        var flushHandle = 0L
-        var releaseClient = false
         synchronized(lock) {
             val active = session?.takeIf { it.track.get() === track }
-            val ownsPending = pendingTrack?.get() === track
+            val ownsPending = pendingTakeover?.track?.get() === track
 
             when (UsbDirectTrackHandoffPolicy.actionFor(operation)) {
                 UsbDirectTrackHandoffAction.SUSPEND -> {
                     if (active != null) {
                         active.suspended = true
                         active.hasWrittenPcm = false
-                        suspendHandle = active.handle
-                        flushHandle = active.handle
-                    }
-                    if (ownsPending) {
-                        pendingTrack = null
-                        releaseClient = true
+                        UsbDirectUacBridge.suspend(active.handle)
                     }
                 }
 
                 UsbDirectTrackHandoffAction.FLUSH -> {
                     if (active != null) {
                         active.hasWrittenPcm = false
-                        flushHandle = active.handle
-                    }
-                    if (ownsPending) {
-                        pendingTrack = null
-                        releaseClient = true
+                        UsbDirectUacBridge.flush(active.handle)
                     }
                 }
 
                 UsbDirectTrackHandoffAction.CLOSE -> {
                     if (active != null) {
                         closeSessionLocked()
-                        releaseClient = true
-                    }
-                    if (ownsPending) {
-                        pendingTrack = null
-                        releaseClient = true
+                        UsbDirectDeviceClient.release(active.context, active.lease)
                     }
                 }
             }
-        }
 
-        if (suspendHandle != 0L) UsbDirectUacBridge.suspend(suspendHandle)
-        if (flushHandle != 0L) UsbDirectUacBridge.flush(flushHandle)
-        if (releaseClient) UsbDirectDeviceClient.release(context)
+            // Keep the request pending through nativeOpen so a transport change
+            // also cancels a takeover whose broker response has already arrived.
+            if (ownsPending) {
+                pendingTakeover = null
+                UsbDirectDeviceClient.release(context)
+            }
 
-        if (operation == "pause" || operation == "stop" || operation == "flush") {
-            if (failedTrack?.get() === track) {
-                failedTrack = null
+            if (operation == "pause" || operation == "stop" || operation == "flush") {
+                if (failedTrack?.get() === track) {
+                    failedTrack = null
+                    lastFailure = null
+                }
+            }
+            if (operation == "release") {
+                trackVolumes.remove(track)
+                if (observedTrack?.get() === track) observedTrack = null
+                if (failedTrack?.get() === track) failedTrack = null
+                if (latestTrack?.get() === track) latestTrack = null
                 lastFailure = null
             }
-        }
-        if (operation == "release") {
-            synchronized(lock) { trackVolumes.remove(track) }
-            if (observedTrack?.get() === track) observedTrack = null
-            if (pendingTrack?.get() === track) pendingTrack = null
-            if (failedTrack?.get() === track) failedTrack = null
-            if (latestTrack?.get() === track) latestTrack = null
-            lastFailure = null
         }
     }
 
@@ -407,7 +389,7 @@ internal object UsbDirectUacController {
                     },
                 )
             }
-            val pending = pendingTrack?.get()
+            val pending = pendingTakeover?.track?.get()
             if (pending != null) {
                 return statusFor(
                     state = UsbBitPerfectStatusProtocol.STATE_DIRECT_ACQUIRING,
@@ -452,39 +434,51 @@ internal object UsbDirectUacController {
         context: Context,
         track: AudioTrack,
         lease: UsbDirectDeviceClient.Lease,
+        request: PendingTakeover,
     ) {
-        if (synchronized(lock) { session != null || failedTrack?.get() === track }) {
-            UsbDirectDeviceClient.release(context)
-            return
-        }
         internalTransition.set(true)
         try {
-            val manager = context.getSystemService(AudioManager::class.java)
-            if (manager == null) {
-                markFailure(track, "无法读取系统媒体音量", FailureKind.OTHER)
-                UsbDirectDeviceClient.release(context)
-                return
+            val manager: AudioManager
+            val deviceType: Int
+            synchronized(lock) {
+                if (pendingTakeover !== request || !enabled.get() || session != null ||
+                    failedTrack?.get() === track ||
+                    runCatching { track.playState }.getOrNull() != AudioTrack.PLAYSTATE_PLAYING
+                ) {
+                    if (pendingTakeover === request) pendingTakeover = null
+                    UsbDirectDeviceClient.release(context, lease)
+                    return
+                }
+                manager = context.getSystemService(AudioManager::class.java) ?: run {
+                    pendingTakeover = null
+                    markFailure(track, "无法读取系统媒体音量", FailureKind.OTHER)
+                    UsbDirectDeviceClient.release(context, lease)
+                    return
+                }
+                deviceType = runCatching { track.routedDevice?.type }
+                    .getOrNull()
+                    ?: AudioDeviceInfo.TYPE_USB_DEVICE
+                val paused = runCatching {
+                    track.pause()
+                    true
+                }.getOrElse { error ->
+                    markFailure(
+                        track,
+                        "暂停原 AudioTrack 失败：${error.message ?: error.javaClass.simpleName}",
+                        FailureKind.OTHER,
+                    )
+                    false
+                }
+                if (!paused) {
+                    pendingTakeover = null
+                    UsbDirectDeviceClient.release(context, lease)
+                    return
+                }
+                runCatching { track.flush() }
             }
-            val deviceType = runCatching { track.routedDevice?.type }
-                .getOrNull()
-                ?: AudioDeviceInfo.TYPE_USB_DEVICE
-            val paused = runCatching {
-                track.pause()
-                true
-            }.getOrElse { error ->
-                markFailure(
-                    track,
-                    "暂停原 AudioTrack 失败：${error.message ?: error.javaClass.simpleName}",
-                    FailureKind.OTHER,
-                )
-                false
-            }
-            if (!paused) {
-                UsbDirectDeviceClient.release(context)
-                return
-            }
-            runCatching { track.flush() }
 
+            // Do not hold the controller lock over native USB claim/control I/O.
+            // pause/flush/stop/release can invalidate this request while it opens.
             when (
                 val opened = UsbDirectUacBridge.open(
                     lease = lease,
@@ -493,27 +487,44 @@ internal object UsbDirectUacController {
                 )
             ) {
                 is UsbDirectUacBridge.OpenResult.Failed -> {
-                    markFailure(track, opened.reason, classifyFailure(opened.reason))
-                    UsbDirectDeviceClient.release(context)
-                    runCatching { track.play() }
-                        .onFailure { error -> ModernXposedRuntime.log("usb_direct: fallback play failed", error) }
+                    synchronized(lock) {
+                        if (pendingTakeover === request && enabled.get()) {
+                            pendingTakeover = null
+                            markFailure(track, opened.reason, classifyFailure(opened.reason))
+                            UsbDirectDeviceClient.release(context, lease)
+                            runCatching { track.play() }
+                                .onFailure { error -> ModernXposedRuntime.log("usb_direct: fallback play failed", error) }
+                        } else {
+                            UsbDirectDeviceClient.release(context, lease)
+                        }
+                    }
                 }
 
                 is UsbDirectUacBridge.OpenResult.Opened -> {
                     val streamGain = querySystemMediaGain(manager, deviceType) ?: 0f
-                    synchronized(lock) {
-                        closeSessionLocked()
-                        session = Session(
-                            track = WeakReference(track),
-                            handle = opened.handle,
-                            lease = lease,
-                            context = context.applicationContext,
-                            audioManager = manager,
-                            deviceType = deviceType,
-                            streamGainCache = UsbDirectVolumeCache(streamGain),
-                        )
-                        failedTrack = null
-                        lastFailure = null
+                    val installed = synchronized(lock) {
+                        if (pendingTakeover !== request || !enabled.get() || session != null) {
+                            false
+                        } else {
+                            session = Session(
+                                track = WeakReference(track),
+                                handle = opened.handle,
+                                lease = lease,
+                                context = context.applicationContext,
+                                audioManager = manager,
+                                deviceType = deviceType,
+                                streamGainCache = UsbDirectVolumeCache(streamGain),
+                            )
+                            pendingTakeover = null
+                            failedTrack = null
+                            lastFailure = null
+                            true
+                        }
+                    }
+                    if (!installed) {
+                        UsbDirectUacBridge.close(opened.handle)
+                        UsbDirectDeviceClient.release(context, lease)
+                        return
                     }
                     ModernXposedRuntime.log(
                         "usb_direct: configured ${lease.sampleRate}Hz ${lease.bitResolution}-bit/" +
@@ -529,25 +540,24 @@ internal object UsbDirectUacController {
 
     /** Return null after restoring AudioTrack so the current write can fail-open. */
     private fun failWrite(track: AudioTrack, expectedSession: Session, reason: String): Int? {
-        val context = synchronized(lock) {
+        synchronized(lock) {
             val active = session?.takeIf {
                 it === expectedSession && it.track.get() === track
+            } ?: return null
+            closeSessionLocked()
+            UsbDirectDeviceClient.release(active.context, active.lease)
+            markFailure(track, reason, classifyFailure(reason))
+            val closedOwnedSession = !active.suspended
+            if (!UsbDirectWriteFailurePolicy.shouldResumeOriginalTrack(closedOwnedSession)) return null
+            // Keep recovery ordered with pause/stop/release. A late write failure
+            // must neither restart a cancelled track nor undo an intentional pause.
+            internalTransition.set(true)
+            try {
+                runCatching { track.play() }
+                    .onFailure { error -> ModernXposedRuntime.log("usb_direct: write fallback play failed", error) }
+            } finally {
+                internalTransition.set(false)
             }
-            val savedContext = active?.context
-            if (active != null) closeSessionLocked()
-            savedContext
-        }
-        val closedOwnedSession = context != null
-        if (!UsbDirectWriteFailurePolicy.shouldResumeOriginalTrack(closedOwnedSession)) return null
-        val recoveryContext = context ?: return null
-        UsbDirectDeviceClient.release(recoveryContext)
-        markFailure(track, reason, classifyFailure(reason))
-        internalTransition.set(true)
-        try {
-            runCatching { track.play() }
-                .onFailure { error -> ModernXposedRuntime.log("usb_direct: write fallback play failed", error) }
-        } finally {
-            internalTransition.set(false)
         }
         return null
     }
@@ -584,19 +594,6 @@ internal object UsbDirectUacController {
             is ByteArray -> args.size >= 3
             is ByteBuffer -> args.size == 3
             else -> false
-        }
-    }
-
-    private fun consumeSuspendedWrite(args: Array<Any?>): Int? {
-        return when (val data = args.firstOrNull()) {
-            is FloatArray, is ShortArray, is ByteArray -> args.getOrNull(2) as? Int
-            is ByteBuffer -> {
-                val sizeBytes = args.getOrNull(1) as? Int ?: return null
-                if (sizeBytes < 0 || sizeBytes > data.remaining()) return null
-                data.position(data.position() + sizeBytes)
-                sizeBytes
-            }
-            else -> null
         }
     }
 
@@ -699,6 +696,9 @@ internal object UsbDirectUacController {
         val ownerStartedRealtimeNanos: Long = System.nanoTime(),
         var lastWriteRealtimeNanos: Long = 0L,
     )
+
+    /** Identity survives the broker response until nativeOpen commits or is cancelled. */
+    private class PendingTakeover(val track: WeakReference<AudioTrack>)
 
     private data class StereoGain(val left: Float, val right: Float) {
         companion object {
