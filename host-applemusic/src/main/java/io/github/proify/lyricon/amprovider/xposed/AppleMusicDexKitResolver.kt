@@ -172,7 +172,7 @@ internal class AppleMusicDexKitResolver(
     ): ResolvedAppleMusicHookMethod? {
         val packageInfo = application.packageManager.getPackageInfo(application.packageName, 0)
         val preferences = application.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val versionCode = if (android.os.Build.VERSION.SDK_INT >= 28) {
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             packageInfo.longVersionCode
         } else {
             @Suppress("DEPRECATION")
