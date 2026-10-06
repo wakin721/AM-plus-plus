@@ -120,7 +120,7 @@ object ModuleSettingsSchema {
      * screen. Missing or malformed values are ignored so synchronization can
      * never reset an initialized host setting to a default.
      */
-    internal fun usbDirectSettingsValues(values: Map<String, *>): Map<String, Any> =
+    fun usbDirectSettingsValues(values: Map<String, *>): Map<String, Any> =
         linkedMapOf<String, Any>().apply {
             (values[KEY_USB_BIT_PERFECT] as? Boolean)?.let { put(KEY_USB_BIT_PERFECT, it) }
             (values[KEY_USB_DIRECT_UAC] as? Boolean)?.let { put(KEY_USB_DIRECT_UAC, it) }

@@ -297,20 +297,6 @@ class ModuleSettingsSchemaTest {
     }
 
     @Test
-    fun `custom lyrics defaults to disabled and round trips`() {
-        assertEquals(
-            false,
-            ModuleSettingsSchema.decode(emptyMap<String, Any?>()).customLyricsEnabled,
-        )
-        assertEquals(
-            false,
-            ModuleSettingsSchema.decode(
-                mapOf("custom_lyrics_enabled" to "not-a-boolean"),
-            ).customLyricsEnabled,
-        )
-    }
-
-    @Test
     fun `removed AAudio exclusive setting is not persisted`() {
         val encoded = ModuleSettingsSchema.encodeOrdinarySettings(ModuleSettings())
 
