@@ -101,7 +101,7 @@
 
         <activity-alias
             android:name=".LauncherAlias"
-            android:enabled="true"
+            android:enabled="false"
             android:exported="true"
             android:icon="@drawable/ic_module"
             android:label="@string/app_name"

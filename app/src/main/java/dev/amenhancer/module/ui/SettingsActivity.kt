@@ -1464,7 +1464,7 @@ class SettingsActivity : ComponentActivity() {
 
         addView(settingRow(
             title = "隐藏启动器图标",
-            summary = "隐藏后可从 LSPosed 模块详情重新打开设置",
+            summary = "默认隐藏，可从 LSPosed 模块详情打开设置",
             checked = launcherIconController.isHidden(),
             enabled = true,
         ) { hidden ->
