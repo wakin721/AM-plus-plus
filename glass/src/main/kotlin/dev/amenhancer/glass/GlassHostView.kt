@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 
 /** Owns only module AndroidX objects. Never reads the host application's AndroidX owners. */
 class GlassHostView(context: Context, bleedDp: Int = 32) : FrameLayout(context) {
+    override fun draw(canvas: android.graphics.Canvas) {
+        if (!GlassCaptureGuard.active) super.draw(canvas)
+    }
     // Keep layout/hit bounds unchanged while giving Compose's RenderNode room for
     // the reference lens expansion and its shadow on every side.
     private val bleed = (bleedDp * resources.displayMetrics.density).roundToInt()

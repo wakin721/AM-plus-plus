@@ -43,9 +43,9 @@ jobs:
           g++ -std=c++17 -pthread -I "$JAVA_HOME/include" -I "$JAVA_HOME/include/linux" scripts/tests/usb-direct/native/UsbDirectRingTest.cpp -o build/usb-direct-native/ring-test
           build/usb-direct-native/ring-test
 
-      - name: Prepare release signing
+      - name: Prepare project signing
         id: release_signing
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         env:
           AMPP_RELEASE_KEYSTORE_BASE64: ${{ secrets.AMPP_RELEASE_KEYSTORE_BASE64 }}
         run: |
@@ -57,7 +57,7 @@ jobs:
             echo 'available=true' >> "$GITHUB_OUTPUT"
           else
             echo 'available=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::Release signing secrets are not configured; building a debug APK instead.'
+            echo '::notice::Project signing secrets are not configured; debug APKs use an ephemeral Android debug key.'
           fi
 
       - name: Build independent plugin example and SDK
@@ -75,22 +75,26 @@ jobs:
             ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleDebug -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
           fi
 
-      - name: Verify release signature
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_signing.outputs.available == 'true'
+      - name: Build and test feature branch or pull request
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
         run: |
-          verification="$($ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk)"
+          chmod +x gradlew
+          ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleDebug -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
+
+      - name: Verify project signature
+        if: github.event_name == 'push' && steps.release_signing.outputs.available == 'true'
+        run: |
+          apk='app/build/outputs/apk/debug/app-debug.apk'
+          if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
+            apk='app/build/outputs/apk/release/app-release.apk'
+          fi
+          verification="$($ANDROID_HOME/build-tools/37.0.0/apksigner verify --verbose --print-certs "$apk")"
           printf '%s\n' "$verification"
           printf '%s\n' "$verification" | grep -q 'Verified using v2 scheme.*: true'
           if printf '%s\n' "$verification" | grep -q 'CN=Android Debug'; then
             echo 'Refusing to publish an APK signed with the Android debug certificate.' >&2
             exit 1
           fi
-
-      - name: Build and test feature branch or pull request
-        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
-        run: |
-          chmod +x gradlew
-          ./gradlew test :app:lintDebug :app:lintVitalRelease :glass:lintDebug :host-applemusic:lintDebug :plugin-api:lintDebug :plugin-runtime:lintDebug :app:assembleDebug -PpluginFixture="$PWD/build/plugin-example/basic-plugin.zip" --no-daemon
 
       - name: Verify USB Direct controller and background playback lifecycle
         shell: pwsh

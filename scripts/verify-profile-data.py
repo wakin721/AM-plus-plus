@@ -47,6 +47,15 @@ def main():
                     assert len(target['parameterTypeNames']) == target['parameterCount']
         baseline_path = ROOT/'host-applemusic/src/test/resources/baseline'/filename
         assert profile['chrome']['resources'] and profile['settings']['fragmentClass']
+        if 'chromeGlass' in profile:
+            chrome = profile['chromeGlass']
+            assert profile['capabilities']['glass'] and profile['family'] == 'fragment-content'
+            assert chrome['composeViewClass'] and chrome['functionClass'] and chrome['evidence']
+            for contract in chrome['methods'].values():
+                assert all(contract[k] for k in ('owner', 'name', 'returns'))
+                assert isinstance(contract['parameters'], list) and isinstance(contract['static'], bool)
+            for contract in chrome['fields'].values():
+                assert all(contract[k] for k in ('owner', 'name', 'type')) and isinstance(contract['static'], bool)
         assert len(profile['legacyFirstMatchExceptions']) == len(set(profile['legacyFirstMatchExceptions']))
         if not baseline_path.is_file():
             assert profile.get('ambiguityPolicy', 'reject-ambiguous') == 'reject-ambiguous'

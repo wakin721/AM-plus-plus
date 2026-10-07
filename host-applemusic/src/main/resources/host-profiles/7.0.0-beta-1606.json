@@ -2597,5 +2597,199 @@
     "bindingClass": "q8.p9",
     "flexboxField": "a0",
     "flexboxClass": "com.apple.android.music.common.views.FullWidthAlphaGradientFlexboxLayout"
+  },
+  "chromeGlass": {
+    "functionClass": "pi.l",
+    "composeViewClass": "p1.a",
+    "methods": {
+      "button": {
+        "owner": "Aa.x",
+        "name": "e",
+        "parameters": [
+          "O0.j",
+          "pi.a",
+          "H0.h",
+          "z0.m",
+          "int"
+        ],
+        "returns": "void",
+        "static": false
+      },
+      "menu": {
+        "owner": "Aa.x",
+        "name": "m",
+        "parameters": [
+          "z0.r0",
+          "java.util.List",
+          "z0.m",
+          "int"
+        ],
+        "returns": "void",
+        "static": false
+      },
+      "background": {
+        "owner": "K.w",
+        "name": "b",
+        "parameters": [
+          "O0.j",
+          "long",
+          "V0.f0"
+        ],
+        "returns": "O0.j",
+        "static": true
+      },
+      "border": {
+        "owner": "K.E",
+        "name": "a",
+        "parameters": [
+          "float",
+          "long",
+          "O0.j",
+          "V0.f0"
+        ],
+        "returns": "O0.j",
+        "static": true
+      },
+      "dropdown": {
+        "owner": "w0.r",
+        "name": "a",
+        "parameters": [
+          "boolean",
+          "pi.a",
+          "O0.j",
+          "long",
+          "K.j1",
+          "S1.Q",
+          "V0.f0",
+          "long",
+          "float",
+          "float",
+          "H0.h",
+          "z0.m",
+          "int",
+          "int"
+        ],
+        "returns": "void",
+        "static": true
+      },
+      "roundedShape": {
+        "owner": "a0.h",
+        "name": "a",
+        "parameters": [
+          "float"
+        ],
+        "returns": "a0.g",
+        "static": true
+      },
+      "consume": {
+        "owner": "z0.m",
+        "name": "A",
+        "parameters": [
+          "z0.z"
+        ],
+        "returns": "java.lang.Object",
+        "static": false
+      },
+      "drawWithContent": {
+        "owner": "S0.m",
+        "name": "c",
+        "parameters": [
+          "O0.j",
+          "pi.l"
+        ],
+        "returns": "O0.j",
+        "static": true
+      },
+      "drawContent": {
+        "owner": "X0.c",
+        "name": "Z1",
+        "parameters": [],
+        "returns": "void",
+        "static": false
+      },
+      "drawContext": {
+        "owner": "X0.e",
+        "name": "G1",
+        "parameters": [],
+        "returns": "X0.a$b",
+        "static": false
+      },
+      "canvas": {
+        "owner": "X0.a$b",
+        "name": "a",
+        "parameters": [],
+        "returns": "V0.x",
+        "static": false
+      },
+      "size": {
+        "owner": "X0.a$b",
+        "name": "d",
+        "parameters": [],
+        "returns": "long",
+        "static": false
+      },
+      "nativeCanvas": {
+        "owner": "V0.c",
+        "name": "b",
+        "parameters": [
+          "V0.x"
+        ],
+        "returns": "android.graphics.Canvas",
+        "static": true
+      },
+      "coordinator": {
+        "owner": "o1.k",
+        "name": "e",
+        "parameters": [
+          "o1.j",
+          "int"
+        ],
+        "returns": "o1.b0",
+        "static": true
+      },
+      "toScreen": {
+        "owner": "o1.b0",
+        "name": "y",
+        "parameters": [
+          "long"
+        ],
+        "returns": "long",
+        "static": false
+      },
+      "attached": {
+        "owner": "o1.b0",
+        "name": "b",
+        "parameters": [],
+        "returns": "boolean",
+        "static": false
+      }
+    },
+    "fields": {
+      "localView": {
+        "owner": "androidx.compose.ui.platform.AndroidCompositionLocals_androidKt",
+        "name": "f",
+        "type": "z0.C1",
+        "static": true
+      },
+      "unit": {
+        "owner": "kotlin.Unit",
+        "name": "a",
+        "type": "kotlin.Unit",
+        "static": true
+      },
+      "emptyModifier": {
+        "owner": "O0.j$a",
+        "name": "a",
+        "type": "O0.j$a",
+        "static": true
+      },
+      "drawNode": {
+        "owner": "o1.G",
+        "name": "b",
+        "type": "o1.r",
+        "static": false
+      }
+    },
+    "evidence": "1606 APK: LibraryComposeContentFragment header -> Aa.x.d/e; navigate-up Aa.x.b -> d/e; Aa.x.m -> w0.r.a dropdown. Software layer traversal excludes glass consumers."
   }
 }

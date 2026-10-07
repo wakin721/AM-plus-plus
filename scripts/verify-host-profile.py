@@ -229,6 +229,21 @@ def main():
                 native = classes.get(owner, {})
                 if native.get('fields', {}).get(contract['name']) != descriptor(contract['type']) or native.get('field_access', {}).get(contract['name'], 8) & 8:
                     failures.append(f'invalid exact field contract {symbol}: {owner} {contract["name"]}')
+            chrome = document.get('chromeGlass', {})
+            for symbol, contract in chrome.get('methods', {}).items():
+                checks += 1
+                owner = descriptor(contract['owner'])
+                signature = contract['name'] + '(' + ''.join(map(descriptor, contract['parameters'])) + ')' + descriptor(contract['returns'])
+                flags = classes.get(owner, {}).get('method_access', {}).get(signature)
+                # DrawScope and Composer are interfaces; abstract members are intentional.
+                if flags is None or bool(flags & 8) != contract['static'] or flags & (0x40 | 0x1000):
+                    failures.append(f'invalid chrome glass method {symbol}: {owner} {signature}')
+            for symbol, contract in chrome.get('fields', {}).items():
+                checks += 1
+                native = classes.get(descriptor(contract['owner']), {})
+                flags = native.get('field_access', {}).get(contract['name'])
+                if native.get('fields', {}).get(contract['name']) != descriptor(contract['type']) or flags is None or bool(flags & 8) != contract['static']:
+                    failures.append(f'invalid chrome glass field {symbol}: {contract["owner"]} {contract["name"]}')
 
         for owner, signatures in profile["methods"].items():
             if owner not in classes:

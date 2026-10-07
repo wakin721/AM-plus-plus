@@ -21,7 +21,10 @@ internal class PhoneLiquidGlassFeature : FeatureHook {
 internal object PhoneLiquidGlassResourceHook {
     fun install(config: TargetConfigClient) {
         FragmentChromeFactory.registerResources { view ->
-            if (Build.VERSION.SDK_INT >= 33 && config.settings().phoneLiquidGlassEnabled) FragmentGlassRuntime.discover(view, config)
+            if (Build.VERSION.SDK_INT >= 33 && config.settings().phoneLiquidGlassEnabled) {
+                ChromeGlassRuntime.discover(view, config)
+                FragmentGlassRuntime.discover(view, config)
+            }
         }
         AppleMusicHostFactory.registerChromeResources { view ->
             if (Build.VERSION.SDK_INT >= 33 && config.settings().phoneLiquidGlassEnabled &&
