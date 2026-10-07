@@ -18,7 +18,8 @@ import dev.amenhancer.module.model.ModuleSettings
 internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     if (settingsPageSurface?.activity === activity) return
     dismissSettingsPage()
-    EmbeddedSettingsPalette.update(activity)
+    controller.ensureSettingsBridge()
+    EmbeddedSettingsPalette.update(activity, controller.appearanceMode())
     val initialSettings = runCatching { controller.currentSettings() }.getOrElse {
         Toast.makeText(activity, "无法读取 AM++ 设置", Toast.LENGTH_SHORT).show()
         return
@@ -68,12 +69,25 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     val pageMotion = SettingsPageMotion(pageContent)
 
     fun renderPage() {
+        EmbeddedSettingsPalette.update(activity, controller.appearanceMode())
+        root.setBackgroundColor(EmbeddedSettingsPalette.pageBackground)
+        title.setTextColor(EmbeddedSettingsPalette.onSurface)
+        back.setImageDrawable(EmbeddedGlyphDrawable(EmbeddedGlyphKind.BackArrow, EmbeddedSettingsPalette.onSurface))
+        back.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(EmbeddedSettingsPalette.pageBackground)
+            setStroke(dp(activity, 1), EmbeddedSettingsPalette.outline)
+        }
         val pageChanged = renderedPage != navigation.page
         val switchMotion = if (pageChanged) emptyMap() else scroll?.let(::captureSettingsSwitchMotion).orEmpty()
         scroll?.let { scrollPositions[renderedPage] = it.scrollY }
         renderedPage = navigation.page
         pageContent.removeAllViews()
-        title.text = if (navigation.page == EmbeddedSettingsPage.CUSTOM_LYRICS) "自定义歌词" else "AM++"
+        title.text = when (navigation.page) {
+            EmbeddedSettingsPage.MAIN -> "AM++"
+            EmbeddedSettingsPage.CUSTOM_LYRICS -> "自定义歌词"
+            EmbeddedSettingsPage.USB_AUDIO -> "USB 音频输出"
+        }
         val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val nextScroll = ScrollView(activity).apply {
             isFillViewport = true
@@ -96,12 +110,15 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
         }
         if (navigation.page == EmbeddedSettingsPage.CUSTOM_LYRICS) {
             renderEmbeddedCustomLyricsPage(activity, content, draft.settings, controller.currentSongDetails(), ::updateDraft)
+        } else if (navigation.page == EmbeddedSettingsPage.USB_AUDIO) {
+            renderEmbeddedUsbPage(activity, content, draft.settings, ::updateDraft)
         } else {
             renderEmbeddedMainPage(
                 activity, content, draft.settings,
                 runCatching { controller.lyricsEntries().size }.getOrDefault(0),
                 onSettingsChanged = ::updateDraft,
                 onCellularDataEntryChanged = { updateDraft(draft.settings.copy(forceCellularDataEntryEnabled = it)) },
+                onOpenUsb = { navigation.openUsb(); renderPage() },
                 onOpenCustomLyrics = { navigation.openLyrics(); renderPage() },
                 onChooseFont = { launchSafPicker(activity, EmbeddedSafOperation.Font, "*/*", EMBEDDED_FONT_MIME_TYPES) },
                 onClearFont = { runAsync(activity, controller::clearFont) },

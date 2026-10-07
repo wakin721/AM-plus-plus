@@ -254,7 +254,7 @@ class UsbDirectUacStructuralRegressionTest {
             "app/src/main/java/dev/amenhancer/module/hook/UsbDirectUacController.kt",
         )
         val ui = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
+            "app/src/main/java/dev/amenhancer/module/ui/EmbeddedUsbSettingsPage.kt",
         )
 
         assertTrue(controller.contains("lease.bitResolution <= 24 -> AudioFormat.ENCODING_PCM_24BIT_PACKED"))

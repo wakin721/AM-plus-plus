@@ -191,6 +191,7 @@ class HookEntry : XposedModule() {
                                 application,
                                 session,
                                 currentSong = { currentSong.current()?.details },
+                                currentUsbStatus = { UsbBitPerfectController.currentStatus(application) },
                             ),
                             activityMatcher = AppleMusicHostFactory.settingsActivityMatcher(application, playerActivityClass),
                             nativeBridgeFactory = { onOpen -> AppleMusicHostFactory.settingsViewBridge(application, onOpen) },

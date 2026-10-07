@@ -148,6 +148,8 @@ internal class EmbeddedSettingsNavigation {
     var page = EmbeddedSettingsPage.MAIN
         private set
 
+    fun openUsb() { page = EmbeddedSettingsPage.USB_AUDIO }
+
     fun openLyrics() { page = EmbeddedSettingsPage.CUSTOM_LYRICS }
 
     /** False lets the page owner return to Apple's settings list. */

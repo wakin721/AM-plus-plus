@@ -18,6 +18,7 @@ import dev.amenhancer.module.ui.theme.AppleMusicSettingsPalette
 internal enum class EmbeddedSettingsPage {
     MAIN,
     CUSTOM_LYRICS,
+    USB_AUDIO,
 }
 
 internal data class EmbeddedLyricsEditorAction(
@@ -32,7 +33,11 @@ internal data class EmbeddedLyricsEditorAction(
  */
 internal object EmbeddedSettingsPalette {
     private var dark = false
-    fun update(context: Context) {
+    fun update(context: Context, mode: dev.amenhancer.module.ui.theme.AppThemeMode = dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM) {
+        if (mode != dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM) {
+            dark = mode == dev.amenhancer.module.ui.theme.AppThemeMode.DARK
+            return
+        }
         val color = android.util.TypedValue()
         dark = if (context.theme.resolveAttribute(android.R.attr.colorBackground, color, true) &&
             color.type in android.util.TypedValue.TYPE_FIRST_COLOR_INT..android.util.TypedValue.TYPE_LAST_COLOR_INT) {

@@ -98,6 +98,9 @@ internal fun EmbeddedSettingsHost.showLyricsEditor(
                             arrayOf("application/ttml+xml", "application/xml", "text/xml", "text/plain"),
                         )
                     },
+                    EmbeddedLyricsEditorAction("AI 翻译") {
+                        activity.showDeepSeekTranslationDialog(ttmlInput)
+                    },
                     EmbeddedLyricsEditorAction("获取 ID") {
                         requestCurrentSongId(activity, idInput, nameInput)
                     },

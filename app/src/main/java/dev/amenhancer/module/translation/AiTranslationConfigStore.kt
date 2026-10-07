@@ -1,6 +1,9 @@
 package dev.amenhancer.module.translation
 
 import android.content.Context
+import android.net.Uri
+import android.os.Bundle
+import dev.amenhancer.module.BuildConfig
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -11,32 +14,52 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Settings-process-only AI configuration. It deliberately does not use the
- * libxposed remote preferences consumed by the Apple Music process.
+ * AI configuration stays encrypted in the module's private storage. The explicit
+ * in-host editor accesses it through the UID-checked bridge, never remote preferences.
  */
 class AiTranslationConfigStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences(
-        PREFERENCES_NAME,
-        Context.MODE_PRIVATE,
-    )
+    private val appContext = context.applicationContext
+    private val useBridge = appContext.packageName != BuildConfig.APPLICATION_ID
+    private fun bridge(method: String, extras: Bundle? = null): Bundle? = runCatching {
+        appContext.contentResolver.call(Uri.parse("content://${BuildConfig.APPLICATION_ID}.settings-sync"),
+            method, null, extras)
+    }.getOrNull()
+    private val preferences by lazy {
+        appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    }
 
-    fun settings(): AiTranslationSettings = AiTranslationSettings(
-        model = DeepSeekModel.fromApiName(preferences.getString(KEY_MODEL, null)),
-        thinkingEnabled = preferences.getBoolean(KEY_THINKING, false),
-        targetLanguage = preferences.getString(KEY_TARGET_LANGUAGE, DEFAULT_TARGET_LANGUAGE)
-            ?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_TARGET_LANGUAGE,
-    )
+    fun settings(): AiTranslationSettings {
+        if (useBridge) {
+            val values = bridge("ai-read") ?: Bundle()
+            return AiTranslationSettings(DeepSeekModel.fromApiName(values.getString("model")),
+                values.getBoolean("thinking"), values.getString("language") ?: DEFAULT_TARGET_LANGUAGE)
+        }
+        return AiTranslationSettings(
+            model = DeepSeekModel.fromApiName(preferences.getString(KEY_MODEL, null)),
+            thinkingEnabled = preferences.getBoolean(KEY_THINKING, false),
+            targetLanguage = preferences.getString(KEY_TARGET_LANGUAGE, DEFAULT_TARGET_LANGUAGE)
+                ?.takeIf { it.isNotBlank() }
+                ?: DEFAULT_TARGET_LANGUAGE,
+        )
+    }
 
-    fun saveSettings(settings: AiTranslationSettings) {
-        preferences.edit()
+    fun saveSettings(settings: AiTranslationSettings): Boolean {
+        if (useBridge) {
+            return bridge("ai-save", Bundle().apply {
+                putString("model", settings.model.apiName)
+                putBoolean("thinking", settings.thinkingEnabled)
+                putString("language", settings.targetLanguage)
+            })?.getBoolean("success") == true
+        }
+        return preferences.edit()
             .putString(KEY_MODEL, settings.model.apiName)
             .putBoolean(KEY_THINKING, settings.thinkingEnabled)
             .putString(KEY_TARGET_LANGUAGE, settings.targetLanguage.trim())
-            .apply()
+            .commit()
     }
 
     fun apiKey(): String {
+        if (useBridge) return bridge("ai-read")?.getString("api-key").orEmpty()
         val cipherText = preferences.getString(KEY_API_KEY_CIPHER, null) ?: return ""
         val iv = preferences.getString(KEY_API_KEY_IV, null) ?: return ""
         return runCatching {
@@ -51,6 +74,8 @@ class AiTranslationConfigStore(context: Context) {
     }
 
     fun saveApiKey(value: String): Boolean {
+        if (useBridge) return bridge("ai-save", Bundle().apply { putString("api-key", value) })
+            ?.getBoolean("success") == true
         val trimmed = value.trim()
         if (trimmed.isEmpty()) {
             preferences.edit().remove(KEY_API_KEY_CIPHER).remove(KEY_API_KEY_IV).apply()

@@ -17,6 +17,13 @@ internal interface EmbeddedSettingsController {
 
     fun saveOrdinarySettings(settings: ModuleSettings): Boolean
 
+    /** Called only when the user opens the foreground settings page. */
+    fun ensureSettingsBridge() = Unit
+    fun appearanceMode(): dev.amenhancer.module.ui.theme.AppThemeMode = dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM
+    fun saveAppearanceMode(mode: dev.amenhancer.module.ui.theme.AppThemeMode): Boolean = false
+    fun usbStatus(): dev.amenhancer.module.UsbBitPerfectStatusDetails? = null
+    fun requestUsbPermission(): Boolean = false
+
     fun currentSongDetails(): CurrentSongDetails? = null
     fun lyricsEntries(): List<CustomLyricsEntry> = emptyList()
     fun readLyrics(appleMusicId: Long): String? = null
@@ -70,4 +77,3 @@ internal class EmbeddedSessionSettingsController(
 internal fun interface EmbeddedSafSelectionHandler {
     fun onSelected(operation: EmbeddedSafOperation, uri: Uri)
 }
-

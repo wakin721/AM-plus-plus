@@ -32,6 +32,7 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
         onSettingsChanged: (ModuleSettings) -> Unit,
         onCellularDataEntryChanged: (Boolean) -> Unit,
         onOpenCustomLyrics: () -> Unit,
+        onOpenUsb: () -> Unit,
         onChooseFont: () -> Unit,
         onClearFont: () -> Unit,
     ) {
@@ -184,6 +185,10 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
             ))
         })
         parent.addView(embeddedSpacer(activity, 12))
+        parent.addView(embeddedCard(activity, "音频") {
+            addView(embeddedNavigationRow(activity, "USB 音频输出", "独占输出、缓冲区与实时音频链路", onClick = onOpenUsb))
+        })
+        parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedCard(activity, "高级设置") {
             addView(embeddedBlurRadiusRow(activity, settings.lyricBlurRadiusOffsetPx) {
                 onSettingsChanged(settings.copy(lyricBlurRadiusOffsetPx = it))
@@ -203,11 +208,22 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
         ))
         parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedCard(activity, "应用") {
+            addView(embeddedNavigationRow(activity, "外观", controller.appearanceMode().displayName, onClick = {
+                val modes = dev.amenhancer.module.ui.theme.AppThemeMode.entries
+                showAppleMusicChoiceDialog(activity, "AM++ 设置外观", modes.map { it.displayName },
+                    modes.indexOf(controller.appearanceMode())) { index ->
+                    if (!controller.saveAppearanceMode(modes[index])) {
+                        Toast.makeText(activity, "保存外观失败，请重试", Toast.LENGTH_SHORT).show()
+                    }
+                    pageRefresh?.invoke()
+                }
+            }))
+            addView(embeddedDivider(activity))
             addView(embeddedNavigationRow(activity, "插件", "导入 ZIP、管理启用状态与冲突", onClick = { showPluginManagement(activity) }))
         })
         parent.addView(embeddedSectionFooter(
             activity,
-            "配置保存在 Apple Music 私有目录中",
+            "设置、字体和歌词统一保存在 AM++ 共享配置中",
         ))
         parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedSectionLabel(activity, "帮助"))

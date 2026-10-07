@@ -19,13 +19,13 @@ class CombinedSettingsArtifactStructuralRegressionTest {
     ).firstOrNull(File::exists) ?: File(relativePath)
 
     @Test
-    fun `artifact retains standalone settings alongside the injected Apple Music settings entry`() {
+    fun `artifact exposes settings only through the injected Apple Music entry`() {
         val manifest = projectFile("app/src/main/AndroidManifest.xml")
         val entry = projectFile("app/src/main/java/dev/amenhancer/module/hook/HookEntry.kt")
         val host = projectFile("app/src/main/java/dev/amenhancer/module/ui/EmbeddedSettingsHost.kt")
 
-        assertTrue(manifest.contains("android:name=\".ui.SettingsActivity\""))
-        assertTrue(manifest.contains("android:name=\".LauncherAlias\""))
+        assertFalse(manifest.contains("android:name=\".ui.SettingsActivity\""))
+        assertFalse(manifest.contains("android:name=\".LauncherAlias\""))
         assertTrue(manifest.contains("android:name=\".usb.UsbDirectDeviceBrokerService\""))
         assertTrue(entry.contains("EmbeddedSettingsHost.install("))
         assertTrue(entry.contains("EmbeddedRuntimeSettingsController("))
@@ -34,10 +34,8 @@ class CombinedSettingsArtifactStructuralRegressionTest {
     }
 
     @Test
-    fun `standalone configuration and file transaction sources are retained`() {
+    fun `configuration migration and file transaction sources are retained`() {
         listOf(
-            "app/src/main/java/dev/amenhancer/module/ui/SettingsActivity.kt",
-            "app/src/main/java/dev/amenhancer/module/ui/LauncherIconController.kt",
             "app/src/main/java/dev/amenhancer/module/ui/CurrentSongIdentityRequester.kt",
             "app/src/main/java/dev/amenhancer/module/ModuleApplication.kt",
             "app/src/main/java/dev/amenhancer/module/XposedServiceSnapshot.kt",

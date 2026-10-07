@@ -5,7 +5,8 @@ import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import dev.amenhancer.module.config.ConfigStore
-import dev.amenhancer.module.ui.UsbBitPerfectSettingsInjector
+import dev.amenhancer.module.config.SettingsAppearancePolicy
+import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 import dev.amenhancer.module.usb.UsbDirectVisibilityGrant
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
@@ -17,6 +18,11 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
     private val changeHandler = Handler(Looper.getMainLooper())
     private val notifySettingsChanged = Runnable {
         val snapshot = serviceSnapshot
+        snapshot.preferences?.let { preferences ->
+            val settings = dev.amenhancer.module.config.ModuleSettingsSchema.decode(preferences.all)
+            UsbDirectPermissionActivity.setAttachHandlingEnabled(this,
+                settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled)
+        }
         listeners.forEach { it(snapshot) }
     }
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
@@ -25,7 +31,6 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
     }
     override fun onCreate() {
         super.onCreate()
-        UsbBitPerfectSettingsInjector.register(this)
         // Also makes the settings bridge visible to the injected host on Android 11+.
         UsbDirectVisibilityGrant.grantToAppleMusic(this)
         XposedServiceHelper.registerListener(this)
@@ -40,6 +45,13 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
         }
         val preferences = service.getRemotePreferences(ModuleConstants.REMOTE_PREFERENCES_GROUP)
         ConfigStore.migrateLegacyPreferences(this, preferences)
+        val appearance = SettingsAppearancePolicy.legacyPatch(preferences.all,
+            getSharedPreferences("appearance", MODE_PRIVATE).all)
+        if (appearance.isNotEmpty()) {
+            val editor = preferences.edit()
+            appearance.forEach { (key, value) -> editor.putString(key, value) }
+            editor.commit()
+        }
         observedPreferences?.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         observedPreferences = preferences
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
@@ -51,6 +63,8 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
         ))
 
         val settings = ConfigStore(this).settings()
+        UsbDirectPermissionActivity.setAttachHandlingEnabled(this,
+            settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled)
         if (settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled) {
             UsbDirectVisibilityGrant.grantToAppleMusic(this)
         }

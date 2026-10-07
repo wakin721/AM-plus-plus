@@ -56,7 +56,7 @@ class XposedServiceSnapshotTest {
     fun `application store and settings render consume one snapshot interface`() {
         val application = source("dev/amenhancer/module/ModuleApplication.kt")
         val store = source("dev/amenhancer/module/config/ConfigStore.kt")
-        val settings = source("dev/amenhancer/module/ui/SettingsActivity.kt")
+        val settings = source("dev/amenhancer/module/config/SettingsSyncProvider.kt")
 
         assertTrue(application.contains("AtomicReference(XposedServiceSnapshot.waiting())"))
         assertTrue(application.contains("publish(XposedServiceSnapshot.connected("))
@@ -67,10 +67,8 @@ class XposedServiceSnapshotTest {
         assertTrue(store.contains("fun settings(snapshot: XposedServiceSnapshot)"))
         assertTrue(store.contains("snapshot.preferences ?: legacyPreferences"))
         assertTrue(store.contains("snapshot.isRemoteFileAvailable"))
-        assertTrue(settings.contains(
-            "private fun render(snapshot: XposedServiceSnapshot = ModuleApplication.serviceSnapshot)",
-        ))
-        assertTrue(settings.contains("statusCard(snapshot)"))
+        assertTrue(settings.contains("val snapshot = ModuleApplication.serviceSnapshot"))
+        assertTrue(settings.contains("snapshot.preferences ?: return Bundle()"))
         assertFalse(settings.contains("ModuleApplication.serviceStatus"))
     }
 

@@ -41,6 +41,7 @@ internal class EmbeddedRuntimeSettingsController(
     context: Context,
     private val session: EmbeddedConfigurationSession,
     private val currentSong: () -> CurrentSongDetails?,
+    private val currentUsbStatus: () -> dev.amenhancer.module.UsbBitPerfectStatusDetails? = { null },
 ) : EmbeddedSettingsController {
     private val appContext = context.applicationContext
     private val content = EmbeddedContentManager(
@@ -51,6 +52,39 @@ internal class EmbeddedRuntimeSettingsController(
     override fun currentSettings(): ModuleSettings = session.settings()
 
     override fun saveOrdinarySettings(settings: ModuleSettings): Boolean = session.saveSettings(settings)
+
+    override fun ensureSettingsBridge() {
+        // Explicit activities can start even when Android's package visibility
+        // hides the provider. The transparent bootstrap grants visibility and
+        // finishes immediately; the synchronization worker retries the read.
+        val response = runCatching {
+            appContext.contentResolver.call(Uri.parse("content://${dev.amenhancer.module.BuildConfig.APPLICATION_ID}.settings-sync"),
+                "read", null, null)
+        }.getOrNull()
+        if (response == null) runCatching {
+            appContext.startActivity(android.content.Intent()
+                .setComponent(android.content.ComponentName(dev.amenhancer.module.BuildConfig.APPLICATION_ID,
+                    "dev.amenhancer.module.config.SettingsBridgeBootstrapActivity"))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    override fun appearanceMode(): dev.amenhancer.module.ui.theme.AppThemeMode =
+        dev.amenhancer.module.ui.theme.AppThemeMode.entries.firstOrNull { it.name == session.appearanceMode() }
+            ?: dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM
+
+    override fun saveAppearanceMode(mode: dev.amenhancer.module.ui.theme.AppThemeMode): Boolean = session.saveAppearanceMode(mode.name)
+    override fun usbStatus() = currentUsbStatus()
+    override fun requestUsbPermission(): Boolean = runCatching {
+        val uri = Uri.parse("content://${dev.amenhancer.module.BuildConfig.APPLICATION_ID}.settings-sync")
+        val enabled = appContext.contentResolver.call(uri, "enable-usb-permission", null, null)?.getBoolean("success") == true
+        if (!enabled) return@runCatching false
+        appContext.startActivity(android.content.Intent(dev.amenhancer.module.usb.UsbDirectPermissionActivity.ACTION_REQUEST_PERMISSION)
+            .setComponent(android.content.ComponentName(dev.amenhancer.module.BuildConfig.APPLICATION_ID,
+                "dev.amenhancer.module.usb.UsbDirectPermissionActivity"))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
 
     override fun currentSongDetails(): CurrentSongDetails? = currentSong()
 

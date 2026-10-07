@@ -1,5 +1,6 @@
 package dev.amenhancer.module.ui
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Typeface
 import android.text.InputType
@@ -22,8 +23,8 @@ import dev.amenhancer.module.translation.DeepSeekTranslationResult
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/** Settings-process UI; DeepSeek is never contacted from the Apple Music hook process. */
-internal fun SettingsActivity.showDeepSeekTranslationDialog(ttmlInput: EditText) {
+/** User-initiated lyrics editing action; never runs automatically during playback. */
+internal fun Activity.showDeepSeekTranslationDialog(ttmlInput: EditText) {
     val rawTtml = ttmlInput.text?.toString().orEmpty()
     if (rawTtml.isBlank()) {
         ttmlInput.error = "请先导入或输入 TTML"
@@ -113,7 +114,10 @@ internal fun SettingsActivity.showDeepSeekTranslationDialog(ttmlInput: EditText)
                 Toast.makeText(this, "API Key 安全存储失败", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            store.saveSettings(settings)
+            if (!store.saveSettings(settings)) {
+                Toast.makeText(this, "翻译设置保存失败，请重试", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             dialog.dismiss()
             translateTtmlWithDeepSeek(ttmlInput, rawTtml, key, lines, settings)
         }
@@ -121,7 +125,7 @@ internal fun SettingsActivity.showDeepSeekTranslationDialog(ttmlInput: EditText)
     dialog.show()
 }
 
-private fun SettingsActivity.translateTtmlWithDeepSeek(
+private fun Activity.translateTtmlWithDeepSeek(
     ttmlInput: EditText,
     originalTtml: String,
     apiKey: String,
@@ -180,5 +184,5 @@ private object DeepSeekTranslationExecutor {
     val executor: ExecutorService = Executors.newSingleThreadExecutor()
 }
 
-private fun SettingsActivity.dpForDeepSeek(value: Int): Int =
+private fun Activity.dpForDeepSeek(value: Int): Int =
     (value * resources.displayMetrics.density).toInt()

@@ -1,85 +1,48 @@
 package dev.amenhancer.module.ui
 
 import java.io.File
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.*
 import org.junit.Test
 
 class UsbBitPerfectSettingsUiStructuralRegressionTest {
-    private fun projectFile(relativePath: String): String = sequenceOf(
-        File(relativePath),
-        File("../$relativePath"),
-    ).firstOrNull(File::isFile)?.readText()
-        ?: error("$relativePath was not found from the unit-test working directory")
+    private fun source(name: String): String = sequenceOf(File("app/src/main/java/dev/amenhancer/module/$name"),
+        File("../app/src/main/java/dev/amenhancer/module/$name")).first(File::isFile).readText()
 
-    @Test
-    fun `main settings keeps a compact navigation entry`() {
-        val application = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ModuleApplication.kt",
-        )
-        val injector = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsInjector.kt",
-        )
-
-        assertTrue(application.contains("UsbBitPerfectSettingsInjector.register(this)"))
-        assertTrue(injector.contains("text = \"音频\""))
-        assertTrue(injector.contains("text = \"USB Bit-Perfect\""))
-        assertTrue(injector.contains("UsbBitPerfectSettingsActivity::class.java"))
-        assertTrue(injector.contains("AudioTrack → Mixer → USB DAC"))
-        assertFalse(injector.contains("UsbBitPerfectStatusRequester"))
-        assertFalse(injector.contains("Switch("))
+    @Test fun `USB controls live in the host navigation instead of a module activity`() {
+        val main = source("ui/EmbeddedSettingsPages.kt")
+        val screen = source("ui/EmbeddedSettingsScreen.kt")
+        assertTrue(main.contains("USB 音频输出"))
+        assertTrue(screen.contains("navigation.openUsb()"))
+        assertTrue(screen.contains("renderEmbeddedUsbPage("))
+        assertFalse(screen.contains("startActivity"))
     }
 
-    @Test
-    fun `detail page places the USB Direct switch above the live path`() {
-        val activity = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
-        )
-        val manifest = projectFile("app/src/main/AndroidManifest.xml")
-
-        val togglePosition = activity.indexOf("addView(toggleCard())")
-        val pathPosition = activity.indexOf("addView(audioPathCard())")
-        assertTrue(togglePosition >= 0)
-        assertTrue(pathPosition > togglePosition)
-        assertTrue(activity.contains("text = \"启用 USB 音频增强\""))
-        assertTrue(activity.contains("text = \"实验性 USB 直通独占\""))
-        assertTrue(activity.contains("usbDirectUacEnabled = enabled"))
-        assertTrue(activity.contains("UsbDirectPermissionActivity.requestCurrentDevice"))
-        assertFalse(activity.contains("usbExclusiveAaudioEnabled"))
-        assertFalse(activity.contains("AAudio"))
-        assertTrue(activity.contains("text = \"音频链路\""))
-        assertTrue(activity.contains("pathNode(\"Apple Music AudioTrack\""))
-        assertTrue(activity.contains("pathNode(\"输出引擎\""))
-        assertTrue(activity.contains("pathNode(\"USB DAC\""))
-        assertTrue(activity.contains("UsbBitPerfectStatusRequester(this)"))
-        assertTrue(activity.contains("优先 USB Direct UAC"))
-        assertTrue(manifest.contains(".ui.UsbBitPerfectSettingsActivity"))
-        assertTrue(manifest.contains(".usb.UsbDirectPermissionActivity"))
-        assertTrue(manifest.contains("android.hardware.usb.action.USB_DEVICE_ATTACHED"))
+    @Test fun `USB options use shared settings and the controller authorization facade`() {
+        val page = source("ui/EmbeddedUsbSettingsPage.kt")
+        assertTrue(page.contains("usbBitPerfectEnabled = it"))
+        assertTrue(page.contains("usbDirectUacEnabled = enabled"))
+        assertTrue(page.contains("controller.requestUsbPermission()"))
+        assertTrue(page.contains("settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled"))
+        assertTrue(page.contains("controller.usbStatus()"))
+        assertFalse(page.contains("UsbBitPerfectStatusRequester"))
+        assertFalse(page.contains("AAudio"))
     }
 
-    @Test
-    fun `PCM buffer controls expose the 10 through 100 millisecond range`() {
-        val activity = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
-        )
-
-        assertTrue(activity.contains("bufferRangeRow("))
-        assertTrue(activity.contains("ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS"))
-        assertTrue(activity.contains("ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS"))
-        assertTrue(activity.contains("ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS"))
-        assertFalse(activity.contains("listOf(50, 100, 250, 500, 1000)"))
+    @Test fun `buffer settings retain the supported range and transfer presets`() {
+        val page = source("ui/EmbeddedUsbSettingsPage.kt")
+        assertTrue(page.contains("ModuleSettings.MIN_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(page.contains("ModuleSettings.MAX_USB_DIRECT_PCM_BUFFER_MS"))
+        assertTrue(page.contains("ModuleSettings.USB_DIRECT_PCM_BUFFER_STEP_MS"))
+        assertTrue(page.contains("ModuleSettings.USB_DIRECT_TRANSFER_BUFFER_PRESETS_MS"))
+        assertTrue(page.contains("usbDirectPcmBufferMs = pcmValues[index]"))
+        assertTrue(page.contains("usbDirectTransferBufferMs = transferValues[index]"))
     }
 
-    @Test
-    fun `USB Direct copy explains compatible devices and preserves system fallback`() {
-        val activity = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
-        )
-
-        assertTrue(activity.contains("支持常见 UAC1/UAC2 设备"))
-        assertTrue(activity.contains("不支持时自动恢复系统输出"))
-        assertTrue(activity.contains("恢复原 AudioTrack/Android mixer"))
-        assertFalse(activity.contains("第一版暂不支持异步 feedback DAC"))
+    @Test fun `copy explains compatible devices feedback and system fallback`() {
+        val page = source("ui/EmbeddedUsbSettingsPage.kt")
+        assertTrue(page.contains("UAC1/UAC2"))
+        assertTrue(page.contains("隐式或显式反馈"))
+        assertTrue(page.contains("保留 Android 系统输出"))
+        assertTrue(page.contains("更改缓冲参数后需重启 Apple Music"))
     }
 }

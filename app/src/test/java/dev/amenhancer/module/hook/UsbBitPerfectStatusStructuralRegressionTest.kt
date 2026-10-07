@@ -72,20 +72,20 @@ class UsbBitPerfectStatusStructuralRegressionTest {
     @Test
     fun `settings distinguishes USB Direct and bit perfect activation`() {
         val ui = projectFile(
-            "app/src/main/java/dev/amenhancer/module/ui/UsbBitPerfectSettingsActivity.kt",
+            "app/src/main/java/dev/amenhancer/module/ui/EmbeddedUsbSettingsPage.kt",
         )
 
-        val togglePosition = ui.indexOf("addView(toggleCard())")
-        val pathPosition = ui.indexOf("addView(audioPathCard())")
+        val togglePosition = ui.indexOf("\"启用 USB 音频增强\"")
+        val pathPosition = ui.indexOf("\"音频链路\"")
         assertTrue(togglePosition >= 0)
         assertTrue(pathPosition > togglePosition)
-        assertTrue(ui.contains("text = \"启用 USB 音频增强\""))
-        assertTrue(ui.contains("text = \"实验性 USB 直通独占\""))
-        assertTrue(ui.contains("text = \"音频链路\""))
+        assertTrue(ui.contains("\"启用 USB 音频增强\""))
+        assertTrue(ui.contains("\"实验性 USB 直通独占\""))
+        assertTrue(ui.contains("\"音频链路\""))
         assertTrue(ui.contains("pathNode(\"Apple Music AudioTrack\""))
         assertTrue(ui.contains("pathNode(\"输出引擎\""))
         assertTrue(ui.contains("pathNode(\"USB DAC\""))
-        assertTrue(ui.contains("text = \"刷新状态\""))
+        assertTrue(ui.contains("\"刷新状态\""))
         assertTrue(ui.contains("STATE_DIRECT_ACTIVE -> \"USB 直通独占已激活\""))
         assertTrue(ui.contains("STATE_DIRECT_PERMISSION_REQUIRED -> \"需要 USB 授权\""))
         assertTrue(ui.contains("STATE_ACTIVE -> \"Bit-Perfect 已激活\""))

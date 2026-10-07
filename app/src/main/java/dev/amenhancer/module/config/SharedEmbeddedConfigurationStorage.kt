@@ -61,13 +61,20 @@ internal class SharedEmbeddedConfigurationStorage(
 
     /** Retry a cold module/service connection without blocking Application.onCreate. */
     fun startSynchronization() {
-        if (ready) return
         val worker = Executors.newSingleThreadScheduledExecutor { task ->
             Thread(task, "ampp-settings-sync").apply { isDaemon = true }
         }
         worker.scheduleWithFixedDelay({
             val completed = synchronized(migrationLock) {
-                if (ready) true else runCatching {
+                runCatching {
+                    // Also warm the module after an upgrade with an already
+                    // initialized store, so private appearance is migrated.
+                    val published = shared.values()
+                    if (published[SettingsSynchronizationPolicy.INITIALIZED_KEY] == true) {
+                        cachedValues = published
+                        ready = true
+                        return@runCatching true
+                    }
                     val result = SettingsSynchronizationPolicy.initializeFromHost(host, shared)
                     if (result is EmbeddedConfigurationMigrationResult.Failed) false else {
                         cachedValues = shared.values()

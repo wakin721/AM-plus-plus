@@ -24,10 +24,37 @@ class SettingsSyncProvider : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         authorize()
+        if (method == "ai-read" || method == "ai-save") {
+            val store = dev.amenhancer.module.translation.AiTranslationConfigStore(requireNotNull(context))
+            return synchronized(WRITE_LOCK) {
+                if (method == "ai-read") {
+                    val settings = store.settings()
+                    Bundle().apply {
+                        putString("model", settings.model.apiName)
+                        putBoolean("thinking", settings.thinkingEnabled)
+                        putString("language", settings.targetLanguage)
+                        putString("api-key", store.apiKey())
+                    }
+                } else Bundle().apply {
+                    val values = extras ?: Bundle()
+                    val keySaved = !values.containsKey("api-key") || store.saveApiKey(values.getString("api-key").orEmpty())
+                    val settingsSaved = !values.containsKey("model") || store.saveSettings(dev.amenhancer.module.translation.AiTranslationSettings(
+                        dev.amenhancer.module.translation.DeepSeekModel.fromApiName(values.getString("model")),
+                        values.getBoolean("thinking"), values.getString("language") ?: "zh-Hans"))
+                    putBoolean("success", keySaved && settingsSaved)
+                }
+            }
+        }
         val snapshot = ModuleApplication.serviceSnapshot
         val preferences = snapshot.preferences ?: return Bundle()
         return synchronized(WRITE_LOCK) {
             when (method) {
+                "enable-usb-permission" -> Bundle().apply {
+                    val settings = ModuleSettingsSchema.decode(preferences.all)
+                    val enabled = settings.usbBitPerfectEnabled && settings.usbDirectUacEnabled
+                    dev.amenhancer.module.usb.UsbDirectPermissionActivity.setAttachHandlingEnabled(requireNotNull(context), enabled)
+                    putBoolean("success", enabled)
+                }
                 "read" -> SettingsSyncWire.encode(preferences.all).apply { putBoolean("available", true) }
                 "write", "remove" -> {
                     val values = SettingsSyncWire.decode(extras ?: Bundle())
