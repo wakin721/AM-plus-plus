@@ -371,6 +371,7 @@ internal fun EmbeddedSettingsHost.embeddedBlurRadiusRow(
             max = ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX -
                 ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX
             progress = value - ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX
+            var trackingTouch = false
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     val next = (progress + ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX).coerceIn(
@@ -378,11 +379,15 @@ internal fun EmbeddedSettingsHost.embeddedBlurRadiusRow(
                         ModuleSettings.MAX_LYRIC_BLUR_RADIUS_OFFSET_PX,
                     )
                     label.text = "$title：${next}px"
+                    if (BlurRadiusSeekBarPersistencePolicy.shouldPersistProgressChange(fromUser, trackingTouch)) {
+                        onChanged(next)
+                    }
                 }
 
-                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+                override fun onStartTrackingTouch(seekBar: SeekBar?) { trackingTouch = true }
 
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    trackingTouch = false
                     if (seekBar != null) {
                         onChanged(
                             (seekBar.progress + ModuleSettings.MIN_LYRIC_BLUR_RADIUS_OFFSET_PX)
@@ -458,14 +463,19 @@ internal fun EmbeddedSettingsHost.embeddedGlassRangeRow(
             thumbTintList = ColorStateList.valueOf(EmbeddedSettingsPalette.accent)
             max = rangeMax - rangeMin
             progress = value - rangeMin
+            var trackingTouch = false
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     label.text = "$title：${(progress + rangeMin).coerceIn(rangeMin, rangeMax)}dp"
+                    if (BlurRadiusSeekBarPersistencePolicy.shouldPersistProgressChange(fromUser, trackingTouch)) {
+                        onChanged((progress + rangeMin).coerceIn(rangeMin, rangeMax))
+                    }
                 }
 
-                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+                override fun onStartTrackingTouch(seekBar: SeekBar?) { trackingTouch = true }
 
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    trackingTouch = false
                     if (seekBar != null) {
                         onChanged((seekBar.progress + rangeMin).coerceIn(rangeMin, rangeMax))
                     }
