@@ -139,15 +139,21 @@ internal object UsbDirectUacController {
     private fun pendingTransport(track: AudioTrack): PendingTakeover? =
         pendingTakeover?.takeIf { it.originalPaused && it.track.get() === track }
 
-    /** Receives the media step selected by Android's system volume UI. */
-    fun onSystemMediaVolumeChanged(volumeIndex: Int) {
-        if (!enabled.get() || volumeIndex < 0) return
+    /** Explicit UI changes apply on either route; polling must preserve the USB step. */
+    fun onSystemMediaVolumeChanged(volumeIndex: Int? = null) {
+        if (!enabled.get() || (volumeIndex != null && volumeIndex < 0)) return
         val active = synchronized(lock) { session } ?: return
+        // getStreamVolume follows Android's current volume route, which can
+        // become the silent speaker keep-alive. Only a volume-change event can
+        // replace the USB step; polling still refreshes global mute and the dB
+        // curve using the remembered step and the USB device type.
+        val index = volumeIndex ?: active.volumeIndex
         val streamGain = querySystemMediaGain(
             active.audioManager,
             active.deviceType,
-            preferredIndex = volumeIndex,
+            preferredIndex = index,
         ) ?: return
+        active.volumeIndex = index
         active.streamGainCache.refresh { streamGain }
     }
 
@@ -532,6 +538,8 @@ internal object UsbDirectUacController {
             val manager: AudioManager
             val deviceType: Int
             val positionBaseFrames: Long
+            val initialVolumeIndex: Int
+            val initialStreamGain: Float
             synchronized(lock) {
                 if (pendingTakeover !== request || !enabled.get() || session != null ||
                     failedTrack?.get() === track ||
@@ -550,6 +558,11 @@ internal object UsbDirectUacController {
                 deviceType = runCatching { track.routedDevice?.type }
                     .getOrNull()
                     ?: AudioDeviceInfo.TYPE_USB_DEVICE
+                // Claiming USB and starting the speaker keep-alive can change
+                // the route used by getStreamVolume. Snapshot it before either.
+                initialVolumeIndex = runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
+                    .getOrDefault(0)
+                initialStreamGain = querySystemMediaGain(manager, deviceType, initialVolumeIndex) ?: 0f
                 positionBaseFrames = runCatching { track.playbackHeadPosition.toLong() and 0xFFFF_FFFFL }
                     .getOrDefault(0L)
                 val paused = runCatching {
@@ -598,7 +611,6 @@ internal object UsbDirectUacController {
                 }
 
                 is UsbDirectUacBridge.OpenResult.Opened -> {
-                    val streamGain = querySystemMediaGain(manager, deviceType) ?: 0f
                     var keepAliveFailed = false
                     val installed = synchronized(lock) {
                         if (pendingTakeover !== request || !enabled.get() || session != null) {
@@ -611,7 +623,8 @@ internal object UsbDirectUacController {
                                 context = context.applicationContext,
                                 audioManager = manager,
                                 deviceType = deviceType,
-                                streamGainCache = UsbDirectVolumeCache(streamGain),
+                                streamGainCache = UsbDirectVolumeCache(initialStreamGain),
+                                volumeIndex = initialVolumeIndex,
                                 positionBaseFrames = positionBaseFrames,
                             )
                             if (!nextSession.keepAlive.start()) {
@@ -731,9 +744,10 @@ internal object UsbDirectUacController {
         val maximum = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
             .getOrNull()
             ?: return null
-        val index = preferredIndex?.takeIf { it in 0..maximum }
+        val index = preferredIndex
             ?: runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull()
             ?: return null
+        if (index !in 0..maximum) return null
         val muted = runCatching { manager.isStreamMute(AudioManager.STREAM_MUSIC) }
             .getOrDefault(index <= 0)
         val db = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -808,6 +822,7 @@ internal object UsbDirectUacController {
         val audioManager: AudioManager,
         val deviceType: Int,
         val streamGainCache: UsbDirectVolumeCache,
+        @Volatile var volumeIndex: Int,
         var positionBaseFrames: Long = 0L,
         val playbackPower: UsbDirectPlaybackPower = UsbDirectPlaybackPower(context),
         val keepAlive: UsbDirectPlaybackKeepAlive = UsbDirectPlaybackKeepAlive(context),

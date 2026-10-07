@@ -211,20 +211,12 @@ internal object UsbDirectSystemVolumeObserver {
 
     private fun scheduleVolumePolling(application: Application) {
         if (!polling.compareAndSet(false, true)) return
-        val manager = application.getSystemService(AudioManager::class.java) ?: run {
-            polling.set(false)
-            return
-        }
         val handler = Handler(application.mainLooper)
         val poll = object : Runnable {
             override fun run() {
                 if (!polling.get()) return
                 UsbDirectUacController.checkPlaybackHealth()
-                runCatching { manager.getStreamVolume(AudioManager.STREAM_MUSIC) }
-                    .getOrNull()
-                    ?.let { index ->
-                        UsbDirectUacController.onSystemMediaVolumeChanged(index)
-                    }
+                UsbDirectUacController.onSystemMediaVolumeChanged()
                 if (polling.get()) handler.postDelayed(this, VOLUME_POLL_INTERVAL_MILLIS)
             }
         }

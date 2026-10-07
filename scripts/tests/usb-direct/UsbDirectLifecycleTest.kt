@@ -141,6 +141,74 @@ class UsbDirectLifecycleTest {
         assertEquals(listOf(1, 2), UsbDirectUacBridge.outputs.values.single().queued)
     }
 
+    @Test fun takeoverCapturesUsbVolumeBeforeNativeClaimChangesTheSystemRoute() {
+        context.audioManager.mediaVolume = 3
+        UsbDirectUacBridge.duringOpen = {
+            context.audioManager.mediaVolume = 0
+        }
+        val track = activate()
+        UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(1, 2), 0, 2))
+        assertEquals(0.2f, UsbDirectUacBridge.outputs.values.single().gainLeft, 0.0001f)
+    }
+
+    private fun pcmGain(track: AudioTrack): Float {
+        val output = UsbDirectUacBridge.outputs.values.single()
+        output.queued.clear()
+        assertEquals(2, UsbDirectUacController.interceptWrite(track, arrayOf(shortArrayOf(1, 2), 0, 2)))
+        return output.gainLeft
+    }
+
+    @Test fun repeatedSpeakerZeroVolumePollsPreserveUsbVolume() {
+        context.audioManager.mediaVolume = 3
+        val track = activate()
+        context.audioManager.mediaVolume = 0
+        repeat(5) {
+            UsbDirectUacController.onSystemMediaVolumeChanged()
+            assertEquals(0.2f, pcmGain(track), 0.0001f)
+        }
+    }
+
+    @Test fun explicitVolumeChangesIncludingZeroSurviveSubsequentSpeakerPolling() {
+        context.audioManager.mediaVolume = 3
+        val track = activate()
+        context.audioManager.mediaVolume = 0
+        UsbDirectUacController.onSystemMediaVolumeChanged(6)
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(0.4f, pcmGain(track), 0.0001f)
+        UsbDirectUacController.onSystemMediaVolumeChanged(0)
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(0f, pcmGain(track), 0f)
+        UsbDirectUacController.onSystemMediaVolumeChanged(3)
+        assertEquals(0.2f, pcmGain(track), 0.0001f)
+    }
+
+    @Test fun onlyVolumeNotificationsReplaceTheUsbStepEvenWhenRoutingLooksUnchanged() {
+        val track = activate()
+        context.audioManager.mediaVolume = 6
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(1f, pcmGain(track), 0f)
+        UsbDirectUacController.onSystemMediaVolumeChanged(6)
+        context.audioManager.mediaVolume = 0
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(0.4f, pcmGain(track), 0.0001f)
+        UsbDirectUacController.onSystemMediaVolumeChanged(0)
+        assertEquals(0f, pcmGain(track), 0f)
+    }
+
+    @Test fun globalMuteDoesNotLoseTheRememberedUsbStep() {
+        context.audioManager.mediaVolume = 3
+        val track = activate()
+        context.audioManager.mediaVolume = 0
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(0.2f, pcmGain(track), 0.0001f)
+        context.audioManager.mediaMuted = true
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(0f, pcmGain(track), 0f)
+        context.audioManager.mediaMuted = false
+        UsbDirectUacController.onSystemMediaVolumeChanged()
+        assertEquals(0.2f, pcmGain(track), 0.0001f)
+    }
+
     @Test fun silentFrameworkTrackPausesResumesAndReleasesWithTheUsbSession() {
         val track = activate()
         val keeper = AudioTrack.keepAliveTracks.single()

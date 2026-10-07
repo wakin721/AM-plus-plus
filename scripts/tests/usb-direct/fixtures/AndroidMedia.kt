@@ -46,10 +46,12 @@ class AudioTrack(val format: AudioFormat=AudioFormat()) {
 class AudioTimestamp { var framePosition=0L; var nanoTime=0L }
 class AudioManager {
  var outputs=arrayOf(AudioDeviceInfo(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER))
+ var mediaVolume=15
+ var mediaMuted=false
  fun getDevices(flags: Int)=outputs
  fun getStreamMaxVolume(stream: Int)=15
- fun getStreamVolume(stream: Int)=15
- fun isStreamMute(stream: Int)=false
+ fun getStreamVolume(stream: Int)=mediaVolume
+ fun isStreamMute(stream: Int)=mediaMuted
  fun getStreamVolumeDb(stream: Int, index: Int, type: Int)=0f
  companion object { const val STREAM_MUSIC=3; const val GET_DEVICES_OUTPUTS=2 }
 }

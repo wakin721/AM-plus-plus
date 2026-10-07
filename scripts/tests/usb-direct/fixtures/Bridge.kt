@@ -15,6 +15,8 @@ internal object UsbDirectUacBridge {
         val queued = mutableListOf<Int>()
         var renderedFrames = 0L
         var renderedAtNanos = 0L
+        var gainLeft = 1f
+        var gainRight = 1f
     }
     var duringOpen: (() -> Unit)? = null
     var failOpen = false
@@ -54,7 +56,11 @@ internal object UsbDirectUacBridge {
     fun writeFloats(handle: Long, data: FloatArray, offset: Int, size: Int, blocking: Boolean,
         gainLeft: Float, gainRight: Float) = enqueue(handle, data.slice(offset until offset + size).map { it.toInt() })
     fun writeShorts(handle: Long, data: ShortArray, offset: Int, size: Int, blocking: Boolean,
-        gainLeft: Float, gainRight: Float) = enqueue(handle, data.slice(offset until offset + size).map { it.toInt() })
+        gainLeft: Float, gainRight: Float): Int {
+        outputs.getValue(handle).gainLeft = gainLeft
+        outputs.getValue(handle).gainRight = gainRight
+        return enqueue(handle, data.slice(offset until offset + size).map { it.toInt() })
+    }
     fun writeBytes(handle: Long, data: ByteArray, offset: Int, size: Int, blocking: Boolean,
         gainLeft: Float, gainRight: Float) = enqueue(handle, data.slice(offset until offset + size).map { it.toInt() })
 }
