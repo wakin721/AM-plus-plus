@@ -68,7 +68,7 @@ internal class SharedEmbeddedConfigurationStorage(
             val completed = synchronized(migrationLock) {
                 runCatching {
                     // Also warm the module after an upgrade with an already
-                    // initialized store, so private appearance is migrated.
+                    // initialized store, without requiring a standalone launcher.
                     val published = shared.values()
                     if (published[SettingsSynchronizationPolicy.INITIALIZED_KEY] == true) {
                         cachedValues = published

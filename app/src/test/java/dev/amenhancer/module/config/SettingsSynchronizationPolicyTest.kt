@@ -9,27 +9,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SettingsSynchronizationPolicyTest {
-    @Test fun `appearance migration preserves an explicit shared choice and ignores corrupt legacy values`() {
-        assertEquals(mapOf(SettingsAppearancePolicy.KEY to "DARK"),
-            SettingsAppearancePolicy.legacyPatch(emptyMap<String, Any>(), mapOf("theme_mode" to "DARK")))
-        assertTrue(SettingsAppearancePolicy.legacyPatch(mapOf(SettingsAppearancePolicy.KEY to "LIGHT"),
-            mapOf("theme_mode" to "DARK")).isEmpty())
-        assertTrue(SettingsAppearancePolicy.legacyPatch(emptyMap<String, Any>(),
-            mapOf("theme_mode" to "INVALID")).isEmpty())
-    }
-
-    @Test fun `host promotion retains the module appearance and later saves do not overwrite ordinary settings`() {
-        val host = MemoryStorage(ModuleSettingsSchema.encode(ModuleSettings(dualPaneEnabled = false)))
-        val shared = MemoryStorage(mapOf(SettingsAppearancePolicy.KEY to "DARK"))
-        assertTrue(SettingsSynchronizationPolicy.initializeFromHost(host, shared) is EmbeddedConfigurationMigrationResult.Migrated)
-        val session = EmbeddedConfigurationSession(shared)
-        assertEquals("DARK", session.appearanceMode())
-        assertTrue(session.saveAppearanceMode("LIGHT"))
-        assertFalse(session.settings().dualPaneEnabled)
-        assertFalse(session.saveAppearanceMode("INVALID"))
-        assertEquals("LIGHT", session.appearanceMode())
-    }
-
     @Test fun `initial conflicts prefer host and later launches preserve shared changes`() {
         val host = MemoryStorage(ModuleSettingsSchema.encode(ModuleSettings(dualPaneEnabled = false)))
         val shared = MemoryStorage(ModuleSettingsSchema.encode(ModuleSettings(dualPaneEnabled = true)))

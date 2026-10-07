@@ -29,23 +29,12 @@ internal data class EmbeddedLyricsEditorAction(
 
 /**
  * Apple Music's grouped settings: neutral surfaces and a red control accent.
- * Resolve brightness from the host theme whenever a page opens.
+ * Resolve brightness from the system whenever a page opens or refreshes.
  */
 internal object EmbeddedSettingsPalette {
     private var dark = false
-    fun update(context: Context, mode: dev.amenhancer.module.ui.theme.AppThemeMode = dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM) {
-        if (mode != dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM) {
-            dark = mode == dev.amenhancer.module.ui.theme.AppThemeMode.DARK
-            return
-        }
-        val color = android.util.TypedValue()
-        dark = if (context.theme.resolveAttribute(android.R.attr.colorBackground, color, true) &&
-            color.type in android.util.TypedValue.TYPE_FIRST_COLOR_INT..android.util.TypedValue.TYPE_LAST_COLOR_INT) {
-            Color.red(color.data) + Color.green(color.data) + Color.blue(color.data) < 384
-        } else {
-            context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        }
+    fun update(context: Context) {
+        dark = AppleMusicSettingsPalette.resolve(context).isDark
     }
     private val colors: AppleMusicSettingsPalette get() = AppleMusicSettingsPalette.forDark(dark)
     val pageBackground: Int get() = colors.background

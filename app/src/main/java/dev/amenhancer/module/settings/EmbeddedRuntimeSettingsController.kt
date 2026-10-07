@@ -69,11 +69,6 @@ internal class EmbeddedRuntimeSettingsController(
         }
     }
 
-    override fun appearanceMode(): dev.amenhancer.module.ui.theme.AppThemeMode =
-        dev.amenhancer.module.ui.theme.AppThemeMode.entries.firstOrNull { it.name == session.appearanceMode() }
-            ?: dev.amenhancer.module.ui.theme.AppThemeMode.SYSTEM
-
-    override fun saveAppearanceMode(mode: dev.amenhancer.module.ui.theme.AppThemeMode): Boolean = session.saveAppearanceMode(mode.name)
     override fun usbStatus() = currentUsbStatus()
     override fun requestUsbPermission(): Boolean = runCatching {
         val uri = Uri.parse("content://${dev.amenhancer.module.BuildConfig.APPLICATION_ID}.settings-sync")

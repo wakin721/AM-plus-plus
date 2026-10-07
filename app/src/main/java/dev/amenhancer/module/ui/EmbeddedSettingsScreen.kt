@@ -19,7 +19,7 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     if (settingsPageSurface?.activity === activity) return
     dismissSettingsPage()
     controller.ensureSettingsBridge()
-    EmbeddedSettingsPalette.update(activity, controller.appearanceMode())
+    EmbeddedSettingsPalette.update(activity)
     val initialSettings = runCatching { controller.currentSettings() }.getOrElse {
         Toast.makeText(activity, "无法读取 AM++ 设置", Toast.LENGTH_SHORT).show()
         return
@@ -69,7 +69,7 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
     val pageMotion = SettingsPageMotion(pageContent)
 
     fun renderPage() {
-        EmbeddedSettingsPalette.update(activity, controller.appearanceMode())
+        EmbeddedSettingsPalette.update(activity)
         root.setBackgroundColor(EmbeddedSettingsPalette.pageBackground)
         title.setTextColor(EmbeddedSettingsPalette.onSurface)
         back.setImageDrawable(EmbeddedGlyphDrawable(EmbeddedGlyphKind.BackArrow, EmbeddedSettingsPalette.onSurface))
@@ -142,6 +142,13 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
         }
     }
 
+    val configurationListener = object : android.content.ComponentCallbacks {
+        override fun onConfigurationChanged(configuration: android.content.res.Configuration) {
+            refreshView()
+        }
+        override fun onLowMemory() = Unit
+    }
+    application.registerComponentCallbacks(configurationListener)
     val surface = EmbeddedSettingsPageSurface(activity, root,
         onBack = {
             if (navigation.back()) {
@@ -152,7 +159,12 @@ internal fun EmbeddedSettingsHost.showSettingsPage(activity: Activity) {
                 Toast.makeText(activity, "保存 AM++ 设置失败，请重试", Toast.LENGTH_SHORT).show()
             }
         },
-        onClosed = { pageMotion.cancel(); settingsPageSurface = null; pageRefresh = null },
+        onClosed = {
+            application.unregisterComponentCallbacks(configurationListener)
+            pageMotion.cancel()
+            settingsPageSurface = null
+            pageRefresh = null
+        },
     )
     back.setOnClickListener { surface.handleBack() }
     settingsPageSurface = surface

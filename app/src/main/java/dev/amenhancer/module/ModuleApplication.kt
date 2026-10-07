@@ -5,7 +5,6 @@ import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import dev.amenhancer.module.config.ConfigStore
-import dev.amenhancer.module.config.SettingsAppearancePolicy
 import dev.amenhancer.module.usb.UsbDirectPermissionActivity
 import dev.amenhancer.module.usb.UsbDirectVisibilityGrant
 import io.github.libxposed.service.XposedService
@@ -45,13 +44,6 @@ class ModuleApplication : Application(), XposedServiceHelper.OnServiceListener {
         }
         val preferences = service.getRemotePreferences(ModuleConstants.REMOTE_PREFERENCES_GROUP)
         ConfigStore.migrateLegacyPreferences(this, preferences)
-        val appearance = SettingsAppearancePolicy.legacyPatch(preferences.all,
-            getSharedPreferences("appearance", MODE_PRIVATE).all)
-        if (appearance.isNotEmpty()) {
-            val editor = preferences.edit()
-            appearance.forEach { (key, value) -> editor.putString(key, value) }
-            editor.commit()
-        }
         observedPreferences?.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         observedPreferences = preferences
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)

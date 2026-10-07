@@ -41,7 +41,7 @@
 
 ## 项目简介
 
-设置页嵌在 Apple Music 自己的设置列表中，入口是“AM++ 模块设置”。模块不提供独立设置界面或桌面图标；USB Bit-Perfect / USB Direct、外观和 DeepSeek AI 歌词翻译均在 Apple Music 内的 AM++ 页面使用。升级保留原有共享配置，并迁移独立设置的外观。
+设置页嵌在 Apple Music 自己的设置列表中，入口是“AM++ 模块设置”。模块不提供独立设置界面或桌面图标；USB Bit-Perfect / USB Direct 和 DeepSeek AI 歌词翻译均在 Apple Music 内的 AM++ 页面使用。升级保留原有共享配置；界面颜色直接跟随系统，没有单独的外观选项。
 
 点击软件内的 AM++ 入口后进入二级设置页面，采用 Apple Music 风格的分组列表，设置即时保存。顶部返回按钮或系统返回会逐级返回“自定义歌词 → AM++ → Apple Music 设置”。
 
@@ -218,7 +218,7 @@ scripts/                  可选的真机回归、录屏分析与 host profile �
 
 - 模块只声明 `INTERNET` 权限，用于设置页中用户主动触发的 AMLL、AM-Lyrics、Lunabeat 歌词导入，以及开启“自动实时补全”后符合条件的播放期歌词请求。
 - 不申请存储或通知运行时权限，本地文件通过 Android 文件选择器读取。
-- 模块不含分析服务，也不含独立入口 Activity。
+- 模块不含分析服务，也不含桌面或独立设置入口；仅保留透明的初始化和 USB 授权窗口。
 - 首次迁移前的配置来自 Xposed remote preferences／remote file；迁移后普通设置、歌词索引和字体文件保存在 Apple Music 宿主私有目录。
 
 ## 许可证与致谢

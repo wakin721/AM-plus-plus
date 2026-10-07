@@ -94,11 +94,6 @@ internal class EmbeddedConfigurationSession(
         return saved
     }
 
-    fun appearanceMode(): String = storage.values()[SettingsAppearancePolicy.KEY] as? String ?: "SYSTEM"
-
-    fun saveAppearanceMode(mode: String): Boolean = writable && mode in SettingsAppearancePolicy.modes &&
-        storage.writeValues(mapOf(SettingsAppearancePolicy.KEY to mode), synchronous = true)
-
     fun saveFontManifest(manifest: LyricsFontManifest): Boolean = writable && storage.writeValues(
         ModuleSettingsSchema.encodeFontManifest(manifest),
         synchronous = true,

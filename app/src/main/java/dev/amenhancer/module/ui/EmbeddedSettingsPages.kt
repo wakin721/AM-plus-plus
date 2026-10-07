@@ -208,17 +208,6 @@ internal fun EmbeddedSettingsHost.renderEmbeddedMainPage(
         ))
         parent.addView(embeddedSpacer(activity, 12))
         parent.addView(embeddedCard(activity, "应用") {
-            addView(embeddedNavigationRow(activity, "外观", controller.appearanceMode().displayName, onClick = {
-                val modes = dev.amenhancer.module.ui.theme.AppThemeMode.entries
-                showAppleMusicChoiceDialog(activity, "AM++ 设置外观", modes.map { it.displayName },
-                    modes.indexOf(controller.appearanceMode())) { index ->
-                    if (!controller.saveAppearanceMode(modes[index])) {
-                        Toast.makeText(activity, "保存外观失败，请重试", Toast.LENGTH_SHORT).show()
-                    }
-                    pageRefresh?.invoke()
-                }
-            }))
-            addView(embeddedDivider(activity))
             addView(embeddedNavigationRow(activity, "插件", "导入 ZIP、管理启用状态与冲突", onClick = { showPluginManagement(activity) }))
         })
         parent.addView(embeddedSectionFooter(
